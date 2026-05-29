@@ -51,6 +51,8 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 .param-item select { padding:7px 10px; border-radius:12px; border:1.5px solid var(--border); font-size:0.85rem; outline:none; transition:border-color 0.15s; }
 .param-item input:focus,
 .param-item select:focus { border-color:var(--primary); }
+.param-item-full { grid-column: 1 / -1; }
+.mcs-section-label { grid-column:1/-1; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--primary); background:rgba(31,110,67,0.07); padding:5px 12px; border-radius:8px; margin:10px 0 2px; border-left:3px solid var(--primary); }
 .flag-inp-high { border-color:var(--red-light) !important; background:#fff5f5; }
 .flag-inp-low  { border-color:#3b82f6 !important; background:#eff6ff; }
 .widal-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; background:#f9fbfd; padding:15px; border-radius:20px; }
@@ -516,6 +518,55 @@ const SEROLOGY_PARAMS = [
   {key:'anti_hbc', name:'Anti-HBc (Total)', type:'select', options:['Non-reactive','Reactive']}
 ];
 
+// ========== MCS MICROSCOPY PARAMS ==========
+// Used by complex_urine_mcs and complex_stool_mcs
+// Microscopy section is shown FIRST, then organism + C&S below it.
+
+const URINE_MICRO_PARAMS = [
+  // Physical
+  {key:'colour',      name:'Colour',             unit:'', section:'Physical',  type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown','Amber']},
+  {key:'appearance',  name:'Appearance',          unit:'', section:'Physical',  type:'select', options:['Clear','Slightly Turbid','Turbid','Cloudy','Bloody']},
+  {key:'ph',          name:'pH',                  unit:'', section:'Chemical',  type:'number', step:0.5, low:5.0, high:8.0},
+  {key:'sg',          name:'Specific Gravity',    unit:'', section:'Chemical',  type:'number', step:0.001, low:1.005, high:1.030},
+  // Chemical (dipstick)
+  {key:'protein',     name:'Protein',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'glucose',     name:'Glucose',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'ketones',     name:'Ketones',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'blood',       name:'Blood',               unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'bilirubin',   name:'Bilirubin',           unit:'', section:'Chemical',  type:'select', options:['Negative','+','++']},
+  {key:'urobilinogen',name:'Urobilinogen',        unit:'mg/dL', section:'Chemical', type:'number', step:0.1, low:0.1, high:1.0},
+  {key:'nitrite',     name:'Nitrite',             unit:'', section:'Chemical',  type:'select', options:['Negative','Positive']},
+  {key:'leuko',       name:'Leukocyte Esterase',  unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  // Microscopy (cells)
+  {key:'wbc_micro',   name:'WBC (Pus Cells)',     unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','21–50','>50','Too numerous to count']},
+  {key:'rbc_micro',   name:'RBC',                 unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–2','3–5','6–10','11–20','>20']},
+  {key:'epithelial',  name:'Epithelial Cells',    unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'casts',       name:'Casts',               unit:'/LPF', section:'Microscopy', type:'select', options:['None seen','Hyaline casts','Granular casts','RBC casts','WBC casts','Waxy casts','Broad casts','Fatty casts']},
+  {key:'crystals',    name:'Crystals',            unit:'',     section:'Microscopy', type:'select', options:['None seen','Uric acid crystals','Calcium oxalate','Triple phosphate','Amorphous phosphates','Amorphous urates','Calcium carbonate','Cystine crystals']},
+  {key:'bacteria',    name:'Bacteria',            unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'yeast',       name:'Yeast Cells',         unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'parasite',    name:'Parasite / Ova',      unit:'',     section:'Microscopy', type:'select', options:['None seen','Trichomonas vaginalis','Schistosoma haematobium ova','Other — see comments']},
+  {key:'mucus',       name:'Mucus Threads',       unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'micro_comment',name:'Microscopy Comment', unit:'',     section:'Microscopy', type:'text'}
+];
+
+const STOOL_MICRO_PARAMS = [
+  // Macroscopy
+  {key:'consistency',  name:'Consistency',          unit:'', section:'Macroscopy', type:'select', options:['Formed','Soft','Watery','Loose','Bloody','Mucoid','Fatty']},
+  {key:'colour_stool', name:'Colour',               unit:'', section:'Macroscopy', type:'select', options:['Brown','Yellow','Green','Black (Tarry)','Red (Bloody)','Grey/Clay','Pale/Fatty']},
+  {key:'blood_stool',  name:'Blood (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['Absent','Present']},
+  {key:'mucus_stool',  name:'Mucus (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['Absent','Present']},
+  // Microscopy
+  {key:'wbc_stool',    name:'WBC (Pus Cells)',      unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','>20']},
+  {key:'rbc_stool',    name:'RBC',                  unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','>20']},
+  {key:'fat_globules', name:'Fat Globules',         unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'ova_parasite', name:'Ova / Parasites',      unit:'',     section:'Microscopy', type:'select', options:['None seen','Ascaris lumbricoides ova','Trichuris trichiura ova','Hookworm ova','Strongyloides larvae','Entamoeba histolytica cysts','Entamoeba histolytica trophozoites','Giardia lamblia cysts','Cryptosporidium oocysts','Taenia spp. ova','Enterobius vermicularis ova','Other — see comments']},
+  {key:'yeast_stool',  name:'Yeast Cells',          unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'epithelial_stool',name:'Epithelial Cells',  unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'occult_blood', name:'Occult Blood (Chemical)',unit:'',   section:'Microscopy', type:'select', options:['Negative','Positive']},
+  {key:'micro_comment_stool',name:'Microscopy Comment',unit:'', section:'Microscopy', type:'text'}
+];
+
 function getFlag(val, param) {
   let n = parseFloat(val);
   if (isNaN(n)) return '';
@@ -929,6 +980,106 @@ async function openResultModal(id) {
       });
       formsHtml += `</div><div id="seroInterp_${idx}" class="interp-box interp-normal">—</div>`;
     }
+    else if (testType === 'complex_urine_mcs') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      const sections = ['Physical','Chemical','Microscopy'];
+      sections.forEach(sec => {
+        const secParams = URINE_MICRO_PARAMS.filter(p => p.section === sec);
+        formsHtml += `<div class="mcs-section-label">${sec}</div><div class="param-grid">`;
+        secParams.forEach(p => {
+          let val = data[p.key] !== undefined ? data[p.key] : '';
+          if (p.type === 'select') {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}${p.unit ? ` (${p.unit})` : ''}</label>
+              <select id="umcs_${idx}_${p.key}">
+                ${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+              </select></div>`;
+          } else if (p.type === 'number') {
+            let flagCls = val !== '' && p.low !== undefined ? getFlag(val, p) : '';
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}${p.unit ? ` (${p.unit})` : ''}${p.low !== undefined ? ` Ref: ${p.low}–${p.high}` : ''}</label>
+              <input type="number" step="${p.step||'any'}" id="umcs_${idx}_${p.key}" value="${val}" class="${flagCls}"></div>`;
+          } else {
+            formsHtml += `<div class="param-item param-item-full"><label>${esc(p.name)}</label>
+              <input type="text" id="umcs_${idx}_${p.key}" value="${esc(val)}" placeholder="Any additional microscopy findings…"></div>`;
+          }
+        });
+        formsHtml += `</div>`;
+      });
+      // Culture section
+      let organism = data.organism || '';
+      let sensitivities = data.sensitivities || [];
+      let containerId = `umcs_sens_${idx}`;
+      formsHtml += `
+        <div class="mcs-section-label">Culture &amp; Sensitivity</div>
+        <div class="param-item">
+          <label>Organism Grown</label>
+          <input type="text" id="umcs_${idx}_organism" value="${esc(organism)}" placeholder="e.g. E. coli, Klebsiella pneumoniae, No growth after 48h">
+        </div>
+        <div class="param-item" style="margin-top:8px;">
+          <label>Antibiotic Sensitivities</label>
+          <div id="${containerId}" style="margin-bottom:8px;">
+            ${sensitivities.map((s, si) => `
+              <div data-ab-row style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">
+                <input type="text" placeholder="Antibiotic" value="${esc(s.antibiotic)}" style="flex:2;" id="${containerId}_ab_${si}_name">
+                <select style="flex:1;" id="${containerId}_ab_${si}_result">
+                  <option value="S" ${s.result==='S'?'selected':''}>S (Sensitive)</option>
+                  <option value="I" ${s.result==='I'?'selected':''}>I (Intermediate)</option>
+                  <option value="R" ${s.result==='R'?'selected':''}>R (Resistant)</option>
+                </select>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeSensitivityRow('${containerId}',this)">✖</button>
+              </div>`).join('')}
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addSensitivityRow('${containerId}')">+ Add Antibiotic</button>
+        </div>`;
+    }
+    else if (testType === 'complex_stool_mcs') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      const sections = ['Macroscopy','Microscopy'];
+      sections.forEach(sec => {
+        const secParams = STOOL_MICRO_PARAMS.filter(p => p.section === sec);
+        formsHtml += `<div class="mcs-section-label">${sec}</div><div class="param-grid">`;
+        secParams.forEach(p => {
+          let val = data[p.key] !== undefined ? data[p.key] : '';
+          if (p.type === 'select') {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
+              <select id="smcs_${idx}_${p.key}">
+                ${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+              </select></div>`;
+          } else {
+            formsHtml += `<div class="param-item param-item-full"><label>${esc(p.name)}</label>
+              <input type="text" id="smcs_${idx}_${p.key}" value="${esc(val)}" placeholder="Any additional findings…"></div>`;
+          }
+        });
+        formsHtml += `</div>`;
+      });
+      // Culture section
+      let organism = data.organism || '';
+      let sensitivities = data.sensitivities || [];
+      let containerId = `smcs_sens_${idx}`;
+      formsHtml += `
+        <div class="mcs-section-label">Culture &amp; Sensitivity</div>
+        <div class="param-item">
+          <label>Organism Grown</label>
+          <input type="text" id="smcs_${idx}_organism" value="${esc(organism)}" placeholder="e.g. Salmonella typhi, E. coli, No growth">
+        </div>
+        <div class="param-item" style="margin-top:8px;">
+          <label>Antibiotic Sensitivities</label>
+          <div id="${containerId}" style="margin-bottom:8px;">
+            ${sensitivities.map((s, si) => `
+              <div data-ab-row style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">
+                <input type="text" placeholder="Antibiotic" value="${esc(s.antibiotic)}" style="flex:2;" id="${containerId}_ab_${si}_name">
+                <select style="flex:1;" id="${containerId}_ab_${si}_result">
+                  <option value="S" ${s.result==='S'?'selected':''}>S (Sensitive)</option>
+                  <option value="I" ${s.result==='I'?'selected':''}>I (Intermediate)</option>
+                  <option value="R" ${s.result==='R'?'selected':''}>R (Resistant)</option>
+                </select>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeSensitivityRow('${containerId}',this)">✖</button>
+              </div>`).join('')}
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addSensitivityRow('${containerId}')">+ Add Antibiotic</button>
+        </div>`;
+    }
     else if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
              testType === 'complex_rbs' || testType === 'complex_fbs') {
       let key = testType.split('_')[1];
@@ -1016,6 +1167,46 @@ function collectResultsFromForms() {
         });
       }
       test.result = JSON.stringify({ organism, sensitivities });
+    } else if (testType === 'complex_urine_mcs') {
+      let data = {};
+      URINE_MICRO_PARAMS.forEach(p => {
+        let inp = document.getElementById(`umcs_${idx}_${p.key}`);
+        if (inp) data[p.key] = p.type === 'number' ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      data.organism = document.getElementById(`umcs_${idx}_organism`)?.value || '';
+      let sensitivities = [];
+      let container = document.getElementById(`umcs_sens_${idx}`);
+      if (container) {
+        container.querySelectorAll('div[data-ab-row]').forEach(row => {
+          let nameInput = row.querySelector('input[type="text"]');
+          let select = row.querySelector('select');
+          if (nameInput && select && nameInput.value.trim()) {
+            sensitivities.push({ antibiotic: nameInput.value.trim(), result: select.value });
+          }
+        });
+      }
+      data.sensitivities = sensitivities;
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_stool_mcs') {
+      let data = {};
+      STOOL_MICRO_PARAMS.forEach(p => {
+        let inp = document.getElementById(`smcs_${idx}_${p.key}`);
+        if (inp) data[p.key] = inp.value;
+      });
+      data.organism = document.getElementById(`smcs_${idx}_organism`)?.value || '';
+      let sensitivities = [];
+      let container = document.getElementById(`smcs_sens_${idx}`);
+      if (container) {
+        container.querySelectorAll('div[data-ab-row]').forEach(row => {
+          let nameInput = row.querySelector('input[type="text"]');
+          let select = row.querySelector('select');
+          if (nameInput && select && nameInput.value.trim()) {
+            sensitivities.push({ antibiotic: nameInput.value.trim(), result: select.value });
+          }
+        });
+      }
+      data.sensitivities = sensitivities;
+      test.result = JSON.stringify(data);
     } else if (testType === 'complex_urinalysis') {
       let data = {};
       URINALYSIS_MICRO_PARAMS.forEach(p => { let inp = document.getElementById(`ua_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
@@ -1182,6 +1373,63 @@ function generatePDFRows(testName, data, testType, age, gender) {
     let organism = data.organism || 'Not specified';
     let sensRows = (data.sensitivities || []).map(s => `<tr><td style="padding:5px;">${esc(s.antibiotic)}</td><td class="${s.result === 'R' ? 'flag-high' : s.result === 'S' ? 'flag-low' : ''}">${esc(s.result)}</td><td></td><td></td></tr>`).join('');
     return header + `<tr><td colspan="4"><strong>Organism:</strong> ${esc(organism)}</td></tr>` + (sensRows ? `<tr><th>Antibiotic</th><th>Sensitivity</th><th></th><th></th></tr>${sensRows}` : '');
+  }
+  if (testType === 'complex_urine_mcs') {
+    let rows = `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:bold; padding:6px;">PHYSICAL EXAMINATION</td></tr>`;
+    URINE_MICRO_PARAMS.filter(p => p.section === 'Physical').forEach(p => {
+      let v = data[p.key]; if (v === undefined || v === '') return;
+      rows += `<tr><td style="padding:5px;">${esc(p.name)}</td><td colspan="3">${esc(v)}</td></tr>`;
+    });
+    rows += `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:bold; padding:6px;">CHEMICAL EXAMINATION (DIPSTICK)</td></tr>`;
+    URINE_MICRO_PARAMS.filter(p => p.section === 'Chemical').forEach(p => {
+      let v = data[p.key]; if (v === undefined || v === '') return;
+      let flag = (p.low !== undefined) ? (parseFloat(v) > p.high ? '↑' : parseFloat(v) < p.low ? '↓' : '') : '';
+      let ref = (p.low !== undefined) ? `${p.low}–${p.high}` : '—';
+      rows += `<tr><td style="padding:5px;">${esc(p.name)}</td><td style="padding:5px;${flag?'font-weight:bold;color:#b91c1c;':''}">${esc(v)} ${flag}</td><td>${esc(p.unit||'')}</td><td>${ref}</td></tr>`;
+    });
+    rows += `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:bold; padding:6px;">MICROSCOPY</td></tr>`;
+    URINE_MICRO_PARAMS.filter(p => p.section === 'Microscopy').forEach(p => {
+      let v = data[p.key]; if (v === undefined || v === '' || v === 'None seen') return;
+      rows += `<tr><td style="padding:5px;">${esc(p.name)}</td><td colspan="2" style="padding:5px;">${esc(v)}</td><td style="padding:5px;">${esc(p.unit||'')}</td></tr>`;
+    });
+    rows += `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:bold; padding:6px;">CULTURE &amp; SENSITIVITY</td></tr>`;
+    rows += `<tr><td style="padding:5px;">Organism</td><td colspan="3" style="padding:5px; font-style:italic;">${esc(data.organism || 'No growth / Not specified')}</td></tr>`;
+    if (data.sensitivities && data.sensitivities.length) {
+      rows += `<tr style="background:#f0f0f0;"><th style="padding:5px;">Antibiotic</th><th style="padding:5px;">Result</th><th colspan="2" style="padding:5px;">Interpretation</th></tr>`;
+      data.sensitivities.forEach(s => {
+        const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
+        const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
+        rows += `<tr><td style="padding:5px;">${esc(s.antibiotic)}</td><td style="padding:5px;font-weight:bold;color:${colour};">${esc(s.result)}</td><td colspan="2" style="padding:5px;color:${colour};">${label}</td></tr>`;
+      });
+    } else {
+      rows += `<tr><td colspan="4" style="padding:5px;color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+    }
+    return header + rows;
+  }
+  if (testType === 'complex_stool_mcs') {
+    let rows = `<tr style="background:#fef9c3;"><td colspan="4" style="font-weight:bold; padding:6px;">MACROSCOPY</td></tr>`;
+    STOOL_MICRO_PARAMS.filter(p => p.section === 'Macroscopy').forEach(p => {
+      let v = data[p.key]; if (v === undefined || v === '') return;
+      rows += `<tr><td style="padding:5px;">${esc(p.name)}</td><td colspan="3">${esc(v)}</td></tr>`;
+    });
+    rows += `<tr style="background:#fef9c3;"><td colspan="4" style="font-weight:bold; padding:6px;">MICROSCOPY</td></tr>`;
+    STOOL_MICRO_PARAMS.filter(p => p.section === 'Microscopy').forEach(p => {
+      let v = data[p.key]; if (v === undefined || v === '' || v === 'None seen' || v === 'Absent' || v === 'Negative') return;
+      rows += `<tr><td style="padding:5px;">${esc(p.name)}</td><td colspan="3" style="padding:5px;">${esc(v)}</td></tr>`;
+    });
+    rows += `<tr style="background:#fef9c3;"><td colspan="4" style="font-weight:bold; padding:6px;">CULTURE &amp; SENSITIVITY</td></tr>`;
+    rows += `<tr><td style="padding:5px;">Organism</td><td colspan="3" style="padding:5px; font-style:italic;">${esc(data.organism || 'No growth / Not specified')}</td></tr>`;
+    if (data.sensitivities && data.sensitivities.length) {
+      rows += `<tr style="background:#f0f0f0;"><th style="padding:5px;">Antibiotic</th><th style="padding:5px;">Result</th><th colspan="2" style="padding:5px;">Interpretation</th></tr>`;
+      data.sensitivities.forEach(s => {
+        const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
+        const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
+        rows += `<tr><td style="padding:5px;">${esc(s.antibiotic)}</td><td style="padding:5px;font-weight:bold;color:${colour};">${esc(s.result)}</td><td colspan="2" style="padding:5px;color:${colour};">${label}</td></tr>`;
+      });
+    } else {
+      rows += `<tr><td colspan="4" style="padding:5px;color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+    }
+    return header + rows;
   }
   if (testType === 'complex_malaria') {
     let rows = '';
