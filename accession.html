@@ -56,11 +56,47 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 .pay-paid    { background:#dcfce7; color:#15803d; }
 .pay-partial { background:#fef3c7; color:#92400e; }
 .pay-unpaid  { background:#fee2e2; color:#b91c1c; }
+
+/* ── Payment Lookup Panel ─────────────────────────────────────────── */
+.pay-lookup-card { border: 2px dashed var(--border); background: #fafcff; }
+.pay-lookup-card .card-header { background: linear-gradient(135deg, #f0f7f3, #e8f4ed); color: var(--primary); }
+.lookup-input-row { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
+.lookup-input-row .form-group { flex:1; min-width:160px; }
+.pay-result-box { margin-top:20px; border-radius:20px; overflow:hidden; border:1.5px solid var(--border); display:none; }
+.pay-result-box.visible { display:block; animation:slideDown 0.2s ease; }
+@keyframes slideDown { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+.pay-result-head { background:#f8fafb; padding:14px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.pay-result-patient { font-weight:700; font-size:0.95rem; color:var(--text); }
+.pay-result-id { font-size:0.75rem; color:var(--text2); font-family:var(--mono); }
+.pay-result-body { padding:16px 20px; }
+.pay-test-list { margin-bottom:14px; }
+.pay-test-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border); font-size:0.85rem; }
+.pay-test-row:last-child { border:none; }
+.pay-totals { background:#f0f7f3; border-radius:14px; padding:12px 16px; margin-bottom:14px; }
+.pay-total-line { display:flex; justify-content:space-between; font-size:0.9rem; padding:3px 0; }
+.pay-total-line.grand { font-weight:700; font-size:1rem; padding-top:8px; border-top:1.5px solid #c6e2d4; margin-top:4px; }
+.pay-mode-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+.pay-mode-btn { padding:7px 16px; border-radius:30px; border:1.5px solid var(--border); background:white; cursor:pointer; font-size:0.8rem; font-weight:600; color:var(--text2); transition:0.15s; font-family:'DM Sans',sans-serif; }
+.pay-mode-btn:hover { border-color:var(--primary); color:var(--primary); }
+.pay-mode-btn.active { border-color:var(--primary); background:var(--primary); color:white; }
+.pay-confirm-btn { width:100%; padding:13px; background:var(--primary); color:white; border:none; border-radius:14px; font-size:0.95rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; transition:0.2s; font-family:'DM Sans',sans-serif; }
+.pay-confirm-btn:hover:not(:disabled) { background:var(--primary-dark); }
+.pay-confirm-btn:disabled { opacity:0.6; cursor:not-allowed; }
+.pay-confirm-btn .spinner { width:16px; height:16px; border:2.5px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin 0.65s linear infinite; display:none; }
+.pay-confirm-btn.loading .spinner { display:block; }
+.pay-confirm-btn.loading .btn-label { display:none; }
+.pay-already-paid { background:#dcfce7; border-radius:14px; padding:14px 18px; text-align:center; color:#15803d; font-weight:600; font-size:0.9rem; }
+.pay-amount-note { font-size:0.75rem; color:var(--text2); margin-bottom:10px; }
+.partial-input-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+.partial-input-row input { padding:8px 12px; border-radius:12px; border:1.5px solid var(--border); font-size:0.9rem; width:160px; outline:none; font-family:'DM Sans',sans-serif; }
+.partial-input-row input:focus { border-color:var(--primary); }
+.partial-input-row label { font-size:0.8rem; color:var(--text2); white-space:nowrap; }
 </style>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://js.paystack.co/v1/inline.js"></script>
 </head>
 <body>
 
@@ -226,19 +262,28 @@ body { background:var(--bg); padding:20px; color:var(--text); }
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">Payment Mode</label>
-          <select class="form-select" id="f-paymode">
-            <option>Cash</option><option>Card</option>
-            <option>Mobile Money</option><option>Insurance</option><option>NHIF</option>
+          <select class="form-select" id="f-paymode" onchange="handlePaymodeChange()">
+            <option value="Cash">Cash</option>
+            <option value="POS">POS (Card Terminal)</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Paystack">💳 Paystack (Online)</option>
+            <option value="NHIS">NHIS</option>
+            <option value="Insurance">Insurance / HMO</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Insurance No. (if applicable)</label>
+          <label class="form-label">Insurance / HMO No. (if applicable)</label>
           <input type="text" class="form-input" id="f-insurance">
+        </div>
+        <!-- Patient email shown only when Paystack is selected -->
+        <div class="form-group" id="paystackEmailGroup" style="display:none;">
+          <label class="form-label">Patient Email <span style="color:var(--text3);font-weight:400;">(for Paystack receipt)</span></label>
+          <input type="email" class="form-input" id="f-patient-email" placeholder="patient@example.com or leave blank">
         </div>
       </div>
       <div class="payment-summary">
         <div class="payment-line"><strong>Total Amount:</strong> <span id="totalAmount">0.00</span> NGN</div>
-        <div class="form-group" style="margin:8px 0;">
+        <div class="form-group" id="manualPaidGroup" style="margin:8px 0;">
           <label class="form-label">Amount Paid (NGN)</label>
           <input type="number" step="0.01" min="0" class="form-input" id="amountPaid" value="0">
         </div>
@@ -246,6 +291,11 @@ body { background:var(--bg); padding:20px; color:var(--text); }
         <div class="payment-line" style="margin-top:8px;">
           <strong>Payment Status:</strong>
           <span id="payStatusBadge" class="pay-badge pay-unpaid">Unpaid</span>
+        </div>
+        <!-- Paystack notice -->
+        <div id="paystackNotice" style="display:none; margin-top:12px; padding:10px 14px; background:#fff9ec; border:1px solid #fde68a; border-radius:12px; font-size:0.8rem; color:#92400e;">
+          <i class="fas fa-info-circle"></i>
+          Sample will be saved first, then Paystack checkout will open. Payment status auto-updates on success.
         </div>
         <div class="payment-line" style="font-size:0.75rem; color:var(--text2);">Receipt number generated on registration.</div>
       </div>
@@ -256,8 +306,30 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     <button class="btn btn-secondary" id="clearBtn"><i class="fas fa-times"></i> Clear Form</button>
     <button class="btn btn-primary" id="registerBtn">
       <div class="spinner"></div>
-      <span class="btn-label"><i class="fas fa-syringe"></i> Register &amp; Print Receipt</span>
+      <span class="btn-label" id="registerBtnLabel"><i class="fas fa-syringe"></i> Register &amp; Print Receipt</span>
     </button>
+  </div>
+
+  <!-- ── Balance Settlement Panel ──────────────────────────────────── -->
+  <div class="card" style="border:2px dashed var(--border); background:#fafcff; margin-bottom:24px;">
+    <div class="card-header" style="background:linear-gradient(135deg,#f0f7f3,#e8f4ed); cursor:pointer;" onclick="toggleSettlePanel()">
+      <i class="fas fa-hand-holding-usd" style="color:var(--primary);"></i>
+      <span style="color:var(--primary); font-weight:700;">Settle Outstanding Balance</span>
+      <span style="margin-left:auto; font-size:0.78rem; color:var(--text2);">For patients with existing Unpaid / Partial invoices</span>
+      <i class="fas fa-chevron-down" id="settlePanelChevron" style="margin-left:8px; color:var(--text2); transition:0.2s;"></i>
+    </div>
+    <div class="card-body" id="settlePanelBody" style="display:none;">
+      <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px;">
+        <div class="form-group" style="flex:1; min-width:160px;">
+          <label class="form-label">Sample ID</label>
+          <input type="text" class="form-input" id="settle-sample-id" placeholder="e.g. MU-42 or just 42">
+        </div>
+        <button class="btn btn-secondary" id="settleLookupBtn" onclick="lookupSampleBalance()">
+          <i class="fas fa-search"></i> Look Up
+        </button>
+      </div>
+      <div id="settleResultBox" style="display:none;"></div>
+    </div>
   </div>
 </div>
 
@@ -424,28 +496,50 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     toast(`${test} added`);
   }
 
-  // ── Register sample ───────────────────────────────────────────────
+  // ── Paystack public key — replace with your live key in production ──
+  // Test key format: pk_test_xxxxxxxxxxxxxxxxxxxxxxxx
+  // Live key format: pk_live_xxxxxxxxxxxxxxxxxxxxxxxx
+  const PAYSTACK_PUBLIC_KEY = 'pk_test_8564df5226f404c1952b77183cc611d283be1a0c';
+
+  // ── Show/hide Paystack UI based on payment mode ───────────────────
+  window.handlePaymodeChange = function () {
+    const mode = document.getElementById('f-paymode')?.value;
+    const isPaystack = mode === 'Paystack';
+    document.getElementById('paystackEmailGroup').style.display = isPaystack ? 'block' : 'none';
+    document.getElementById('paystackNotice').style.display     = isPaystack ? 'block' : 'none';
+    document.getElementById('manualPaidGroup').style.display    = isPaystack ? 'none'  : 'block';
+    const lbl = document.getElementById('registerBtnLabel');
+    if (lbl) lbl.innerHTML = isPaystack
+      ? '<i class="fas fa-lock"></i> Register &amp; Pay via Paystack'
+      : '<i class="fas fa-syringe"></i> Register &amp; Print Receipt';
+  };
+
+  // ── Register sample (handles both Cash/manual and Paystack) ───────
   async function registerSample() {
     let name = document.getElementById('f-name')?.value.trim();
     if (document.getElementById('f-name'))
       document.getElementById('f-name').classList.toggle('required-empty', !name);
-    if (!name)         { toast('Patient name is required', 'error'); document.getElementById('f-name')?.focus(); return; }
+    if (!name)             { toast('Patient name is required', 'error'); document.getElementById('f-name')?.focus(); return; }
     if (!tempTests.length) { toast('Add at least one test', 'error'); return; }
 
-    let total     = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
-    let paid      = Math.min(parseFloat(document.getElementById('amountPaid')?.value) || 0, total);
-    let balance   = total - paid;
-    let paystatus = balance <= 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
-    let now       = new Date();
-    let collDate  = document.getElementById('f-collDate')?.value || now.toISOString().slice(0, 10);
-    let collTime  = document.getElementById('f-collTime')?.value || now.toTimeString().slice(0, 5);
+    const paymode = document.getElementById('f-paymode')?.value || 'Cash';
+    const isPaystack = paymode === 'Paystack';
+
+    let total   = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
+    let paid    = isPaystack ? 0 : Math.min(parseFloat(document.getElementById('amountPaid')?.value) || 0, total);
+    let balance = total - paid;
+    let paystatus = isPaystack ? 'Unpaid' : (balance <= 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid');
+
+    let now      = new Date();
+    let collDate = document.getElementById('f-collDate')?.value || now.toISOString().slice(0, 10);
+    let collTime = document.getElementById('f-collTime')?.value || now.toTimeString().slice(0, 5);
     let receiptNo = `RCP-${Date.now()}`;
 
     let btn = document.getElementById('registerBtn');
     if (btn) { btn.classList.add('loading'); btn.disabled = true; }
 
     try {
-      // 1. Insert sample
+      // 1. Insert sample (always saved first — Paystack payment follows)
       const sampleRow = {
         patient:         name,
         age:             parseInt(document.getElementById('f-age')?.value) || null,
@@ -460,7 +554,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
         collection_date: collDate,
         collection_time: collTime,
         due_date:        document.getElementById('f-due')?.value || null,
-        pay_mode:        document.getElementById('f-paymode')?.value || 'Cash',
+        pay_mode:        paymode,
         insurance_no:    document.getElementById('f-insurance')?.value.trim() || null,
         pay_status:      paystatus,
         total_amount:    total,
@@ -504,17 +598,95 @@ body { background:var(--bg); padding:20px; color:var(--text); }
       ]);
 
       await addAudit('Sample Registered', sampleId,
-        `${tempTests.length} test(s) | Total: ${total} NGN | Paid: ${paid} | Balance: ${balance} | Status: ${paystatus}`);
+        `${tempTests.length} test(s) | Total: ${total} NGN | Mode: ${paymode} | Status: ${paystatus}`);
 
       toast(`MU-${sampleId} registered ✓`);
 
-      showReceiptModal({
-        id: sampleId, patient: name, priority: sampleRow.priority, tests: tempTests,
-        totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
-        paymode: sampleRow.pay_mode, receiptNo, paymentDate: now.toISOString()
-      });
+      if (isPaystack && total > 0) {
+        // ── Open Paystack inline popup ─────────────────────────────
+        if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
 
-      clearForm();
+        const patientEmail = document.getElementById('f-patient-email')?.value.trim()
+          || ('patient' + sampleId + '@muujiza-lab.com'); // fallback — Paystack needs a real TLD
+        const patientPhone = document.getElementById('f-phone')?.value.trim() || '';
+        const paystackRef  = `MU-${sampleId}-${Date.now()}`;
+
+        // Store context so callbacks can reference it
+        window._pendingPaystack = {
+          sampleId, receiptNo: paystackRef, patient: name,
+          priority: sampleRow.priority, tests: [...tempTests],
+          totalAmount: total, paymode
+        };
+
+        // Build Paystack config — no spread operators, no async callback
+        // (PaystackPop.setup rejects async functions and unknown keys)
+        const paystackConfig = {
+          key:      PAYSTACK_PUBLIC_KEY,
+          email:    patientEmail,
+          amount:   Math.round(total * 100),
+          currency: 'NGN',
+          ref:      paystackRef,
+          metadata: {
+            custom_fields: [
+              { display_name: 'Sample ID',    variable_name: 'sample_id',     value: 'MU-' + sampleId },
+              { display_name: 'Patient',       variable_name: 'patient_name',  value: name },
+              { display_name: 'Registered By', variable_name: 'registered_by', value: currentSession.name }
+            ]
+          },
+          callback: function (response) {
+            // Paystack requires a plain (non-async) callback — use .then() inside
+            const ctx = window._pendingPaystack;
+            const payNow = new Date().toISOString();
+            db.from('samples').update({
+              pay_status:   'Paid',
+              amount_paid:  ctx.totalAmount,
+              balance_due:  0,
+              receipt_no:   response.reference,
+              payment_date: payNow,
+              pay_mode:     'Paystack'
+            }).eq('id', ctx.sampleId)
+            .then(function () {
+              return addAudit('Payment Confirmed (Paystack)', ctx.sampleId,
+                'Ref: ' + response.reference + ' | Amount: ' + ctx.totalAmount + ' NGN');
+            })
+            .then(function () {
+              toast('Payment confirmed \u2713 Ref: ' + response.reference);
+              showReceiptModal({
+                id: ctx.sampleId, patient: ctx.patient, priority: ctx.priority,
+                tests: ctx.tests, totalAmount: ctx.totalAmount,
+                amountPaid: ctx.totalAmount, balanceDue: 0,
+                paystatus: 'Paid', paymode: 'Paystack',
+                receiptNo: response.reference,
+                paymentDate: payNow,
+                paystackRef: response.reference
+              });
+              clearForm();
+            })
+            .catch(function (err) {
+              toast('Payment captured but DB update failed: ' + err.message + '. Ref: ' + response.reference, 'error');
+            });
+          },
+          onClose: function () {
+            const ctx = window._pendingPaystack;
+            const sid = ctx ? ctx.sampleId : '?';
+            toast('Payment window closed. Sample MU-' + sid + ' saved as Unpaid. Use "Settle Balance" to complete payment later.', 'warn');
+            clearForm();
+          }
+        };
+
+        const handler = PaystackPop.setup(paystackConfig);
+        handler.openIframe();
+        return; // don't clear form yet — clearForm() called from callback
+
+      } else {
+        // ── Cash / POS / NHIS — show receipt immediately ──────────
+        showReceiptModal({
+          id: sampleId, patient: name, priority: sampleRow.priority, tests: tempTests,
+          totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
+          paymode: sampleRow.pay_mode, receiptNo, paymentDate: now.toISOString()
+        });
+        clearForm();
+      }
 
     } catch (err) {
       console.error(err);
@@ -526,7 +698,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 
   // ── Clear form ────────────────────────────────────────────────────
   function clearForm() {
-    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance'].forEach(id => {
+    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance','f-patient-email'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
     });
     if (document.getElementById('f-name'))     document.getElementById('f-name').classList.remove('required-empty');
@@ -536,11 +708,168 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     if (document.getElementById('f-stype'))    document.getElementById('f-stype').value = 'Whole Blood (EDTA)';
     if (document.getElementById('f-tube'))     document.getElementById('f-tube').value = 'Purple top (EDTA)';
     if (document.getElementById('f-paymode'))  document.getElementById('f-paymode').value = 'Cash';
+    handlePaymodeChange();
     setDefaultDates();
     tempTests = [];
     renderCart();
     if (document.getElementById('amountPaid')) document.getElementById('amountPaid').value = '0';
     updateTotal();
+  }
+
+  // ── Balance Settlement Panel ──────────────────────────────────────
+  window.toggleSettlePanel = function () {
+    const body     = document.getElementById('settlePanelBody');
+    const chevron  = document.getElementById('settlePanelChevron');
+    const isHidden = body.style.display === 'none';
+    body.style.display    = isHidden ? 'block' : 'none';
+    chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+  };
+
+  window.lookupSampleBalance = async function () {
+    const raw = document.getElementById('settle-sample-id')?.value.trim();
+    if (!raw) { toast('Enter a Sample ID', 'warn'); return; }
+    // Accept "MU-42", "mu-42", or just "42"
+    const numericId = parseInt(raw.replace(/[^0-9]/g, ''));
+    if (!numericId) { toast('Invalid Sample ID format', 'error'); return; }
+
+    const box = document.getElementById('settleResultBox');
+    box.style.display = 'block';
+    box.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text2);"><i class="fas fa-spinner fa-spin"></i> Looking up MU-${numericId}…</div>`;
+
+    try {
+      const { data, error } = await db.from('samples')
+        .select('id,patient,total_amount,amount_paid,balance_due,pay_status,pay_mode,phone')
+        .eq('id', numericId).single();
+
+      if (error || !data) {
+        box.innerHTML = `<div style="padding:14px;background:#fee2e2;border-radius:14px;color:#b91c1c;font-size:0.85rem;">
+          <i class="fas fa-times-circle"></i> Sample MU-${numericId} not found.</div>`;
+        return;
+      }
+
+      if (data.pay_status === 'Paid') {
+        box.innerHTML = `<div style="padding:14px;background:#dcfce7;border-radius:14px;color:#15803d;font-size:0.9rem;font-weight:600;">
+          <i class="fas fa-check-circle"></i> MU-${numericId} — ${esc(data.patient)} — is already <strong>Fully Paid</strong>. No balance outstanding.</div>`;
+        return;
+      }
+
+      const balance = parseFloat(data.balance_due) || 0;
+      const total   = parseFloat(data.total_amount) || 0;
+      const alreadyPaid = parseFloat(data.amount_paid) || 0;
+
+      box.innerHTML = `
+        <div style="border:1.5px solid var(--border);border-radius:18px;overflow:hidden;">
+          <div style="padding:14px 18px;background:#f8fafb;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-weight:700;font-size:0.95rem;">MU-${numericId} — ${esc(data.patient)}</div>
+              <div style="font-size:0.75rem;color:var(--text2);">Status: <span class="pay-badge ${data.pay_status==='Partial'?'pay-partial':'pay-unpaid'}">${esc(data.pay_status)}</span></div>
+            </div>
+          </div>
+          <div style="padding:16px 18px;">
+            <div style="background:#f0f7f3;border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;padding:2px 0;"><span>Invoice Total</span><strong>${total.toFixed(2)} NGN</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;padding:2px 0;"><span>Already Paid</span><strong>${alreadyPaid.toFixed(2)} NGN</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:1rem;padding:6px 0 0;border-top:1.5px solid #c6e2d4;margin-top:4px;font-weight:700;color:var(--primary);"><span>Balance Due</span><span>${balance.toFixed(2)} NGN</span></div>
+            </div>
+            <div style="font-size:0.8rem;color:var(--text2);margin-bottom:10px;">How would you like to settle this?</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="settleModeRow">
+              <button class="pay-mode-settle-btn active" data-mode="Cash" onclick="setSettleMode(this,'Cash')">💵 Cash</button>
+              <button class="pay-mode-settle-btn" data-mode="POS" onclick="setSettleMode(this,'POS')">🏧 POS</button>
+              <button class="pay-mode-settle-btn" data-mode="Paystack" onclick="setSettleMode(this,'Paystack')">💳 Paystack</button>
+              <button class="pay-mode-settle-btn" data-mode="NHIS" onclick="setSettleMode(this,'NHIS')">🏥 NHIS</button>
+            </div>
+            <button id="settleConfirmBtn"
+              style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:14px;font-size:0.92rem;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;"
+              onclick="confirmSettlement(${numericId},${balance},${total},'${esc(data.patient)}','${esc(data.phone||'')}')">
+              <i class="fas fa-check-circle"></i> Confirm Payment of ${balance.toFixed(2)} NGN
+            </button>
+          </div>
+        </div>`;
+
+      // Inject settle mode button styles once
+      if (!document.getElementById('settleModeStyle')) {
+        const s = document.createElement('style');
+        s.id = 'settleModeStyle';
+        s.textContent = `.pay-mode-settle-btn{padding:7px 14px;border-radius:30px;border:1.5px solid var(--border);background:white;cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--text2);transition:0.15s;font-family:'DM Sans',sans-serif;} .pay-mode-settle-btn:hover{border-color:var(--primary);color:var(--primary);} .pay-mode-settle-btn.active{border-color:var(--primary);background:var(--primary);color:white;}`;
+        document.head.appendChild(s);
+      }
+
+    } catch (err) {
+      box.innerHTML = `<div style="padding:14px;background:#fee2e2;border-radius:14px;color:#b91c1c;font-size:0.85rem;">Error: ${esc(err.message)}</div>`;
+    }
+  };
+
+  // Track chosen settle mode
+  let _settleMode = 'Cash';
+  window.setSettleMode = function (btn, mode) {
+    _settleMode = mode;
+    document.querySelectorAll('.pay-mode-settle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  };
+
+  window.confirmSettlement = async function (sampleId, balance, total, patient, phone) {
+    if (_settleMode === 'Paystack') {
+      // Open Paystack for the balance amount
+      const paystackRef = `MU-${sampleId}-BAL-${Date.now()}`;
+      const email = 'patient' + sampleId + '@muujiza-lab.com';
+
+      window._pendingSettle = { sampleId, balance, total, patient };
+
+      const handler = PaystackPop.setup({
+        key:      PAYSTACK_PUBLIC_KEY,
+        email:    email,
+        amount:   Math.round(balance * 100),
+        currency: 'NGN',
+        ref:      paystackRef,
+        metadata: {
+          custom_fields: [
+            { display_name: 'Sample ID',   variable_name: 'sample_id',   value: 'MU-' + sampleId },
+            { display_name: 'Patient',      variable_name: 'patient_name', value: patient },
+            { display_name: 'Payment Type', variable_name: 'type',         value: 'Balance Settlement' }
+          ]
+        },
+        callback: function (response) {
+          // Plain function — no async; chain with .then()
+          markSettlementPaid(sampleId, balance, total, patient, 'Paystack', response.reference);
+        },
+        onClose: function () {
+          toast('Paystack window closed. Balance still outstanding.', 'warn');
+        }
+      });
+      handler.openIframe();
+      return;
+    }
+
+    // Cash / POS / NHIS — mark paid immediately
+    markSettlementPaid(sampleId, balance, total, patient, _settleMode, 'MANUAL-' + Date.now());
+  };
+
+  function markSettlementPaid(sampleId, balance, total, patient, mode, ref) {
+    const btn = document.getElementById('settleConfirmBtn');
+    if (btn) btn.disabled = true;
+    const now = new Date().toISOString();
+    db.from('samples').update({
+      pay_status:   'Paid',
+      amount_paid:  total,
+      balance_due:  0,
+      pay_mode:     mode,
+      receipt_no:   ref,
+      payment_date: now
+    }).eq('id', sampleId)
+    .then(function () {
+      return addAudit('Balance Settled', sampleId,
+        'Mode: ' + mode + ' | Ref: ' + ref + ' | Balance: ' + balance + ' NGN | Patient: ' + patient);
+    })
+    .then(function () {
+      document.getElementById('settle-sample-id').value = '';
+      document.getElementById('settleResultBox').style.display = 'none';
+      document.getElementById('settleResultBox').innerHTML = '';
+      toast('\u2713 MU-' + sampleId + ' balance settled \u2014 marked as Paid');
+    })
+    .catch(function (err) {
+      toast('Settlement update failed: ' + err.message, 'error');
+      if (btn) btn.disabled = false;
+    });
   }
 
   // ── Receipt modal ─────────────────────────────────────────────────
@@ -560,13 +889,23 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     let payClass = sample.paystatus === 'Paid' ? 'pay-paid'
                  : sample.paystatus === 'Partial' ? 'pay-partial' : 'pay-unpaid';
 
+    const paystackRefLine = sample.paystackRef
+      ? `<p style="margin-bottom:2px;"><strong>Paystack Ref:</strong> <span style="font-family:monospace;font-size:0.8rem;color:#15803d;">${esc(sample.paystackRef)}</span></p>`
+      : '';
+    const paidBanner = sample.paystatus === 'Paid'
+      ? `<div style="background:#dcfce7;border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;color:#15803d;font-weight:700;font-size:0.9rem;">
+           <i class="fas fa-check-circle" style="font-size:1.1rem;"></i> Payment Confirmed
+         </div>` : '';
+
     content.innerHTML = `
       <div style="text-align:left;">
         <canvas id="receiptBarcode" style="display:block;margin:0 auto 12px;"></canvas>
         <h3 style="color:#1F6E43;margin-bottom:4px;">MU'UJIZA DIAGNOSTICS</h3>
         <p style="font-size:0.78rem;color:#5a7e94;margin-bottom:12px;">Laboratory Information System</p>
+        ${paidBanner}
         <p style="margin-bottom:2px;"><strong>Receipt No:</strong> ${esc(sample.receiptNo)}</p>
         <p style="margin-bottom:2px;"><strong>Sample ID:</strong> MU-${sample.id}</p>
+        ${paystackRefLine}
         <p style="margin-bottom:2px;"><strong>Patient:</strong> ${esc(sample.patient)}</p>
         <p style="margin-bottom:12px;"><strong>Priority:</strong> ${esc(sample.priority)}</p>
         <div style="margin-bottom:12px;">${testRows}</div>
@@ -617,6 +956,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     document.getElementById('f-name')?.classList.remove('required-empty'));
   document.getElementById('f-test')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
   document.getElementById('f-unit')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
+  document.getElementById('settle-sample-id')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupSampleBalance(); } });
   document.getElementById('labelModal')?.addEventListener('click', e => {
     if (e.target === document.getElementById('labelModal')) closeLabelModal();
   });
