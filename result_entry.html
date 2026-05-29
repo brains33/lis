@@ -265,6 +265,7 @@ async function loadTestDefinitions() {
       }
     });
     console.log('Test definitions loaded:', testDefinitions.testTypes);
+    console.log('Known test names from DB:', Object.keys(testDefinitions.testTypes));
   } catch (err) {
     console.error(err);
     toast('Failed to load test definitions', 'error');
@@ -327,7 +328,40 @@ async function saveSample(sample) {
 }
 
 function getTestType(testName) {
-  return testDefinitions.testTypes[testName] || 'simple';
+  // 1. Exact match from DB first
+  if (testDefinitions.testTypes[testName]) return testDefinitions.testTypes[testName];
+
+  // 2. Normalise fallback — covers name mismatches between accession & test_definitions
+  const n = testName.toLowerCase().trim();
+  if (/liver\s*function|lft\b/.test(n))                         return 'complex_lft';
+  if (/renal\s*function|kidney\s*function|rft\b/.test(n))       return 'complex_rft';
+  if (/full\s*blood\s*count|complete\s*blood|cbc\b|fbc\b/.test(n)) return 'complex_cbc';
+  if (/thyroid|tsh|thyroid\s*function/.test(n))                 return 'complex_thyroid';
+  if (/lipid\s*profile|cholesterol/.test(n))                    return 'complex_lipid';
+  if (/coagul|prothrombin|clotting\s*profile|pt\/inr|coag\b/.test(n)) return 'complex_coag';
+  if (/widal/.test(n))                                          return 'complex_widal';
+  if (/urine\s*mcs|urine\s*m\/c\/s|urine\s*culture|urinalysis\s*mcs/.test(n)) return 'complex_urine_mcs';
+  if (/stool\s*mcs|stool\s*m\/c\/s|stool\s*culture/.test(n))   return 'complex_stool_mcs';
+  if (/urinalysis|urine\s*r\/e|u\/a\b|routine\s*urine/.test(n)) return 'complex_urinalysis';
+  if (/culture|sensitivity|c\/s\b|cs\b/.test(n) && /stool|faec/.test(n)) return 'complex_stool_cs';
+  if (/culture|sensitivity|c\/s\b|cs\b/.test(n))                return 'complex_culture';
+  if (/malaria|rdt|thick.*film|blood.*film/.test(n))            return 'complex_malaria';
+  if (/genexpert|xpert|tb.*pcr|mtb/.test(n))                   return 'complex_tb_genexpert';
+  if (/serology|hbsag|hepatitis/.test(n))                      return 'complex_serology';
+  if (/iron\s*studies|iron\s*profile|serum\s*iron/.test(n))    return 'complex_iron';
+  if (/bone\s*profile|calcium\s*profile/.test(n))              return 'complex_bone';
+  if (/cardiac|troponin|ckmb/.test(n))                         return 'complex_cardiac';
+  if (/ogtt|glucose\s*tolerance/.test(n))                      return 'complex_ogtt';
+  if (/csf|cerebrospinal/.test(n))                             return 'complex_csf';
+  if (/blood\s*gas|abg\b/.test(n))                             return 'complex_abg';
+  if (/semen\s*analysis|seminal/.test(n))                      return 'complex_semen';
+  if (/packed\s*cell|pcv\b|haematocrit/.test(n))               return 'complex_pcv';
+  if (/haemoglobin|hemoglobin|\bhb\b/.test(n))                 return 'complex_hb';
+  if (/esr\b|sedimentation/.test(n))                           return 'complex_esr';
+  if (/random\s*blood\s*sugar|rbs\b/.test(n))                  return 'complex_rbs';
+  if (/fasting\s*blood\s*sugar|fbs\b/.test(n))                 return 'complex_fbs';
+
+  return 'simple';
 }
 
 // ========== DYNAMIC REFERENCE RANGE ==========
@@ -523,31 +557,42 @@ const SEROLOGY_PARAMS = [
 // Microscopy section is shown FIRST, then organism + C&S below it.
 
 const URINE_MICRO_PARAMS = [
-  // Physical
-  {key:'colour',      name:'Colour',             unit:'', section:'Physical',  type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown','Amber']},
-  {key:'appearance',  name:'Appearance',          unit:'', section:'Physical',  type:'select', options:['Clear','Slightly Turbid','Turbid','Cloudy','Bloody']},
-  {key:'ph',          name:'pH',                  unit:'', section:'Chemical',  type:'number', step:0.5, low:5.0, high:8.0},
-  {key:'sg',          name:'Specific Gravity',    unit:'', section:'Chemical',  type:'number', step:0.001, low:1.005, high:1.030},
-  // Chemical (dipstick)
-  {key:'protein',     name:'Protein',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
-  {key:'glucose',     name:'Glucose',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
-  {key:'ketones',     name:'Ketones',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
-  {key:'blood',       name:'Blood',               unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
-  {key:'bilirubin',   name:'Bilirubin',           unit:'', section:'Chemical',  type:'select', options:['Negative','+','++']},
-  {key:'urobilinogen',name:'Urobilinogen',        unit:'mg/dL', section:'Chemical', type:'number', step:0.1, low:0.1, high:1.0},
-  {key:'nitrite',     name:'Nitrite',             unit:'', section:'Chemical',  type:'select', options:['Negative','Positive']},
-  {key:'leuko',       name:'Leukocyte Esterase',  unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
-  // Microscopy (cells)
-  {key:'wbc_micro',   name:'WBC (Pus Cells)',     unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','21–50','>50','Too numerous to count']},
-  {key:'rbc_micro',   name:'RBC',                 unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–2','3–5','6–10','11–20','>20']},
-  {key:'epithelial',  name:'Epithelial Cells',    unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
-  {key:'casts',       name:'Casts',               unit:'/LPF', section:'Microscopy', type:'select', options:['None seen','Hyaline casts','Granular casts','RBC casts','WBC casts','Waxy casts','Broad casts','Fatty casts']},
-  {key:'crystals',    name:'Crystals',            unit:'',     section:'Microscopy', type:'select', options:['None seen','Uric acid crystals','Calcium oxalate','Triple phosphate','Amorphous phosphates','Amorphous urates','Calcium carbonate','Cystine crystals']},
-  {key:'bacteria',    name:'Bacteria',            unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
-  {key:'yeast',       name:'Yeast Cells',         unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
-  {key:'parasite',    name:'Parasite / Ova',      unit:'',     section:'Microscopy', type:'select', options:['None seen','Trichomonas vaginalis','Schistosoma haematobium ova','Other — see comments']},
-  {key:'mucus',       name:'Mucus Threads',       unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
-  {key:'micro_comment',name:'Microscopy Comment', unit:'',     section:'Microscopy', type:'text'}
+  // ── PHYSICAL ──────────────────────────────────────────────────────────
+  {key:'colour',      name:'Colour',             unit:'', section:'Physical', type:'select',
+   options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown','Amber','Orange']},
+  {key:'appearance',  name:'Appearance',         unit:'', section:'Physical', type:'select',
+   options:['Clear','Slightly Turbid','Turbid','Cloudy','Bloody','Frothy']},
+  {key:'volume',      name:'Volume',             unit:'mL', section:'Physical', type:'number', low:0, high:3000, step:10},
+
+  
+
+  // ── MICROSCOPY ────────────────────────────────────────────────────────
+  {key:'wbc_micro',   name:'WBC (Pus Cells)',   unit:'/HPF', section:'Microscopy', type:'select',
+   options:['None seen','1–5','6–10','11–20','21–50','>50','Too numerous to count (TNTC)']},
+  {key:'rbc_micro',   name:'RBC',               unit:'/HPF', section:'Microscopy', type:'select',
+   options:['None seen','1–2','3–5','6–10','11–20','>20','Too numerous to count (TNTC)']},
+  {key:'epithelial',  name:'Epithelial Cells',  unit:'/HPF', section:'Microscopy', type:'select',
+   options:['None seen','Squamous — Few','Squamous — Moderate','Squamous — Many',
+            'Transitional — Few','Transitional — Moderate','Renal tubular — seen']},
+  {key:'casts',       name:'Casts',             unit:'/LPF', section:'Microscopy', type:'select',
+   options:['None seen','Hyaline casts','Granular casts (coarse)','Granular casts (fine)',
+            'RBC casts','WBC casts','Epithelial cell casts','Waxy casts','Broad casts','Fatty casts','Mixed casts']},
+  {key:'crystals',    name:'Crystals',          unit:'',     section:'Microscopy', type:'select',
+   options:['None seen','Uric acid','Calcium oxalate (monohydrate)','Calcium oxalate (dihydrate)',
+            'Triple phosphate (struvite)','Amorphous phosphates','Amorphous urates',
+            'Calcium carbonate','Calcium phosphate','Cystine','Tyrosine','Leucine']},
+  {key:'bacteria',    name:'Bacteria',          unit:'',     section:'Microscopy', type:'select',
+   options:['None seen','Few','Moderate','Many','Too numerous to count (TNTC)']},
+  {key:'yeast',       name:'Yeast Cells',       unit:'',     section:'Microscopy', type:'select',
+   options:['None seen','Few','Moderate','Many']},
+  {key:'parasite',    name:'Parasite / Ova',    unit:'',     section:'Microscopy', type:'select',
+   options:['None seen','Trichomonas vaginalis',
+            'Schistosoma haematobium ova','Other — see comments']},
+  {key:'mucus',       name:'Mucus Threads',     unit:'',     section:'Microscopy', type:'select',
+   options:['None seen','Few','Moderate','Many']},
+  {key:'sperm',       name:'Spermatozoa',       unit:'',     section:'Microscopy', type:'select',
+   options:['Not seen','Seen (incidental)']},
+  {key:'micro_comment',name:'Microscopy Comment',unit:'',    section:'Microscopy', type:'text'}
 ];
 
 const STOOL_MICRO_PARAMS = [
@@ -986,7 +1031,8 @@ async function openResultModal(id) {
       const sections = ['Physical','Chemical','Microscopy'];
       sections.forEach(sec => {
         const secParams = URINE_MICRO_PARAMS.filter(p => p.section === sec);
-        formsHtml += `<div class="mcs-section-label">${sec}</div><div class="param-grid">`;
+        let secIcon = sec === 'Physical' ? '🧪' : sec === 'Chemical' ? '🔬' : '🦠';
+        formsHtml += `<div class="mcs-section-label">${secIcon} ${sec}${sec==='Chemical'?' (Dipstick)':sec==='Microscopy'?' Examination':''}</div><div class="param-grid">`;
         secParams.forEach(p => {
           let val = data[p.key] !== undefined ? data[p.key] : '';
           if (p.type === 'select') {
