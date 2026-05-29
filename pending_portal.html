@@ -48,6 +48,21 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 .badge-paid      { background:#dcfce7; color:#15803d; }
 .badge-partial   { background:#fef3c7; color:#92400e; }
 .badge-unpaid    { background:#fee2e2; color:#b91c1c; }
+/* Progress tracker styles */
+.progress-tracker { background:#f9fafb; border-radius:16px; padding:12px 16px; margin-bottom:16px; }
+.progress-steps { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.step { flex:1; text-align:center; font-size:0.7rem; color:var(--text2); position:relative; min-width:70px; }
+.step .step-icon { width:28px; height:28px; background:white; border:2px solid var(--border); border-radius:50%; display:inline-flex; align-items:center; justify-content:center; margin-bottom:4px; font-size:0.7rem; color:var(--text2); background:white; transition:all 0.2s; }
+.step.completed .step-icon { background:var(--green-glow); border-color:var(--green-glow); color:white; }
+.step.active .step-icon { border-color:var(--primary); background:var(--primary); color:white; box-shadow:0 0 0 2px rgba(31,110,67,0.2); }
+.step .step-label { font-weight:500; }
+.step.completed .step-label { color:var(--green-glow); }
+.step.active .step-label { color:var(--primary); font-weight:700; }
+.status-badge { display:inline-block; padding:4px 12px; border-radius:40px; font-size:0.75rem; font-weight:700; margin-top:6px; }
+.status-collected { background:#e0f2fe; color:#0c6b8f; }
+.status-processing { background:#fff1df; color:#c47b2e; }
+.status-verifying { background:#fef3c7; color:#92400e; }
+.status-released { background:#dcfce7; color:#15803d; }
 </style>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -274,6 +289,32 @@ function portalClear() {
   document.getElementById('portalResults').innerHTML = '';
 }
 
+// ========== STATUS TRACKING HELPER ==========
+function getStatusInfo(status) {
+  const steps = [
+    { key: 'Registered',    label: 'Registered',   icon: 'fa-clipboard-list' },
+    { key: 'Collected',     label: 'Collected',    icon: 'fa-syringe' },
+    { key: 'Processing',    label: 'Processing',   icon: 'fa-microscope' },
+    { key: 'Verifying',     label: 'Verification', icon: 'fa-check-double' },
+    { key: 'Result Released', label: 'Released',   icon: 'fa-file-pdf' }
+  ];
+  let currentStepIndex = 0;
+  if (status === 'Collected') currentStepIndex = 1;
+  else if (status === 'Processing') currentStepIndex = 2;
+  else if (status === 'Verifying') currentStepIndex = 3;
+  else if (status === 'Result Released') currentStepIndex = 4;
+  let statusText = '';
+  let statusClass = '';
+  switch (status) {
+    case 'Collected': statusText = 'Sample Collected'; statusClass = 'status-collected'; break;
+    case 'Processing': statusText = 'Processing in Lab'; statusClass = 'status-processing'; break;
+    case 'Verifying': statusText = 'Under Verification'; statusClass = 'status-verifying'; break;
+    case 'Result Released': statusText = 'Results Ready'; statusClass = 'status-released'; break;
+    default: statusText = status || 'Registered'; statusClass = 'status-collected';
+  }
+  return { steps, currentStepIndex, statusText, statusClass };
+}
+
 // ========== PARAMETER DEFINITIONS ==========
 const CBC_PARAMS = [
   {key:'wbc',  name:'WBC',         unit:'×10³/µL', low:4.0,   high:11.0},
@@ -436,41 +477,41 @@ const SEROLOGY_PARAMS = [
 ];
 
 const URINE_MICRO_PARAMS = [
-  {key:'colour',      name:'Colour',             unit:'', section:'Physical',  type:'select'},
-  {key:'appearance',  name:'Appearance',          unit:'', section:'Physical',  type:'select'},
+  {key:'colour',      name:'Colour',             unit:'', section:'Physical',  type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown']},
+  {key:'appearance',  name:'Appearance',          unit:'', section:'Physical',  type:'select', options:['Clear','Turbid','Cloudy']},
   {key:'ph',          name:'pH',                  unit:'', section:'Chemical',  type:'number', low:5.0, high:8.0},
   {key:'sg',          name:'Specific Gravity',    unit:'', section:'Chemical',  type:'number', low:1.005, high:1.030},
-  {key:'protein',     name:'Protein',             unit:'', section:'Chemical',  type:'select'},
-  {key:'glucose',     name:'Glucose',             unit:'', section:'Chemical',  type:'select'},
-  {key:'ketones',     name:'Ketones',             unit:'', section:'Chemical',  type:'select'},
-  {key:'blood',       name:'Blood',               unit:'', section:'Chemical',  type:'select'},
-  {key:'bilirubin',   name:'Bilirubin',           unit:'', section:'Chemical',  type:'select'},
+  {key:'protein',     name:'Protein',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'glucose',     name:'Glucose',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'ketones',     name:'Ketones',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'blood',       name:'Blood',               unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'bilirubin',   name:'Bilirubin',           unit:'', section:'Chemical',  type:'select', options:['Negative','+','++']},
   {key:'urobilinogen',name:'Urobilinogen',        unit:'mg/dL', section:'Chemical', type:'number', low:0.1, high:1.0},
-  {key:'nitrite',     name:'Nitrite',             unit:'', section:'Chemical',  type:'select'},
-  {key:'leuko',       name:'Leukocyte Esterase',  unit:'', section:'Chemical',  type:'select'},
-  {key:'wbc_micro',   name:'WBC (Pus Cells)',     unit:'/HPF', section:'Microscopy', type:'select'},
-  {key:'rbc_micro',   name:'RBC',                 unit:'/HPF', section:'Microscopy', type:'select'},
-  {key:'epithelial',  name:'Epithelial Cells',    unit:'/HPF', section:'Microscopy', type:'select'},
-  {key:'casts',       name:'Casts',               unit:'/LPF', section:'Microscopy', type:'select'},
-  {key:'crystals',    name:'Crystals',            unit:'',     section:'Microscopy', type:'select'},
-  {key:'bacteria',    name:'Bacteria',            unit:'',     section:'Microscopy', type:'select'},
-  {key:'yeast',       name:'Yeast Cells',         unit:'',     section:'Microscopy', type:'select'},
-  {key:'parasite',    name:'Parasite / Ova',      unit:'',     section:'Microscopy', type:'select'},
-  {key:'mucus',       name:'Mucus Threads',       unit:'',     section:'Microscopy', type:'select'},
+  {key:'nitrite',     name:'Nitrite',             unit:'', section:'Chemical',  type:'select', options:['Negative','Positive']},
+  {key:'leuko',       name:'Leukocyte Esterase',  unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'wbc_micro',   name:'WBC (Pus Cells)',     unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-5','6-10','11-20','21-50','>50']},
+  {key:'rbc_micro',   name:'RBC',                 unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-2','3-5','6-10','>10']},
+  {key:'epithelial',  name:'Epithelial Cells',    unit:'/HPF', section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'casts',       name:'Casts',               unit:'/LPF', section:'Microscopy', type:'select', options:['None','Hyaline','Granular','Waxy','RBC','WBC']},
+  {key:'crystals',    name:'Crystals',            unit:'',     section:'Microscopy', type:'select', options:['None','Amorphous urates','Amorphous phosphates','Calcium oxalate','Uric acid','Cystine']},
+  {key:'bacteria',    name:'Bacteria',            unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'yeast',       name:'Yeast Cells',         unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'parasite',    name:'Parasite / Ova',      unit:'',     section:'Microscopy', type:'select', options:['None','Trichomonas vaginalis','Schistosoma haematobium','Others']},
+  {key:'mucus',       name:'Mucus Threads',       unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
   {key:'micro_comment',name:'Microscopy Comment', unit:'',     section:'Microscopy', type:'text'}
 ];
 const STOOL_MICRO_PARAMS = [
-  {key:'consistency',  name:'Consistency',          unit:'', section:'Macroscopy', type:'select'},
-  {key:'colour_stool', name:'Colour',               unit:'', section:'Macroscopy', type:'select'},
-  {key:'blood_stool',  name:'Blood (Macroscopic)',  unit:'', section:'Macroscopy', type:'select'},
-  {key:'mucus_stool',  name:'Mucus (Macroscopic)',  unit:'', section:'Macroscopy', type:'select'},
-  {key:'wbc_stool',    name:'WBC (Pus Cells)',      unit:'/HPF', section:'Microscopy', type:'select'},
-  {key:'rbc_stool',    name:'RBC',                  unit:'/HPF', section:'Microscopy', type:'select'},
-  {key:'fat_globules', name:'Fat Globules',         unit:'',     section:'Microscopy', type:'select'},
-  {key:'ova_parasite', name:'Ova / Parasites',      unit:'',     section:'Microscopy', type:'select'},
-  {key:'yeast_stool',  name:'Yeast Cells',          unit:'',     section:'Microscopy', type:'select'},
-  {key:'epithelial_stool',name:'Epithelial Cells',  unit:'',     section:'Microscopy', type:'select'},
-  {key:'occult_blood', name:'Occult Blood (Chemical)',unit:'',   section:'Microscopy', type:'select'},
+  {key:'consistency',  name:'Consistency',          unit:'', section:'Macroscopy', type:'select', options:['Formed','Soft','Loose','Watery','Mucoid','Bloody']},
+  {key:'colour_stool', name:'Colour',               unit:'', section:'Macroscopy', type:'select', options:['Brown','Yellow','Green','Black','Pale','Red']},
+  {key:'blood_stool',  name:'Blood (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['None','Present']},
+  {key:'mucus_stool',  name:'Mucus (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['None','Present']},
+  {key:'wbc_stool',    name:'WBC (Pus Cells)',      unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-5','6-10','11-20','>20']},
+  {key:'rbc_stool',    name:'RBC',                  unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-2','3-5','6-10','>10']},
+  {key:'fat_globules', name:'Fat Globules',         unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'ova_parasite', name:'Ova / Parasites',      unit:'',     section:'Microscopy', type:'select', options:['None','Entamoeba histolytica','Giardia lamblia','Ascaris lumbricoides','Hookworm','Taenia spp.','Schistosoma mansoni','Other']},
+  {key:'yeast_stool',  name:'Yeast Cells',          unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'epithelial_stool',name:'Epithelial Cells',  unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'occult_blood', name:'Occult Blood (Chemical)',unit:'',   section:'Microscopy', type:'select', options:['Negative','Positive']},
   {key:'micro_comment_stool',name:'Microscopy Comment',unit:'', section:'Microscopy', type:'text'}
 ];
 
@@ -493,7 +534,7 @@ function groupTestsByUnit(tests) {
   return groups;
 }
 
-// ========== BUILD RESULT CARD ==========
+// ========== BUILD RESULT CARD (with progress tracker) ==========
 function buildResultCard(s) {
   const groups = groupTestsByUnit(s.tests);
   let testSections = '';
@@ -509,7 +550,7 @@ function buildResultCard(s) {
               <tr><td style="font-weight:500;">${esc(t.test_name)}</td><td>${esc(t.result || '—')}</td><td>—</td><td>—</td>
               </tr>
             </tbody>
-           </table>`;
+          </table>`;
       } else {
         try {
           let data = JSON.parse(t.result);
@@ -521,6 +562,17 @@ function buildResultCard(s) {
     });
     testSections += `</div>`;
   }
+
+  const { steps, currentStepIndex, statusText, statusClass } = getStatusInfo(s.status);
+  const stepsHtml = steps.map((step, idx) => {
+    let stepState = '';
+    if (idx < currentStepIndex) stepState = 'completed';
+    else if (idx === currentStepIndex) stepState = 'active';
+    return `<div class="step ${stepState}">
+      <div class="step-icon"><i class="fas ${step.icon}"></i></div>
+      <div class="step-label">${step.label}</div>
+    </div>`;
+  }).join('');
 
   return `
     <div class="result-block">
@@ -540,6 +592,17 @@ function buildResultCard(s) {
         </div>
       </div>
       <div class="result-block-body">
+        <!-- Progress Tracker -->
+        <div class="progress-tracker">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-weight:600; font-size:0.8rem;">Sample Progress</span>
+            <span class="status-badge ${statusClass}">${statusText}</span>
+          </div>
+          <div class="progress-steps">${stepsHtml}</div>
+          <div style="font-size:0.7rem; color:var(--text2); margin-top:10px; text-align:center;">
+            ${s.status === 'Result Released' ? 'Your results are ready for download.' : 'Your sample is being processed. You will be notified when results are ready.'}
+          </div>
+        </div>
         ${testSections}
         <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="generatePDF(${s.id})">
@@ -550,9 +613,9 @@ function buildResultCard(s) {
     </div>`;
 }
 
-// ========== BUILD PARAM TABLE (handles culture sensitivities) ==========
+// ========== BUILD PARAM TABLE (handles culture sensitivities, urine/stool MCS, etc.) ==========
 function buildParamTable(testName, data, testType, age, gender) {
-  // Dynamic single‑parameter tests (PCV, Hb, ESR, RBS, FBS)
+  // Dynamic single‑parameter tests
   const dynamicTests = ['complex_pcv', 'complex_hb', 'complex_esr', 'complex_rbs', 'complex_fbs'];
   if (dynamicTests.includes(testType)) {
     let key = testType.split('_')[1];
@@ -580,7 +643,7 @@ function buildParamTable(testName, data, testType, age, gender) {
       </table>`;
   }
 
-  // Culture & Sensitivity (also stool C&S)
+  // Culture & Sensitivity (general)
   if (testType === 'complex_culture' || testType === 'complex_stool_cs') {
     let organism = data.organism || 'Not specified';
     let sensRows = (data.sensitivities || []).map(s => {
@@ -602,12 +665,13 @@ function buildParamTable(testName, data, testType, age, gender) {
           <tbody>
             ${sensRows
               ? `<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>${sensRows}`
-              : `<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`}
+              : `<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td>`}
           </tbody>
         </table>
       </div>`;
   }
 
+  // Urine MCS or Stool MCS
   if (testType === 'complex_urine_mcs' || testType === 'complex_stool_mcs') {
     const isMCS = testType === 'complex_urine_mcs';
     const MICRO_PARAMS = isMCS ? URINE_MICRO_PARAMS : STOOL_MICRO_PARAMS;
@@ -616,7 +680,8 @@ function buildParamTable(testName, data, testType, age, gender) {
     sections.forEach(sec => {
       const secParams = MICRO_PARAMS.filter(p => p.section === sec);
       const secRows = secParams.map(p => {
-        let v = data[p.key]; if (v === undefined || v === '' || v === 'None seen' || v === 'Absent' || v === 'Negative') return '';
+        let v = data[p.key];
+        if (v === undefined || v === '' || v === 'None' || v === 'None seen' || v === 'Absent' || v === 'Negative') return '';
         let flag = ''; let cls = '';
         if (p.type === 'number' && p.low !== undefined) {
           let n = parseFloat(v);
@@ -628,7 +693,8 @@ function buildParamTable(testName, data, testType, age, gender) {
       html += `<table class="param-table">
         <thead><tr><th colspan="4" style="background:#dbeafe; text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:1px;">${sec}</th></tr>
         <tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Ref</th></tr></thead>
-        <tbody>${secRows}</tbody></table>`;
+        <tbody>${secRows}</tbody>
+      </table>`;
     });
     // C&S section
     const sensRows = (data.sensitivities || []).map(s => {
@@ -644,74 +710,66 @@ function buildParamTable(testName, data, testType, age, gender) {
         <tr><th>Organism</th><th colspan="3" style="font-style:italic; font-weight:400;">${esc(data.organism || 'No growth / Not specified')}</th></tr>
         ${sensRows ? '<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>' : ''}
       </thead>
-      <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>'}</tbody>
+      <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td>'} </tbody>
     </table>`;
     return html;
   }
 
-if (testType === 'complex_widal') {
-  const rows = [
-    { organism: 'Salmonella Typhi',       o: data.o  ?? '—', h: data.h  ?? '—' },
-    { organism: 'Salmonella Paratyphi A', o: data.ao ?? '—', h: data.ah ?? '—' },
-    { organism: 'Salmonella Paratyphi B', o: data.bo ?? '—', h: data.bh ?? '—' },
-    { organism: 'Salmonella Paratyphi C', o: data.co ?? '—', h: data.ch ?? '—' }
-  ];
-  let tableRows = '';
-  for (let r of rows) {
-    const oFlag    = (parseInt(r.o) >= 160) ? ' ↑' : '';
-    const hFlag    = (parseInt(r.h) >= 160) ? ' ↑' : '';
-    const oDisplay = r.o !== '—' ? `1:${r.o}${oFlag}` : '—';
-    const hDisplay = r.h !== '—' ? `1:${r.h}${hFlag}` : '—';
-    const oColour  = oFlag ? '#b91c1c' : 'inherit';
-    const hColour  = hFlag ? '#b91c1c' : 'inherit';
-    tableRows += `<tr>
-      <td style="font-style:italic; font-weight:500; width:45%;">${r.organism}</td>
-      <td style="text-align:center; width:27.5%; font-weight:${oFlag ? '700' : '400'}; color:${oColour};">${oDisplay}</td>
-      <td style="text-align:center; width:27.5%; font-weight:${hFlag ? '700' : '400'}; color:${hColour};">${hDisplay}</td>
-    </tr>`;
+  // Widal
+  if (testType === 'complex_widal') {
+    const rows = [
+      { organism: 'Salmonella Typhi',       o: data.o  ?? '—', h: data.h  ?? '—' },
+      { organism: 'Salmonella Paratyphi A', o: data.ao ?? '—', h: data.ah ?? '—' },
+      { organism: 'Salmonella Paratyphi B', o: data.bo ?? '—', h: data.bh ?? '—' },
+      { organism: 'Salmonella Paratyphi C', o: data.co ?? '—', h: data.ch ?? '—' }
+    ];
+    let tableRows = '';
+    for (let r of rows) {
+      const oFlag    = (parseInt(r.o) >= 160) ? ' ↑' : '';
+      const hFlag    = (parseInt(r.h) >= 160) ? ' ↑' : '';
+      const oDisplay = r.o !== '—' ? `1:${r.o}${oFlag}` : '—';
+      const hDisplay = r.h !== '—' ? `1:${r.h}${hFlag}` : '—';
+      const oColour  = oFlag ? '#b91c1c' : 'inherit';
+      const hColour  = hFlag ? '#b91c1c' : 'inherit';
+      tableRows += `<tr>
+        <td style="font-style:italic; font-weight:500; width:45%;">${r.organism}</td>
+        <td style="text-align:center; width:27.5%; font-weight:${oFlag ? '700' : '400'}; color:${oColour};">${oDisplay}</td>
+        <td style="text-align:center; width:27.5%; font-weight:${hFlag ? '700' : '400'}; color:${hColour};">${hDisplay}</td>
+      <tr>`;
+    }
+    return `
+      <table class="param-table" style="width:100%; table-layout:fixed; border-collapse:collapse;">
+        <colgroup><col style="width:45%;"><col style="width:27.5%;"><col style="width:27.5%;"></colgroup>
+        <thead><tr><th style="text-align:left; padding:8px 10px;">Organism</th><th style="text-align:center; padding:8px 10px;">O Antigen (TO)</th><th style="text-align:center; padding:8px 10px;">H Antigen (TH)</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>`;
   }
-  return `
-    <table class="param-table" style="width:100%; table-layout:fixed; border-collapse:collapse;">
-      <colgroup>
-        <col style="width:45%;">
-        <col style="width:27.5%;">
-        <col style="width:27.5%;">
-      </colgroup>
-      <thead>
-        <tr>
-          <th style="text-align:left; padding:8px 10px;">Organism</th>
-          <th style="text-align:center; padding:8px 10px;">O Antigen (TO)</th>
-          <th style="text-align:center; padding:8px 10px;">H Antigen (TH)</th>
-        </tr>
-      </thead>
-      <tbody>${tableRows}</tbody>
-    </table>`;
-}
-  // Malaria Microscopy
+
+  // Malaria
   if (testType === 'complex_malaria') {
     let rows = '';
-    if (data.species) rows += `<tr><td>Species</td><td colspan="3">${esc(data.species)}</td></tr>`;
-    if (data.stage) rows += `<tr><td>Stage</td><td colspan="3">${esc(data.stage)}</td></tr>`;
-    if (data.density !== undefined) rows += `<tr><td>Parasite Density</td><td colspan="3">${esc(data.density)} parasites/µL</td></tr>`;
+    if (data.species) rows += `<td>Species</td><td colspan="3">${esc(data.species)}</td><tr>`;
+    if (data.stage) rows += `<td>Stage</td><td colspan="3">${esc(data.stage)}</td></tr>`;
+    if (data.density !== undefined) rows += `<td>Parasite Density</td><td colspan="3">${esc(data.density)} parasites/µL</td></tr>`;
     return `<table class="param-table"><tbody>${rows}</tbody></table>`;
   }
 
   // TB GeneXpert
   if (testType === 'complex_tb_genexpert') {
     let rows = '';
-    if (data.mtb_detected) rows += `<tr><td>MTB Detected</td><td colspan="3">${esc(data.mtb_detected)}</td></tr>`;
-    if (data.rif_resistance) rows += `<tr><td>Rifampicin Resistance</td><td colspan="3">${esc(data.rif_resistance)}</td></tr>`;
+    if (data.mtb_detected) rows += `<td>MTB Detected</td><td colspan="3">${esc(data.mtb_detected)}</td></tr>`;
+    if (data.rif_resistance) rows += `<td>Rifampicin Resistance</td><td colspan="3">${esc(data.rif_resistance)}</td></tr>`;
     for (let probe of ['probeA_ct','probeB_ct','probeC_ct','probeD_ct','probeE_ct']) {
-      if (data[probe] !== undefined) rows += `<tr><td>${probe.replace('_ct',' Probe Ct')}</td><td colspan="3">${esc(data[probe])}</td></tr>`;
+      if (data[probe] !== undefined) rows += `<td>${probe.replace('_ct',' Probe Ct')}</td><td colspan="3">${esc(data[probe])}</td></tr>`;
     }
     return `<table class="param-table"><tbody>${rows}</tbody></table>`;
   }
 
-  // Serology Panel
+  // Serology
   if (testType === 'complex_serology') {
     let rows = '';
     for (let p of SEROLOGY_PARAMS) {
-      if (data[p.key] !== undefined) rows += `<tr><td>${esc(p.name)}</td><td colspan="3">${esc(data[p.key])}</td></tr>`;
+      if (data[p.key] !== undefined) rows += `<td>${esc(p.name)}</td><td colspan="3">${esc(data[p.key])}</td></tr>`;
     }
     return `<table class="param-table"><tbody>${rows}</tbody></table>`;
   }
@@ -734,7 +792,7 @@ if (testType === 'complex_widal') {
   else if (testType === 'complex_semen') params = SEMEN_PARAMS;
 
   if (!params.length) {
-    let rows = Object.entries(data).map(([k, v]) => `<tr><td colspan="2">${esc(k)}: ${esc(String(v))}</td><td colspan="2"></td></tr>`).join('');
+    let rows = Object.entries(data).map(([k, v]) => `<table><td colspan="2">${esc(k)}: ${esc(String(v))}</td><td colspan="2"></td></tr>`).join('');
     return `<table class="param-table"><tbody>${rows}</tbody></table>`;
   }
 
@@ -762,10 +820,10 @@ if (testType === 'complex_widal') {
       <td>${esc(ref)}</td>
     </tr>`;
   }
-  return `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></td>`;
 }
 
-// ========== PDF GENERATION (multi‑page with culture table) ==========
+// ========== PDF GENERATION (multi‑page) ==========
 async function generatePDF(id) {
   let s = samples.find(x => x.id === id);
   if (!s) return;
@@ -850,6 +908,7 @@ function generatePDFRows(testName, data, testType, age, gender) {
     }
     return `<tr><td style="font-weight:bold;">${esc(testName)}</td><td>${val} ${flag}</td><td>${esc(range.unit)}</td><td>${range.low}–${range.high}</td></tr>`;
   }
+
   if (testType === 'complex_widal') {
     const rows = [
       { organism: 'Salmonella Typhi',       o: data.o  ?? '—', h: data.h  ?? '—' },
@@ -872,33 +931,20 @@ function generatePDFRows(testName, data, testType, age, gender) {
       </tr>`;
     }
     return `
-      <tr style="background:#e8f4f0;">
-        <td colspan="4" style="font-weight:bold; padding:8px 10px; font-size:13px;">Widal Test</td>
-      </tr>
-      <tr>
-        <td colspan="4" style="padding:6px 10px;">
-          <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #d1d5db;">
-            <colgroup>
-              <col style="width:44%;">
-              <col style="width:28%;">
-              <col style="width:28%;">
-            </colgroup>
-            <thead>
-              <tr style="background:#f3f4f6;">
-                <th style="padding:7px 10px; text-align:left; border:1px solid #d1d5db; font-size:11px;">Organism</th>
-                <th style="padding:7px 10px; text-align:center; border:1px solid #d1d5db; font-size:11px;">O Antigen (TO)</th>
-                <th style="padding:7px 10px; text-align:center; border:1px solid #d1d5db; font-size:11px;">H Antigen (TH)</th>
-              </tr>
-            </thead>
-            <tbody style="font-size:11px;">${tableRows}</tbody>
-          </table>
-        </td>
-      </tr>`;
+      <tr style="background:#e8f4f0;"><td colspan="4" style="font-weight:bold; padding:8px 10px; font-size:13px;">Widal Test</td></tr>
+      <tr><td colspan="4" style="padding:6px 10px;">
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #d1d5db;">
+          <colgroup><col style="width:44%;"><col style="width:28%;"><col style="width:28%;"></colgroup>
+          <thead><tr style="background:#f3f4f6;"><th style="padding:7px 10px; text-align:left; border:1px solid #d1d5db; font-size:11px;">Organism</th><th style="padding:7px 10px; text-align:center; border:1px solid #d1d5db; font-size:11px;">O Antigen (TO)</th><th style="padding:7px 10px; text-align:center; border:1px solid #d1d5db; font-size:11px;">H Antigen (TH)</th></tr></thead>
+          <tbody style="font-size:11px;">${tableRows}</tbody>
+        </table>
+      </td></tr>`;
   }
+
   if (testType === 'complex_culture' || testType === 'complex_stool_cs') {
     let organism = data.organism || 'Not specified';
-    let html = `<tr style="background:#e8f4f0;"><td colspan="4" style="font-weight:bold; padding:7px;">${esc(testName)}</td></tr>`;
-    html += `<tr><td colspan="4" style="padding:6px;"><strong>Organism:</strong> <em>${esc(organism)}</em></td></tr>`;
+    let html = `<tr style="background:#e8f4f0;"><td colspan="4" style="font-weight:bold; padding:7px;">${esc(testName)}</td></tr>
+                <tr><td colspan="4" style="padding:6px;"><strong>Organism:</strong> <em>${esc(organism)}</em></td></tr>`;
     if (data.sensitivities && data.sensitivities.length) {
       html += `<tr style="background:#f0f0f0;"><th style="padding:6px;">Antibiotic</th><th style="padding:6px;">Result</th><th style="padding:6px;">Interpretation</th><th style="padding:6px;"></th></tr>`;
       data.sensitivities.forEach(s => {
@@ -911,6 +957,7 @@ function generatePDFRows(testName, data, testType, age, gender) {
     }
     return html;
   }
+
   if (testType === 'complex_urine_mcs' || testType === 'complex_stool_mcs') {
     const isMCS = testType === 'complex_urine_mcs';
     const MICRO_PARAMS = isMCS ? URINE_MICRO_PARAMS : STOOL_MICRO_PARAMS;
@@ -919,7 +966,8 @@ function generatePDFRows(testName, data, testType, age, gender) {
     sections.forEach(sec => {
       html += `<tr style="background:#eff6ff;"><td colspan="4" style="font-weight:700; padding:5px 8px; font-size:0.72rem; text-transform:uppercase; letter-spacing:1px;">${sec}</td></tr>`;
       MICRO_PARAMS.filter(p => p.section === sec).forEach(p => {
-        let v = data[p.key]; if (v === undefined || v === '' || v === 'None seen' || v === 'Absent' || v === 'Negative') return;
+        let v = data[p.key];
+        if (v === undefined || v === '' || v === 'None' || v === 'None seen' || v === 'Absent' || v === 'Negative') return;
         let flag = '';
         if (p.low !== undefined) { let n = parseFloat(v); if (!isNaN(n)) { if (n > p.high) flag = '↑'; else if (n < p.low) flag = '↓'; } }
         html += `<tr><td style="padding:4px 8px;">${esc(p.name)}</td><td style="padding:4px 8px;${flag?'font-weight:bold;color:#b91c1c;':''}">${esc(v)} ${flag}</td><td style="padding:4px 8px;">${esc(p.unit||'')}</td><td>—</td></tr>`;
@@ -939,6 +987,7 @@ function generatePDFRows(testName, data, testType, age, gender) {
     }
     return html;
   }
+
   if (testType === 'complex_malaria') {
     let rows = '';
     if (data.species) rows += `<tr><td>Species</td><td colspan="3">${esc(data.species)}</td></tr>`;
@@ -946,6 +995,7 @@ function generatePDFRows(testName, data, testType, age, gender) {
     if (data.density !== undefined) rows += `<tr><td>Parasite Density</td><td colspan="3">${esc(data.density)} parasites/µL</td></tr>`;
     return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
   }
+
   if (testType === 'complex_tb_genexpert') {
     let rows = '';
     if (data.mtb_detected) rows += `<tr><td>MTB Detected</td><td colspan="3">${esc(data.mtb_detected)}</td></tr>`;
@@ -955,6 +1005,7 @@ function generatePDFRows(testName, data, testType, age, gender) {
     }
     return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
   }
+
   if (testType === 'complex_serology') {
     let rows = '';
     for (let p of SEROLOGY_PARAMS) {

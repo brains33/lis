@@ -9,17 +9,16 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  /* Your existing styles – unchanged (kept as in your file) */
   :root {
     --green: #1F6E43; --green-d: #155a38; --green-l: #e8f4ed;
     --slate: #1e2a35; --muted: #5a7e94; --border: #dce8f0;
     --bg: #f0f4f8; --white: #fff; --red: #dc2626; --red-l: #fef2f2;
     --amber: #b45309; --amber-l: #fff7ed;
+    --primary: #1F6E43;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Sora',sans-serif; background:var(--bg); min-height:100vh; }
 
-  /* (keep all your existing CSS – it's fine) */
   .topbar { background:var(--white); border-bottom:1px solid var(--border); padding:0 32px; height:60px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,.04); }
   .topbar-left { display:flex; align-items:center; gap:12px; }
   .topbar-logo { font-size:1.4rem; }
@@ -31,7 +30,7 @@
   .user-chip .name { font-size:.82rem; font-weight:600; color:var(--slate); }
   .logout-btn { background:none; border:1.5px solid var(--border); padding:6px 14px; border-radius:20px; font-family:'Sora',sans-serif; font-size:.78rem; font-weight:600; color:var(--muted); cursor:pointer; transition:.2s; }
   .logout-btn:hover { border-color:var(--red); color:var(--red); }
-  .container { max-width:960px; margin:0 auto; padding:32px 24px; }
+  .container { max-width:1280px; margin:0 auto; padding:32px 24px; }
   .page-header { margin-bottom:28px; }
   .page-header h2 { font-size:1.4rem; font-weight:700; color:var(--slate); margin-bottom:4px; }
   .page-header p { font-size:.82rem; color:var(--muted); }
@@ -47,8 +46,8 @@
   .filter-select { padding:10px 14px; border:1.5px solid var(--border); border-radius:10px; font-family:'Sora',sans-serif; font-size:.82rem; color:var(--slate); background:var(--white); outline:none; cursor:pointer; }
   .add-btn { background:var(--green); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-family:'Sora',sans-serif; font-size:.85rem; font-weight:700; cursor:pointer; transition:.2s; white-space:nowrap; }
   .add-btn:hover { background:var(--green-d); }
-  .table-wrap { background:var(--white); border-radius:16px; border:1px solid var(--border); overflow:hidden; }
-  table { width:100%; border-collapse:collapse; }
+  .table-wrap { background:var(--white); border-radius:16px; border:1px solid var(--border); overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; min-width:600px; }
   thead tr { background:var(--bg); }
   th { padding:12px 18px; text-align:left; font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); border-bottom:1px solid var(--border); }
   td { padding:14px 18px; border-bottom:1px solid var(--border); font-size:.85rem; color:var(--slate); }
@@ -131,15 +130,35 @@
   .audit-refresh-btn { background:var(--green); color:#fff; border:none; padding:9px 18px; border-radius:10px; font-family:'Sora',sans-serif; font-size:.8rem; font-weight:700; cursor:pointer; transition:.2s; white-space:nowrap; }
   .audit-refresh-btn:hover { background:var(--green-d); }
   .audit-count { font-size:.75rem; color:var(--muted); white-space:nowrap; align-self:center; }
+
+  /* Tracking tab styles */
+  .progress-steps-mini { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+  .step-mini { display:flex; align-items:center; gap:4px; font-size:0.7rem; }
+  .step-mini .step-dot { width:12px; height:12px; border-radius:50%; background:#e5e7eb; border:1px solid #d1d5db; }
+  .step-mini.completed .step-dot { background:var(--green); border-color:var(--green); }
+  .step-mini.active .step-dot { background:var(--primary); border-color:var(--primary); box-shadow:0 0 0 2px rgba(31,110,67,0.2); }
+  .step-mini .step-label { color:var(--muted); }
+  .step-mini.completed .step-label { color:var(--green); font-weight:500; }
+  .step-mini.active .step-label { color:var(--primary); font-weight:600; }
+  .step-arrow { color:#cbd5e1; font-size:0.7rem; margin:0 2px; }
+  .status-badge-sm { display:inline-block; padding:2px 8px; border-radius:20px; font-size:0.65rem; font-weight:600; }
+  .status-collected { background:#e0f2fe; color:#0c6b8f; }
+  .status-processing { background:#fff1df; color:#c47b2e; }
+  .status-verifying { background:#fef3c7; color:#92400e; }
+  .status-released { background:#dcfce7; color:#15803d; }
+  .status-registered { background:#e0e7ff; color:#3730a3; }
+  .badge-stat { background:#fee2e2; color:#b91c1c; }
+  .badge-urgent { background:#fff1df; color:#c47b2e; }
+  .badge-routine { background:#e0f2fe; color:#0c6b8f; }
 </style>
 </head>
 <body>
 
 <!-- Auth guard -->
 <script>
-  const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   function checkAuth(allowedRoles) {
     try {
@@ -163,31 +182,17 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 </script>
 
 <div class="topbar">
-  <div class="topbar-left">
-    <div class="topbar-logo">🧬</div>
-    <div>
-      <div class="topbar-title">MU'UJIZA LIS</div>
-      <div class="topbar-sub">User Management</div>
-    </div>
-  </div>
-  <div class="topbar-right">
-    <div class="user-chip">
-      <span class="role-tag" id="sessionRole">—</span>
-      <span class="name" id="sessionName">—</span>
-    </div>
-    <button class="logout-btn" onclick="logoutUser()">Sign Out</button>
-  </div>
+  <div class="topbar-left"><div class="topbar-logo">🧬</div><div><div class="topbar-title">MU'UJIZA LIS</div><div class="topbar-sub">Management Hub</div></div></div>
+  <div class="topbar-right"><div class="user-chip"><span class="role-tag" id="sessionRole">—</span><span class="name" id="sessionName">—</span></div><button class="logout-btn" onclick="logoutUser()">Sign Out</button></div>
 </div>
 
 <div class="container">
-  <div class="page-header">
-    <h2>MU'UJIZA Admin</h2>
-    <p>Manage staff accounts and review the full system audit trail.</p>
-  </div>
+  <div class="page-header"><h2>MU'UJIZA Admin</h2><p>Manage staff accounts, track sample progress, review audit trail.</p></div>
 
   <div class="page-tabs">
     <button class="page-tab active" data-tab="users">👥 System Users</button>
-    <button class="page-tab" data-tab="audit">📋 Audit Trail</button>
+    <button class="page-tab" data-tab="tracking">📊 Sample Tracking</button>
+    <button class="page-tab" data-tab="audit">📜 Audit Trail</button>
   </div>
 
   <!-- Users Tab -->
@@ -198,108 +203,60 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       <div class="stat-card"><div class="val" id="statAdmins">—</div><div class="lbl">Admins</div></div>
       <div class="stat-card"><div class="val" id="statPatients">—</div><div class="lbl">Patients</div></div>
     </div>
-
     <div class="toolbar">
-      <div class="search-wrap">
-        <input type="text" id="searchInput" placeholder="Search by name or username…">
-      </div>
-      <select class="filter-select" id="roleFilter">
-        <option value="">All Roles</option>
-        <option value="reception">Reception</option>
-        <option value="technologist">Technologist</option>
-        <option value="supervisor">Supervisor</option>
-        <option value="admin">Admin</option>
-        <option value="patient">Patient</option>
-      </select>
+      <div class="search-wrap"><input type="text" id="searchInput" placeholder="Search by name or username…"></div>
+      <select class="filter-select" id="roleFilter"><option value="">All Roles</option><option value="reception">Reception</option><option value="technologist">Technologist</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option><option value="patient">Patient</option></select>
       <button class="add-btn" id="addUserBtn">+ Add User</button>
     </div>
+    <div class="table-wrap"><table><thead><tr><th>User</th><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="userTableBody"><tr class="loading-row"><td colspan="6"><span class="spinner-inline"></span>Loading users…</td></tr></tbody></table></div>
+  </div>
 
+  <!-- Sample Tracking Tab -->
+  <div class="tab-panel" id="tab-tracking">
+    <div class="stats">
+      <div class="stat-card"><div class="val" id="trackTotal">0</div><div class="lbl">Total Samples</div></div>
+      <div class="stat-card"><div class="val" id="trackRegistered">0</div><div class="lbl">Registered</div></div>
+      <div class="stat-card"><div class="val" id="trackCollected">0</div><div class="lbl">Collected</div></div>
+      <div class="stat-card"><div class="val" id="trackProcessing">0</div><div class="lbl">Processing</div></div>
+      <div class="stat-card"><div class="val" id="trackVerifying">0</div><div class="lbl">Verifying</div></div>
+      <div class="stat-card"><div class="val" id="trackReleased">0</div><div class="lbl">Released</div></div>
+    </div>
+    <div class="toolbar">
+      <div class="search-wrap"><input type="text" id="trackSearch" placeholder="Search by ID or patient…"></div>
+      <select class="filter-select" id="trackStatusFilter"><option value="all">All statuses</option><option value="Registered">Registered</option><option value="Collected">Collected</option><option value="Processing">Processing</option><option value="Verifying">Verifying</option><option value="Result Released">Released</option></select>
+      <button class="add-btn" id="trackRefreshBtn" style="background:#4b5563;">⟳ Refresh</button>
+    </div>
     <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>User</th><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr>
-        </thead>
-        <tbody id="userTableBody">
-          <tr class="loading-row"><td colspan="6"><span class="spinner-inline"></span>Loading users…</td></tr>
-        </tbody>
+      <table style="min-width:700px;">
+        <thead><tr><th>Sample ID</th><th>Patient</th><th>Priority</th><th>Current Status</th><th>Progress</th><th>Released At</th></tr></thead>
+        <tbody id="trackTableBody"><tr class="loading-row"><td colspan="6"><span class="spinner-inline"></span>Loading samples…</td></tr></tbody>
       </table>
     </div>
+    <div style="margin-top:12px; padding:10px; background:#f0fdf4; border-radius:12px; font-size:0.7rem; color:#166534;"><i class="fas fa-info-circle"></i> Progress: <span class="step-mini completed"><span class="step-dot"></span><span class="step-label">Completed</span></span> → <span class="step-mini active"><span class="step-dot"></span><span class="step-label">Current</span></span> → <span class="step-mini"><span class="step-dot"></span><span class="step-label">Pending</span></span></div>
   </div>
 
   <!-- Audit Tab -->
   <div class="tab-panel" id="tab-audit">
     <div class="audit-toolbar">
-      <div class="audit-search-wrap">
-        <input type="text" id="auditSearch" placeholder="Search user, action, sample or details…">
-      </div>
-      <select class="audit-filter-sel" id="auditActionFilter">
-        <option value="">All actions</option>
-        <option value="login">Login</option>
-        <option value="Released">Released</option>
-        <option value="Returned to Tech">Returned to Tech</option>
-        <option value="Payment toggled">Payment toggled</option>
-        <option value="PDF Generated">PDF Generated</option>
-        <option value="QC Run">QC Run</option>
-        <option value="Deleted">Deleted</option>
-      </select>
-      <select class="audit-filter-sel" id="auditRoleFilter">
-        <option value="">All roles</option>
-        <option value="admin">Admin</option>
-        <option value="supervisor">Supervisor</option>
-        <option value="technologist">Technologist</option>
-        <option value="reception">Reception</option>
-        <option value="patient">Patient</option>
-      </select>
+      <div class="audit-search-wrap"><input type="text" id="auditSearch" placeholder="Search user, action, sample…"></div>
+      <select class="audit-filter-sel" id="auditActionFilter"><option value="">All actions</option><option value="login">Login</option><option value="Released">Released</option><option value="Returned to Tech">Returned to Tech</option><option value="Payment toggled">Payment toggled</option><option value="PDF Generated">PDF Generated</option><option value="QC Run">QC Run</option><option value="Deleted">Deleted</option></select>
+      <select class="audit-filter-sel" id="auditRoleFilter"><option value="">All roles</option><option value="admin">Admin</option><option value="supervisor">Supervisor</option><option value="technologist">Technologist</option><option value="reception">Reception</option><option value="patient">Patient</option></select>
       <button class="audit-refresh-btn" id="auditRefreshBtn">↻ Refresh</button>
       <span class="audit-count" id="auditCount"></span>
     </div>
-    <div class="audit-wrap">
-      <table>
-        <thead>
-          <tr><th>Timestamp</th><th>User (Role)</th><th>Action</th><th>Sample</th><th>Details</th></tr>
-        </thead>
-        <tbody id="auditTableBody">
-          <tr><td colspan="5" style="text-align:center;padding:32px;"><span class="spinner-inline"></span>Loading audit log…</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <div class="audit-wrap"><table><thead><tr><th>Timestamp</th><th>User (Role)</th><th>Action</th><th>Sample</th><th>Details</th></tr></thead><tbody id="auditTableBody"><tr><td colspan="5" style="text-align:center;padding:32px;"><span class="spinner-inline"></span>Loading audit log…</td></tr></tbody></table></div>
   </div>
 </div>
 
-<!-- Add / Edit User Modal -->
+<!-- Add/Edit User Modal -->
 <div class="modal-bg" id="userModal">
   <div class="modal">
     <h3 id="modalTitle">Add New User</h3>
     <div class="modal-error" id="modalError"></div>
-
-    <div class="mfield">
-      <label>Username <span style="color:var(--muted);font-size:.65rem;font-weight:400">(unique, no spaces)</span></label>
-      <input type="text" id="mUsername" placeholder="e.g. amara.okonkwo" autocomplete="off">
-    </div>
-    <div class="mfield">
-      <label>Role</label>
-      <select id="mRole">
-        <option value="">Select role…</option>
-        <option value="reception">Reception</option>
-        <option value="technologist">Technologist</option>
-        <option value="supervisor">Supervisor</option>
-        <option value="admin">Admin</option>
-        <option value="patient">Patient Portal</option>
-      </select>
-    </div>
-    <div class="mfield" id="pwField">
-      <label id="pwLabel">Password</label>
-      <input type="password" id="mPassword" placeholder="Min. 8 characters" autocomplete="new-password">
-      <div class="pw-strength" id="pwStrength">
-        <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
-      </div>
-      <div class="pw-hint">Min. 8 chars, include uppercase, number & symbol.</div>
-    </div>
-
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" id="saveUserBtn">Create User</button>
-    </div>
+    <div class="mfield"><label>Username <span style="color:var(--muted);font-size:.65rem;font-weight:400">(unique, no spaces)</span></label><input type="text" id="mUsername" placeholder="e.g. amara.okonkwo" autocomplete="off"></div>
+    <div class="mfield"><label>Role</label><select id="mRole"><option value="">Select role…</option><option value="reception">Reception</option><option value="technologist">Technologist</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option><option value="patient">Patient Portal</option></select></div>
+    <div class="mfield" id="pwField"><label id="pwLabel">Password</label><input type="password" id="mPassword" placeholder="Min. 8 characters" autocomplete="new-password"><div class="pw-strength" id="pwStrength"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div><div class="pw-hint">Min. 8 chars, include uppercase, number & symbol.</div></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" id="saveUserBtn">Create User</button></div>
   </div>
 </div>
 
@@ -307,11 +264,6 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 <script>
 (async function () {
-  // Use service‑role client (bypass RLS) but we will use password_hash with crypt()
-  const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
   // Show current session info
   document.getElementById('sessionRole').textContent = currentSession.role.toUpperCase();
   document.getElementById('sessionName').textContent = currentSession.name;
@@ -342,10 +294,7 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
   async function loadUsers() {
     const tbody = document.getElementById('userTableBody');
     tbody.innerHTML = `<tr class="loading-row"><td colspan="6"><span class="spinner-inline"></span>Loading users…</td></tr>`;
-    const { data, error } = await db
-      .from('admins')
-      .select('id, username, role, is_active, created_at')
-      .order('created_at', { ascending: false });
+    const { data, error } = await db.from('admins').select('id, username, role, is_active, created_at').order('created_at', { ascending: false });
     if (error) {
       showToast('Failed to load users: ' + error.message, 'error');
       tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">⚠️</div>${escHtml(error.message)}</div></td></tr>`;
@@ -357,9 +306,9 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
   }
 
   function updateStats(users) {
-    document.getElementById('statTotal').textContent    = users.length;
-    document.getElementById('statActive').textContent   = users.filter(u => u.is_active !== false).length;
-    document.getElementById('statAdmins').textContent   = users.filter(u => u.role === 'admin').length;
+    document.getElementById('statTotal').textContent = users.length;
+    document.getElementById('statActive').textContent = users.filter(u => u.is_active !== false).length;
+    document.getElementById('statAdmins').textContent = users.filter(u => u.role === 'admin').length;
     document.getElementById('statPatients').textContent = users.filter(u => u.role === 'patient').length;
   }
 
@@ -374,38 +323,19 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
       const created = u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—';
       const rolePill = `<span class="role-pill role-${escHtml(u.role)}">${escHtml(u.role)}</span>`;
       const statusDot = `<span class="status-dot status-${active ? 'active' : 'inactive'}"></span>${active ? 'Active' : 'Inactive'}`;
-      return `
-        <tr>
-          <td><strong>${escHtml(u.username)}</strong></td>
-          <td><span class="mono">${escHtml(u.username)}</span></td>
-          <td>${rolePill}</td>
-          <td style="font-size:.8rem">${statusDot}</td>
-          <td style="font-size:.78rem;color:var(--muted)">${created}</td>
-          <td>
-            <div class="action-btns">
-              <button class="icon-btn" title="Edit" onclick="openEditModal('${u.id}')">✏️</button>
-              <button class="icon-btn" title="Toggle active" onclick="toggleActive('${u.id}', ${active})">${active ? '🔒' : '🔓'}</button>
-              <button class="icon-btn danger" title="Delete" onclick="deleteUser('${u.id}', '${escHtml(u.username)}')">🗑️</button>
-            </div>
-          </td>
-        </tr>`;
+      return `<tr><td><strong>${escHtml(u.username)}</strong></td><td><span class="mono">${escHtml(u.username)}</span></td><td>${rolePill}</td><td style="font-size:.8rem">${statusDot}</td><td style="font-size:.78rem;color:var(--muted)">${created}</td><td><div class="action-btns"><button class="icon-btn" title="Edit" onclick="openEditModal('${u.id}')">✏️</button><button class="icon-btn" title="Toggle active" onclick="toggleActive('${u.id}', ${active})">${active ? '🔒' : '🔓'}</button><button class="icon-btn danger" title="Delete" onclick="deleteUser('${u.id}', '${escHtml(u.username)}')">🗑️</button></div></td></tr>`;
     }).join('');
   }
 
   function getFiltered() {
     const q = document.getElementById('searchInput').value.trim().toLowerCase();
     const role = document.getElementById('roleFilter').value;
-    return allUsers.filter(u => {
-      const matchQ = !q || u.username?.toLowerCase().includes(q);
-      const matchR = !role || u.role === role;
-      return matchQ && matchR;
-    });
+    return allUsers.filter(u => (!q || u.username?.toLowerCase().includes(q)) && (!role || u.role === role));
   }
 
   document.getElementById('searchInput').addEventListener('input', () => renderTable(getFiltered()));
   document.getElementById('roleFilter').addEventListener('change', () => renderTable(getFiltered()));
 
-  // Password strength
   function getPasswordStrength(pw) {
     if (!pw || pw.length < 6) return 'weak';
     let score = 0;
@@ -421,7 +351,6 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
     if (this.value) wrap.classList.add('strength-' + getPasswordStrength(this.value));
   });
 
-  // Modal open/close
   window.openAddModal = function () {
     editingUserId = null;
     document.getElementById('modalTitle').textContent = 'Add New User';
@@ -462,16 +391,13 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
     if (e.target === document.getElementById('userModal')) closeModal();
   });
 
-  // ── Save user (with password hashing) ─────────────────────────
   document.getElementById('saveUserBtn').addEventListener('click', saveUser);
 
   async function saveUser() {
     const username = document.getElementById('mUsername').value.trim().toLowerCase();
-    const role     = document.getElementById('mRole').value;
+    const role = document.getElementById('mRole').value;
     const password = document.getElementById('mPassword').value;
-
     if (!role) return showModalError('Please select a role.');
-
     if (!editingUserId) {
       if (!username) return showModalError('Username is required.');
       if (!/^[a-z0-9._-]+$/.test(username)) return showModalError('Username may only contain letters, numbers, . _ -');
@@ -479,47 +405,25 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
       if (password.length < 8) return showModalError('Password must be at least 8 characters.');
       if (getPasswordStrength(password) === 'weak') return showModalError('Password is too weak. Add uppercase, numbers, or symbols.');
     }
-
     const btn = document.getElementById('saveUserBtn');
     btn.disabled = true;
     btn.textContent = 'Saving…';
     hideModalError();
-
     try {
       if (editingUserId) {
-        // Update role and optionally password (hashed)
         const updates = { role };
         if (password) {
           if (password.length < 8) throw new Error('Password must be at least 8 characters.');
-          // Hash password using pgcrypto (we must call an RPC function)
-          const { error: hashError } = await db.rpc('hash_password', { plain_password: password });
-          if (hashError) {
-            // Fallback: we can update directly with a crypt expression using raw SQL?
-            // Instead we'll use a separate RPC `update_user_password` (create if not exists)
-            const { error: updateError } = await db.rpc('update_user_password', { user_id: editingUserId, new_password: password });
-            if (updateError) throw new Error('Password update failed: ' + updateError.message);
-          } else {
-            // If hash_password succeeded, we still need to update the admins table with the new hash.
-            // Actually hash_password only returns the hash, we need to update the row.
-            // Let's use a single RPC that does both: update_user_password.
-            const { error: updateError } = await db.rpc('update_user_password', { user_id: editingUserId, new_password: password });
-            if (updateError) throw updateError;
-          }
+          const { error: updateError } = await db.rpc('update_user_password', { user_id: editingUserId, new_password: password });
+          if (updateError) throw new Error('Password update failed: ' + updateError.message);
         }
         const { error: updateRoleError } = await db.from('admins').update(updates).eq('id', editingUserId);
         if (updateRoleError) throw new Error('Role update failed: ' + updateRoleError.message);
         showToast('User updated successfully.', 'success');
       } else {
-        // Check duplicate username
         const { data: existing } = await db.from('admins').select('id').eq('username', username).maybeSingle();
         if (existing) throw new Error('Username already taken. Choose a different one.');
-        // Insert new user with hashed password using RPC
-        const { error: createError } = await db.rpc('create_user', {
-          p_username: username,
-          p_password: password,
-          p_role: role,
-          p_is_active: true
-        });
+        const { error: createError } = await db.rpc('create_user', { p_username: username, p_password: password, p_role: role, p_is_active: true });
         if (createError) throw new Error('Create failed: ' + createError.message);
         showToast(`User "${username}" created successfully.`, 'success');
       }
@@ -533,7 +437,6 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
     }
   }
 
-  // ── Toggle active / delete ───────────────────────────────────
   window.toggleActive = async function (userId, currentlyActive) {
     const newState = !currentlyActive;
     const { error } = await db.from('admins').update({ is_active: newState }).eq('id', userId);
@@ -552,29 +455,134 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
 
   document.getElementById('addUserBtn').addEventListener('click', () => window.openAddModal());
 
-  // Audit Trail functions (unchanged from your file)
+  // ========== SAMPLE TRACKING ==========
+  let allSamples = [];
+
+  async function loadSamplesForTracking() {
+    try {
+      const { data, error } = await db.from('samples').select('id, patient, age, gender, priority, status, released_at, collection_date').order('id', { ascending: false });
+      if (error) throw error;
+      allSamples = data || [];
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to load samples', 'error');
+      allSamples = [];
+    }
+  }
+
+  function getStatusBadgeClass(status) {
+    switch(status) {
+      case 'Collected': return 'status-collected';
+      case 'Processing': return 'status-processing';
+      case 'Verifying': return 'status-verifying';
+      case 'Result Released': return 'status-released';
+      default: return 'status-registered';
+    }
+  }
+
+  function getStatusDisplay(status) {
+    return status === 'Result Released' ? 'Released' : status;
+  }
+
+  function renderProgressSteps(sample) {
+    const steps = ['Registered', 'Collected', 'Processing', 'Verification', 'Released'];
+    let currentStepIndex = 0;
+    const status = sample.status;
+    if (status === 'Collected') currentStepIndex = 1;
+    else if (status === 'Processing') currentStepIndex = 2;
+    else if (status === 'Verifying') currentStepIndex = 3;
+    else if (status === 'Result Released') currentStepIndex = 4;
+    
+    let html = `<div class="progress-steps-mini">`;
+    steps.forEach((step, idx) => {
+      let stepState = '';
+      if (idx < currentStepIndex) stepState = 'completed';
+      else if (idx === currentStepIndex) stepState = 'active';
+      html += `<div class="step-mini ${stepState}"><span class="step-dot"></span><span class="step-label">${step}</span></div>`;
+      if (idx < steps.length - 1) html += `<span class="step-arrow"><i class="fas fa-chevron-right"></i></span>`;
+    });
+    html += `</div>`;
+    return html;
+  }
+
+  async function renderTrackingTable() {
+    await loadSamplesForTracking();
+    const search = document.getElementById('trackSearch').value.toLowerCase();
+    const filterStatus = document.getElementById('trackStatusFilter').value;
+    
+    let filtered = allSamples.filter(s => {
+      if (search && !s.id.toString().includes(search) && !s.patient.toLowerCase().includes(search)) return false;
+      if (filterStatus !== 'all' && s.status !== filterStatus) return false;
+      return true;
+    });
+    
+    const statusCounts = { Registered:0, Collected:0, Processing:0, Verifying:0, 'Result Released':0 };
+    allSamples.forEach(s => {
+      if (statusCounts[s.status] !== undefined) statusCounts[s.status]++;
+      else statusCounts.Registered++;
+    });
+    document.getElementById('trackTotal').textContent = allSamples.length;
+    document.getElementById('trackRegistered').textContent = statusCounts.Registered || 0;
+    document.getElementById('trackCollected').textContent = statusCounts.Collected || 0;
+    document.getElementById('trackProcessing').textContent = statusCounts.Processing || 0;
+    document.getElementById('trackVerifying').textContent = statusCounts.Verifying || 0;
+    document.getElementById('trackReleased').textContent = statusCounts['Result Released'] || 0;
+
+    const tbody = document.getElementById('trackTableBody');
+    if (!tbody) return;
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div>No samples match your filters.</div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filtered.map(s => {
+      const statusClass = getStatusBadgeClass(s.status);
+      const statusDisplay = getStatusDisplay(s.status);
+      const progressHtml = renderProgressSteps(s);
+      const releasedAt = s.released_at ? new Date(s.released_at).toLocaleString() : (s.status === 'Result Released' ? '—' : '—');
+      let priorityClass = s.priority === 'STAT' ? 'badge-stat' : s.priority === 'Urgent' ? 'badge-urgent' : 'badge-routine';
+      return `<tr>
+        <td style="font-family:monospace; font-weight:600;">MU-${s.id}</td>
+        <td><strong>${escHtml(s.patient)}</strong><br><small>${s.age || '?'}y</small></td>
+        <td><span class="badge ${priorityClass}">${escHtml(s.priority)}</span></td>
+        <td><span class="status-badge-sm ${statusClass}">${statusDisplay}</span></td>
+        <td style="min-width:260px;">${progressHtml}</td>
+        <td style="font-size:.75rem;">${releasedAt}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  if (document.getElementById('trackSearch')) {
+    document.getElementById('trackSearch').addEventListener('input', renderTrackingTable);
+  }
+  if (document.getElementById('trackStatusFilter')) {
+    document.getElementById('trackStatusFilter').addEventListener('change', renderTrackingTable);
+  }
+  if (document.getElementById('trackRefreshBtn')) {
+    document.getElementById('trackRefreshBtn').addEventListener('click', renderTrackingTable);
+  }
+
+  // ========== AUDIT TRAIL ==========
   let allAuditEntries = [];
   async function loadAuditLog() {
     const tbody = document.getElementById('auditTableBody');
     const countEl = document.getElementById('auditCount');
+    if (!tbody) return;
     tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px;"><span class="spinner-inline"></span>Loading…</td></tr>`;
     if (countEl) countEl.textContent = '';
     try {
-      const { data, error } = await db
-        .from('audit_log')
-        .select('*')
-        .order('ts', { ascending: false })
-        .limit(500);
+      const { data, error } = await db.from('audit_log').select('*').order('ts', { ascending: false }).limit(500);
       if (error) throw error;
       allAuditEntries = data || [];
       renderAuditTable();
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--red);">⚠️ Failed to load audit log: ${escHtml(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--red);">⚠️ Failed to load audit log: ${escHtml(err.message)}</td><tr>`;
     }
   }
+  
   function renderAuditTable() {
     const tbody = document.getElementById('auditTableBody');
     const countEl = document.getElementById('auditCount');
+    if (!tbody) return;
     const search = (document.getElementById('auditSearch')?.value || '').toLowerCase();
     const action = document.getElementById('auditActionFilter')?.value || '';
     const role = document.getElementById('auditRoleFilter')?.value || '';
@@ -596,21 +604,22 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
       const ts = e.ts ? new Date(e.ts).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '—';
       const roleTag = e.user_role ? `<span class="audit-role-tag">${escHtml(e.user_role)}</span>` : '';
       const sampleCell = e.sample_id ? `<span class="audit-sample">MU-${escHtml(String(e.sample_id))}</span>` : '—';
-      return `
-        <tr>
-          <td><span class="audit-ts">${ts}</span></td>
-          <td class="audit-user"><strong>${escHtml(e.user_name || '—')}</strong>${roleTag}</td>
-          <td><span class="audit-action">${escHtml(e.action || '—')}</span></td>
-          <td>${sampleCell}</td>
-          <td><span class="audit-details">${escHtml(e.details || '')}</span></td>
-        </tr>`;
+      return `<tr><td class="audit-ts">${ts}</td><td class="audit-user"><strong>${escHtml(e.user_name || '—')}</strong>${roleTag}</td><td class="audit-action">${escHtml(e.action || '—')}</td><td>${sampleCell}</td><td class="audit-details">${escHtml(e.details || '')}</td></tr>`;
     }).join('');
   }
 
-  document.getElementById('auditSearch')?.addEventListener('input', renderAuditTable);
-  document.getElementById('auditActionFilter')?.addEventListener('change', renderAuditTable);
-  document.getElementById('auditRoleFilter')?.addEventListener('change', renderAuditTable);
-  document.getElementById('auditRefreshBtn')?.addEventListener('click', loadAuditLog);
+  if (document.getElementById('auditSearch')) {
+    document.getElementById('auditSearch').addEventListener('input', renderAuditTable);
+  }
+  if (document.getElementById('auditActionFilter')) {
+    document.getElementById('auditActionFilter').addEventListener('change', renderAuditTable);
+  }
+  if (document.getElementById('auditRoleFilter')) {
+    document.getElementById('auditRoleFilter').addEventListener('change', renderAuditTable);
+  }
+  if (document.getElementById('auditRefreshBtn')) {
+    document.getElementById('auditRefreshBtn').addEventListener('click', loadAuditLog);
+  }
 
   // Tab switching
   document.querySelectorAll('.page-tab').forEach(btn => {
@@ -621,17 +630,19 @@ const supabaseService = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
       const panel = document.getElementById('tab-' + btn.dataset.tab);
       if (panel) panel.classList.add('active');
       if (btn.dataset.tab === 'audit') loadAuditLog();
+      if (btn.dataset.tab === 'tracking') renderTrackingTable();
     });
   });
 
   // Initial load
   await loadUsers();
+  await renderTrackingTable();
+  await loadAuditLog();
 })();
 </script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').then(reg => console.log('Service Worker registered', reg))
-      .catch(err => console.log('Service Worker registration failed', err));
+    navigator.serviceWorker.register('/sw.js').then(reg => console.log('Service Worker registered', reg)).catch(err => console.log('Service Worker registration failed', err));
   }
 </script>
 </body>
