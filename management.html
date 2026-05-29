@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<title>User Management – MU'UJIZA LIS</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* Your existing styles – unchanged (kept as in your file) */
+  :root {
+    --green: #1F6E43; --green-d: #155a38; --green-l: #e8f4ed;
+    --slate: #1e2a35; --muted: #5a7e94; --border: #dce8f0;
+    --bg: #f0f4f8; --white: #fff; --red: #dc2626; --red-l: #fef2f2;
+    --amber: #b45309; --amber-l: #fff7ed;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Sora',sans-serif; background:var(--bg); min-height:100vh; }
+
+  /* (keep all your existing CSS – it's fine) */
+  .topbar { background:var(--white); border-bottom:1px solid var(--border); padding:0 32px; height:60px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+  .topbar-left { display:flex; align-items:center; gap:12px; }
+  .topbar-logo { font-size:1.4rem; }
+  .topbar-title { font-size:.95rem; font-weight:700; color:var(--slate); }
+  .topbar-sub { font-size:.72rem; color:var(--muted); margin-top:1px; }
+  .topbar-right { display:flex; align-items:center; gap:16px; }
+  .user-chip { display:flex; align-items:center; gap:8px; background:var(--green-l); padding:6px 14px; border-radius:20px; }
+  .user-chip .role-tag { font-size:.65rem; font-weight:700; text-transform:uppercase; color:var(--green); }
+  .user-chip .name { font-size:.82rem; font-weight:600; color:var(--slate); }
+  .logout-btn { background:none; border:1.5px solid var(--border); padding:6px 14px; border-radius:20px; font-family:'Sora',sans-serif; font-size:.78rem; font-weight:600; color:var(--muted); cursor:pointer; transition:.2s; }
+  .logout-btn:hover { border-color:var(--red); color:var(--red); }
+  .container { max-width:960px; margin:0 auto; padding:32px 24px; }
+  .page-header { margin-bottom:28px; }
+  .page-header h2 { font-size:1.4rem; font-weight:700; color:var(--slate); margin-bottom:4px; }
+  .page-header p { font-size:.82rem; color:var(--muted); }
+  .stats { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:28px; }
+  .stat-card { background:var(--white); border-radius:14px; padding:16px 20px; border:1px solid var(--border); flex:1; min-width:110px; }
+  .stat-card .val { font-size:1.6rem; font-weight:700; color:var(--green); }
+  .stat-card .lbl { font-size:.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
+  .toolbar { display:flex; gap:12px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+  .search-wrap { flex:1; min-width:200px; position:relative; }
+  .search-wrap input { width:100%; padding:10px 16px 10px 38px; border:1.5px solid var(--border); border-radius:10px; font-family:'Sora',sans-serif; font-size:.85rem; color:var(--slate); background:var(--white); outline:none; transition:.18s; }
+  .search-wrap input:focus { border-color:var(--green); }
+  .search-wrap::before { content:'🔍'; position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:.85rem; pointer-events:none; }
+  .filter-select { padding:10px 14px; border:1.5px solid var(--border); border-radius:10px; font-family:'Sora',sans-serif; font-size:.82rem; color:var(--slate); background:var(--white); outline:none; cursor:pointer; }
+  .add-btn { background:var(--green); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-family:'Sora',sans-serif; font-size:.85rem; font-weight:700; cursor:pointer; transition:.2s; white-space:nowrap; }
+  .add-btn:hover { background:var(--green-d); }
+  .table-wrap { background:var(--white); border-radius:16px; border:1px solid var(--border); overflow:hidden; }
+  table { width:100%; border-collapse:collapse; }
+  thead tr { background:var(--bg); }
+  th { padding:12px 18px; text-align:left; font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); border-bottom:1px solid var(--border); }
+  td { padding:14px 18px; border-bottom:1px solid var(--border); font-size:.85rem; color:var(--slate); }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:rgba(31,110,67,.025); }
+  .role-pill { display:inline-flex; align-items:center; padding:3px 10px; border-radius:20px; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+  .role-reception    { background:#e0f2fe; color:#0369a1; }
+  .role-technologist { background:#f0fdf4; color:#15803d; }
+  .role-supervisor   { background:#fef9c3; color:#92400e; }
+  .role-admin        { background:#f3e8ff; color:#7e22ce; }
+  .role-patient      { background:#f1f5f9; color:#475569; }
+  .status-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; }
+  .status-active   { background:#22c55e; }
+  .status-inactive { background:#d1d5db; }
+  .action-btns { display:flex; gap:8px; }
+  .icon-btn { width:32px; height:32px; border-radius:8px; border:1.5px solid var(--border); background:none; cursor:pointer; font-size:.9rem; display:inline-flex; align-items:center; justify-content:center; transition:.18s; }
+  .icon-btn:hover { border-color:var(--green); background:var(--green-l); }
+  .icon-btn.danger:hover { border-color:var(--red); background:var(--red-l); }
+  .mono { font-family:'JetBrains Mono',monospace; font-size:.78rem; color:var(--muted); }
+  .empty-state { text-align:center; padding:48px 24px; color:var(--muted); font-size:.85rem; }
+  .empty-state .icon { font-size:2.5rem; margin-bottom:12px; }
+  .modal-bg { position:fixed; inset:0; background:rgba(15,25,35,.45); display:none; align-items:center; justify-content:center; z-index:200; padding:20px; backdrop-filter:blur(4px); }
+  .modal-bg.open { display:flex; animation:fadein .2s ease; }
+  @keyframes fadein { from{opacity:0} to{opacity:1} }
+  .modal { background:var(--white); border-radius:20px; width:100%; max-width:440px; padding:32px; box-shadow:0 32px 64px rgba(0,0,0,.15); max-height:90vh; overflow-y:auto; }
+  .modal h3 { font-size:1.1rem; font-weight:700; color:var(--slate); margin-bottom:20px; }
+  .mfield { margin-bottom:16px; }
+  .mfield label { display:block; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:6px; }
+  .mfield input, .mfield select { width:100%; padding:11px 14px; border:1.5px solid var(--border); border-radius:10px; font-family:'Sora',sans-serif; font-size:.88rem; color:var(--slate); background:var(--white); outline:none; transition:.18s; }
+  .mfield input:focus, .mfield select:focus { border-color:var(--green); }
+  .pw-hint { font-size:.7rem; color:var(--muted); margin-top:5px; padding-left:2px; }
+  .pw-strength { display:flex; gap:4px; margin-top:8px; }
+  .pw-strength .bar { flex:1; height:4px; border-radius:2px; background:var(--border); transition:background .3s; }
+  .strength-weak   .bar:nth-child(1)              { background:#ef4444; }
+  .strength-fair   .bar:nth-child(-n+2)            { background:var(--amber); }
+  .strength-good   .bar:nth-child(-n+3)            { background:#3b82f6; }
+  .strength-strong .bar                            { background:#22c55e; }
+  .modal-actions { display:flex; gap:10px; margin-top:24px; }
+  .modal-actions button { flex:1; padding:11px; border-radius:10px; font-family:'Sora',sans-serif; font-size:.88rem; font-weight:700; cursor:pointer; transition:.2s; }
+  .btn-cancel { background:var(--bg); border:1.5px solid var(--border); color:var(--muted); }
+  .btn-cancel:hover { border-color:var(--slate); color:var(--slate); }
+  .btn-save { background:var(--green); border:none; color:#fff; }
+  .btn-save:hover { background:var(--green-d); }
+  .btn-save:disabled { opacity:.6; cursor:not-allowed; }
+  .modal-error { background:var(--red-l); border:1px solid #fecaca; border-radius:8px; padding:8px 12px; font-size:.78rem; color:var(--red); margin-bottom:14px; display:none; }
+  .modal-error.show { display:block; }
+  .toast { position:fixed; bottom:24px; right:24px; z-index:300; background:var(--slate); color:#fff; padding:12px 20px; border-radius:12px; font-size:.82rem; font-weight:600; box-shadow:0 8px 24px rgba(0,0,0,.2); display:none; animation:slidein .25s ease; }
+  .toast.show { display:block; }
+  .toast.success { background:var(--green); }
+  .toast.error   { background:var(--red); }
+  @keyframes slidein { from{transform:translateY(12px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .loading-row td { text-align:center; padding:32px; color:var(--muted); }
+  .spinner-inline { display:inline-block; width:20px; height:20px; border:2.5px solid var(--border); border-top-color:var(--green); border-radius:50%; animation:spin .65s linear infinite; vertical-align:middle; margin-right:8px; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .page-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:28px; border-bottom:1px solid var(--border); padding-bottom:14px; }
+  .page-tab { background:transparent; border:none; padding:8px 20px; border-radius:20px; font-family:'Sora',sans-serif; font-size:.82rem; font-weight:600; color:var(--muted); cursor:pointer; transition:.18s; }
+  .page-tab:hover { background:var(--green-l); color:var(--green); }
+  .page-tab.active { background:var(--green); color:#fff; }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+  .audit-wrap { background:var(--white); border-radius:16px; border:1px solid var(--border); overflow:hidden; max-height:600px; overflow-y:auto; }
+  .audit-wrap table { width:100%; border-collapse:collapse; }
+  .audit-wrap thead tr { background:var(--bg); position:sticky; top:0; z-index:1; }
+  .audit-wrap th { padding:11px 16px; text-align:left; font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); border-bottom:1px solid var(--border); }
+  .audit-wrap td { padding:12px 16px; border-bottom:1px solid var(--border); font-size:.82rem; color:var(--slate); vertical-align:middle; }
+  .audit-wrap tr:last-child td { border-bottom:none; }
+  .audit-wrap tr:hover td { background:rgba(31,110,67,.025); }
+  .audit-action { font-weight:700; }
+  .audit-sample { font-family:'JetBrains Mono',monospace; font-size:.75rem; color:var(--green); }
+  .audit-details { font-size:.75rem; color:var(--muted); max-width:280px; }
+  .audit-ts { font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--muted); white-space:nowrap; }
+  .audit-user strong { font-size:.82rem; }
+  .audit-role-tag { display:inline-block; font-size:.62rem; font-weight:700; text-transform:uppercase; padding:1px 7px; border-radius:10px; margin-left:5px; background:var(--green-l); color:var(--green); }
+  .audit-toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  .audit-search-wrap { flex:1; min-width:200px; position:relative; }
+  .audit-search-wrap input { width:100%; padding:9px 14px 9px 36px; border:1.5px solid var(--border); border-radius:10px; font-family:'Sora',sans-serif; font-size:.82rem; color:var(--slate); background:var(--white); outline:none; transition:.18s; }
+  .audit-search-wrap input:focus { border-color:var(--green); }
+  .audit-search-wrap::before { content:'🔍'; position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:.8rem; pointer-events:none; }
+  .audit-filter-sel { padding:9px 13px; border:1.5px solid var(--border); border-radius:10px; font-family:'Sora',sans-serif; font-size:.8rem; color:var(--slate); background:var(--white); outline:none; cursor:pointer; }
+  .audit-refresh-btn { background:var(--green); color:#fff; border:none; padding:9px 18px; border-radius:10px; font-family:'Sora',sans-serif; font-size:.8rem; font-weight:700; cursor:pointer; transition:.2s; white-space:nowrap; }
+  .audit-refresh-btn:hover { background:var(--green-d); }
+  .audit-count { font-size:.75rem; color:var(--muted); white-space:nowrap; align-self:center; }
+</style>
+</head>
+<body>
+
+<!-- Auth guard -->
+<script>
+  const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  function checkAuth(allowedRoles) {
+    try {
+      const raw = sessionStorage.getItem('muujiza_session');
+      if (!raw) throw new Error('No session');
+      const session = JSON.parse(raw);
+      if (!session || Date.now() > session.expiresAt) throw new Error('Session expired');
+      if (allowedRoles && !allowedRoles.includes(session.role)) throw new Error('Unauthorised role');
+      return session;
+    } catch (e) {
+      sessionStorage.removeItem('muujiza_session');
+      window.location.replace('login.html');
+      return null;
+    }
+  }
+  function logoutUser() {
+    sessionStorage.removeItem('muujiza_session');
+    window.location.replace('login.html');
+  }
+  const currentSession = checkAuth(['admin', 'supervisor']);
+</script>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-logo">🧬</div>
+    <div>
+      <div class="topbar-title">MU'UJIZA LIS</div>
+      <div class="topbar-sub">User Management</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="user-chip">
+      <span class="role-tag" id="sessionRole">—</span>
+      <span class="name" id="sessionName">—</span>
+    </div>
+    <button class="logout-btn" onclick="logoutUser()">Sign Out</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-header">
+    <h2>MU'UJIZA Admin</h2>
+    <p>Manage staff accounts and review the full system audit trail.</p>
+  </div>
+
+  <div class="page-tabs">
+    <button class="page-tab active" data-tab="users">👥 System Users</button>
+    <button class="page-tab" data-tab="audit">📋 Audit Trail</button>
+  </div>
+
+  <!-- Users Tab -->
+  <div class="tab-panel active" id="tab-users">
+    <div class="stats" id="statsRow">
+      <div class="stat-card"><div class="val" id="statTotal">—</div><div class="lbl">Total Users</div></div>
+      <div class="stat-card"><div class="val" id="statActive">—</div><div class="lbl">Active</div></div>
+      <div class="stat-card"><div class="val" id="statAdmins">—</div><div class="lbl">Admins</div></div>
+      <div class="stat-card"><div class="val" id="statPatients">—</div><div class="lbl">Patients</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search-wrap">
+        <input type="text" id="searchInput" placeholder="Search by name or username…">
+      </div>
+      <select class="filter-select" id="roleFilter">
+        <option value="">All Roles</option>
+        <option value="reception">Reception</option>
+        <option value="technologist">Technologist</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="admin">Admin</option>
+        <option value="patient">Patient</option>
+      </select>
+      <button class="add-btn" id="addUserBtn">+ Add User</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>User</th><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="userTableBody">
+          <tr class="loading-row"><td colspan="6"><span class="spinner-inline"></span>Loading users…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Audit Tab -->
+  <div class="tab-panel" id="tab-audit">
+    <div class="audit-toolbar">
+      <div class="audit-search-wrap">
+        <input type="text" id="auditSearch" placeholder="Search user, action, sample or details…">
+      </div>
+      <select class="audit-filter-sel" id="auditActionFilter">
+        <option value="">All actions</option>
+        <option value="login">Login</option>
+        <option value="Released">Released</option>
+        <option value="Returned to Tech">Returned to Tech</option>
+        <option value="Payment toggled">Payment toggled</option>
+        <option value="PDF Generated">PDF Generated</option>
+        <option value="QC Run">QC Run</option>
+        <option value="Deleted">Deleted</option>
+      </select>
+      <select class="audit-filter-sel" id="auditRoleFilter">
+        <option value="">All roles</option>
+        <option value="admin">Admin</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="technologist">Technologist</option>
+        <option value="reception">Reception</option>
+        <option value="patient">Patient</option>
+      </select>
+      <button class="audit-refresh-btn" id="auditRefreshBtn">↻ Refresh</button>
+      <span class="audit-count" id="auditCount"></span>
+    </div>
+    <div class="audit-wrap">
+      <table>
+        <thead>
+          <tr><th>Timestamp</th><th>User (Role)</th><th>Action</th><th>Sample</th><th>Details</th></tr>
+        </thead>
+        <tbody id="auditTableBody">
+          <tr><td colspan="5" style="text-align:center;padding:32px;"><span class="spinner-inline"></span>Loading audit log…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Add / Edit User Modal -->
+<div class="modal-bg" id="userModal">
+  <div class="modal">
+    <h3 id="modalTitle">Add New User</h3>
+    <div class="modal-error" id="modalError"></div>
+
+    <div class="mfield">
+      <label>Username <span style="color:var(--muted);font-size:.65rem;font-weight:400">(unique, no spaces)</span></label>
+      <input type="text" id="mUsername" placeholder="e.g. amara.okonkwo" autocomplete="off">
+    </div>
+    <div class="mfield">
+      <label>Role</label>
+      <select id="mRole">
+        <option value="">Select role…</option>
+        <option value="reception">Reception</option>
+        <option value="technologist">Technologist</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="admin">Admin</option>
+        <option value="patient">Patient Portal</option>
+      </select>
+    </div>
+    <div class="mfield" id="pwField">
+      <label id="pwLabel">Password</label>
+      <input type="password" id="mPassword" placeholder="Min. 8 characters" autocomplete="new-password">
+      <div class="pw-strength" id="pwStrength">
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      </div>
+      <div class="pw-hint">Min. 8 chars, include uppercase, number & symbol.</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" id="saveUserBtn">Create User</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(async function () {
+  // Use service‑role client (bypass RLS) but we will use password_hash with crypt()
+  const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
+  const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTg3NjQyOSwiZXhwIjoyMDk1NDUyNDI5fQ.Feh4ub-v5O0KBg3OzhRagO7B2NeliHBnpzNnL1U-biw';
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+  // Show current session info
+  document.getElementById('sessionRole').textContent = currentSession.role.toUpperCase();
+  document.getElementById('sessionName').textContent = currentSession.name;
+
+  let allUsers = [];
+  let editingUserId = null;
+
+  // Helper functions
+  function escHtml(str) {
+    return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function showToast(msg, type = '') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast show ${type}`;
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+  function showModalError(msg) {
+    const el = document.getElementById('modalError');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function hideModalError() {
+    document.getElementById('modalError').classList.remove('show');
+  }
+
+  // Load users
+  async function loadUsers() {
+    const tbody = document.getElementById('userTableBody');
+    tbody.innerHTML = `<tr class="loading-row"><td colspan="6"><span class="spinner-inline"></span>Loading users…</td></tr>`;
+    const { data, error } = await db
+      .from('admins')
+      .select('id, username, role, is_active, created_at')
+      .order('created_at', { ascending: false });
+    if (error) {
+      showToast('Failed to load users: ' + error.message, 'error');
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">⚠️</div>${escHtml(error.message)}</div></td></tr>`;
+      return;
+    }
+    allUsers = data || [];
+    updateStats(allUsers);
+    renderTable(allUsers);
+  }
+
+  function updateStats(users) {
+    document.getElementById('statTotal').textContent    = users.length;
+    document.getElementById('statActive').textContent   = users.filter(u => u.is_active !== false).length;
+    document.getElementById('statAdmins').textContent   = users.filter(u => u.role === 'admin').length;
+    document.getElementById('statPatients').textContent = users.filter(u => u.role === 'patient').length;
+  }
+
+  function renderTable(users) {
+    const tbody = document.getElementById('userTableBody');
+    if (!users.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">👥</div>No users found.</div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = users.map(u => {
+      const active = u.is_active !== false;
+      const created = u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+      const rolePill = `<span class="role-pill role-${escHtml(u.role)}">${escHtml(u.role)}</span>`;
+      const statusDot = `<span class="status-dot status-${active ? 'active' : 'inactive'}"></span>${active ? 'Active' : 'Inactive'}`;
+      return `
+        <tr>
+          <td><strong>${escHtml(u.username)}</strong></td>
+          <td><span class="mono">${escHtml(u.username)}</span></td>
+          <td>${rolePill}</td>
+          <td style="font-size:.8rem">${statusDot}</td>
+          <td style="font-size:.78rem;color:var(--muted)">${created}</td>
+          <td>
+            <div class="action-btns">
+              <button class="icon-btn" title="Edit" onclick="openEditModal('${u.id}')">✏️</button>
+              <button class="icon-btn" title="Toggle active" onclick="toggleActive('${u.id}', ${active})">${active ? '🔒' : '🔓'}</button>
+              <button class="icon-btn danger" title="Delete" onclick="deleteUser('${u.id}', '${escHtml(u.username)}')">🗑️</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  function getFiltered() {
+    const q = document.getElementById('searchInput').value.trim().toLowerCase();
+    const role = document.getElementById('roleFilter').value;
+    return allUsers.filter(u => {
+      const matchQ = !q || u.username?.toLowerCase().includes(q);
+      const matchR = !role || u.role === role;
+      return matchQ && matchR;
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', () => renderTable(getFiltered()));
+  document.getElementById('roleFilter').addEventListener('change', () => renderTable(getFiltered()));
+
+  // Password strength
+  function getPasswordStrength(pw) {
+    if (!pw || pw.length < 6) return 'weak';
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    return ['weak','fair','good','strong'][Math.min(score, 3)];
+  }
+  document.getElementById('mPassword').addEventListener('input', function () {
+    const wrap = document.getElementById('pwStrength');
+    wrap.className = 'pw-strength';
+    if (this.value) wrap.classList.add('strength-' + getPasswordStrength(this.value));
+  });
+
+  // Modal open/close
+  window.openAddModal = function () {
+    editingUserId = null;
+    document.getElementById('modalTitle').textContent = 'Add New User';
+    document.getElementById('saveUserBtn').textContent = 'Create User';
+    document.getElementById('pwLabel').textContent = 'Password';
+    document.getElementById('mUsername').value = '';
+    document.getElementById('mRole').value = '';
+    document.getElementById('mPassword').value = '';
+    document.getElementById('mUsername').disabled = false;
+    document.getElementById('pwField').style.display = 'block';
+    hideModalError();
+    document.getElementById('userModal').classList.add('open');
+    document.getElementById('mUsername').focus();
+  };
+
+  window.openEditModal = function (userId) {
+    const u = allUsers.find(x => x.id === userId);
+    if (!u) return;
+    editingUserId = userId;
+    document.getElementById('modalTitle').textContent = 'Edit User';
+    document.getElementById('saveUserBtn').textContent = 'Save Changes';
+    document.getElementById('pwLabel').textContent = 'New Password (leave blank to keep)';
+    document.getElementById('mUsername').value = u.username || '';
+    document.getElementById('mRole').value = u.role || '';
+    document.getElementById('mPassword').value = '';
+    document.getElementById('mUsername').disabled = true;
+    document.getElementById('pwField').style.display = 'block';
+    hideModalError();
+    document.getElementById('userModal').classList.add('open');
+    document.getElementById('mUsername').focus();
+  };
+
+  window.closeModal = function () {
+    document.getElementById('userModal').classList.remove('open');
+    editingUserId = null;
+  };
+  document.getElementById('userModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('userModal')) closeModal();
+  });
+
+  // ── Save user (with password hashing) ─────────────────────────
+  document.getElementById('saveUserBtn').addEventListener('click', saveUser);
+
+  async function saveUser() {
+    const username = document.getElementById('mUsername').value.trim().toLowerCase();
+    const role     = document.getElementById('mRole').value;
+    const password = document.getElementById('mPassword').value;
+
+    if (!role) return showModalError('Please select a role.');
+
+    if (!editingUserId) {
+      if (!username) return showModalError('Username is required.');
+      if (!/^[a-z0-9._-]+$/.test(username)) return showModalError('Username may only contain letters, numbers, . _ -');
+      if (!password) return showModalError('Password is required for new users.');
+      if (password.length < 8) return showModalError('Password must be at least 8 characters.');
+      if (getPasswordStrength(password) === 'weak') return showModalError('Password is too weak. Add uppercase, numbers, or symbols.');
+    }
+
+    const btn = document.getElementById('saveUserBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    hideModalError();
+
+    try {
+      if (editingUserId) {
+        // Update role and optionally password (hashed)
+        const updates = { role };
+        if (password) {
+          if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+          // Hash password using pgcrypto (we must call an RPC function)
+          const { error: hashError } = await db.rpc('hash_password', { plain_password: password });
+          if (hashError) {
+            // Fallback: we can update directly with a crypt expression using raw SQL?
+            // Instead we'll use a separate RPC `update_user_password` (create if not exists)
+            const { error: updateError } = await db.rpc('update_user_password', { user_id: editingUserId, new_password: password });
+            if (updateError) throw new Error('Password update failed: ' + updateError.message);
+          } else {
+            // If hash_password succeeded, we still need to update the admins table with the new hash.
+            // Actually hash_password only returns the hash, we need to update the row.
+            // Let's use a single RPC that does both: update_user_password.
+            const { error: updateError } = await db.rpc('update_user_password', { user_id: editingUserId, new_password: password });
+            if (updateError) throw updateError;
+          }
+        }
+        const { error: updateRoleError } = await db.from('admins').update(updates).eq('id', editingUserId);
+        if (updateRoleError) throw new Error('Role update failed: ' + updateRoleError.message);
+        showToast('User updated successfully.', 'success');
+      } else {
+        // Check duplicate username
+        const { data: existing } = await db.from('admins').select('id').eq('username', username).maybeSingle();
+        if (existing) throw new Error('Username already taken. Choose a different one.');
+        // Insert new user with hashed password using RPC
+        const { error: createError } = await db.rpc('create_user', {
+          p_username: username,
+          p_password: password,
+          p_role: role,
+          p_is_active: true
+        });
+        if (createError) throw new Error('Create failed: ' + createError.message);
+        showToast(`User "${username}" created successfully.`, 'success');
+      }
+      closeModal();
+      await loadUsers();
+    } catch (err) {
+      showModalError(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = editingUserId ? 'Save Changes' : 'Create User';
+    }
+  }
+
+  // ── Toggle active / delete ───────────────────────────────────
+  window.toggleActive = async function (userId, currentlyActive) {
+    const newState = !currentlyActive;
+    const { error } = await db.from('admins').update({ is_active: newState }).eq('id', userId);
+    if (error) { showToast('Failed to update status.', 'error'); return; }
+    showToast(`User ${newState ? 'activated' : 'deactivated'}.`, 'success');
+    await loadUsers();
+  };
+
+  window.deleteUser = async function (userId, name) {
+    if (!confirm(`Delete user "${name}"? This cannot be undone.`)) return;
+    const { error } = await db.from('admins').delete().eq('id', userId);
+    if (error) { showToast('Delete failed: ' + error.message, 'error'); return; }
+    showToast(`User "${name}" deleted.`, 'success');
+    await loadUsers();
+  };
+
+  document.getElementById('addUserBtn').addEventListener('click', () => window.openAddModal());
+
+  // Audit Trail functions (unchanged from your file)
+  let allAuditEntries = [];
+  async function loadAuditLog() {
+    const tbody = document.getElementById('auditTableBody');
+    const countEl = document.getElementById('auditCount');
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px;"><span class="spinner-inline"></span>Loading…</td></tr>`;
+    if (countEl) countEl.textContent = '';
+    try {
+      const { data, error } = await db
+        .from('audit_log')
+        .select('*')
+        .order('ts', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      allAuditEntries = data || [];
+      renderAuditTable();
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--red);">⚠️ Failed to load audit log: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+  function renderAuditTable() {
+    const tbody = document.getElementById('auditTableBody');
+    const countEl = document.getElementById('auditCount');
+    const search = (document.getElementById('auditSearch')?.value || '').toLowerCase();
+    const action = document.getElementById('auditActionFilter')?.value || '';
+    const role = document.getElementById('auditRoleFilter')?.value || '';
+    let filtered = allAuditEntries.filter(e => {
+      if (action && !(e.action || '').includes(action)) return false;
+      if (role && e.user_role !== role) return false;
+      if (search) {
+        const hay = [e.user_name, e.user_role, e.action, e.sample_id, e.details].map(x => (x || '').toString().toLowerCase()).join(' ');
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+    if (countEl) countEl.textContent = `${filtered.length} record${filtered.length !== 1 ? 's' : ''}`;
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px;">No audit records match your filters.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filtered.map(e => {
+      const ts = e.ts ? new Date(e.ts).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '—';
+      const roleTag = e.user_role ? `<span class="audit-role-tag">${escHtml(e.user_role)}</span>` : '';
+      const sampleCell = e.sample_id ? `<span class="audit-sample">MU-${escHtml(String(e.sample_id))}</span>` : '—';
+      return `
+        <tr>
+          <td><span class="audit-ts">${ts}</span></td>
+          <td class="audit-user"><strong>${escHtml(e.user_name || '—')}</strong>${roleTag}</td>
+          <td><span class="audit-action">${escHtml(e.action || '—')}</span></td>
+          <td>${sampleCell}</td>
+          <td><span class="audit-details">${escHtml(e.details || '')}</span></td>
+        </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('auditSearch')?.addEventListener('input', renderAuditTable);
+  document.getElementById('auditActionFilter')?.addEventListener('change', renderAuditTable);
+  document.getElementById('auditRoleFilter')?.addEventListener('change', renderAuditTable);
+  document.getElementById('auditRefreshBtn')?.addEventListener('click', loadAuditLog);
+
+  // Tab switching
+  document.querySelectorAll('.page-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.page-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const panel = document.getElementById('tab-' + btn.dataset.tab);
+      if (panel) panel.classList.add('active');
+      if (btn.dataset.tab === 'audit') loadAuditLog();
+    });
+  });
+
+  // Initial load
+  await loadUsers();
+})();
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(reg => console.log('Service Worker registered', reg))
+      .catch(err => console.log('Service Worker registration failed', err));
+  }
+</script>
+</body>
+</html>

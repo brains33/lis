@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA LIS – Secure Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="manifest" href="manifest.json">
+
+<!-- Security Headers (Content Security Policy, etc.) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' https://npdopywxemtwzvpummsn.supabase.co;">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --green:    #1F6E43;
+    --green-d:  #155a38;
+    --green-l:  #e8f4ed;
+    --slate:    #1e2a35;
+    --muted:    #5a7e94;
+    --border:   #dce8f0;
+    --bg:       #f0f4f8;
+    --white:    #ffffff;
+    --red:      #dc2626;
+    --amber:    #b45309;
+    --shadow:   0 24px 48px rgba(31,110,67,.10), 0 4px 12px rgba(0,0,0,.06);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    font-family: 'Sora', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 0%, rgba(31,110,67,.08) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(31,110,67,.06) 0%, transparent 60%);
+    pointer-events:none;
+  }
+
+  .card {
+    background: var(--white);
+    border-radius: 28px;
+    width: 100%;
+    max-width: 460px;
+    padding: 44px 40px 40px;
+    box-shadow: var(--shadow);
+    position: relative;
+    z-index: 1;
+  }
+
+  .header { text-align:center; margin-bottom:32px; }
+  .logo-wrap {
+    width: 60px; height: 60px;
+    background: var(--green-l);
+    border-radius: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.8rem;
+    margin-bottom: 16px;
+  }
+  .header h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--slate);
+    letter-spacing: -.3px;
+    margin-bottom: 4px;
+  }
+  .header p { font-size: .82rem; color: var(--muted); }
+  .sec-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--green-l);
+    color: var(--green);
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 20px;
+    margin-top: 8px;
+  }
+  .sec-badge::before { content:'🔒'; font-size:.8rem; }
+
+  .section-label {
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .roles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .roles .role-btn {
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    font-family: 'Sora', sans-serif;
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--slate);
+    transition: all .18s ease;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .roles .role-btn:hover { border-color: var(--green); background: var(--green-l); color: var(--green); }
+  .roles .role-btn.active { border-color: var(--green); background: var(--green); color: #fff; }
+  .roles .role-btn .icon { font-size:1rem; }
+  .roles .role-btn.wide { grid-column: 1 / -1; justify-content: center; }
+
+  .field { margin-bottom: 18px; }
+  .field label {
+    display: block;
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--muted);
+    margin-bottom: 7px;
+  }
+  .field input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    font-family: 'Sora', sans-serif;
+    font-size: .92rem;
+    color: var(--slate);
+    background: var(--white);
+    outline: none;
+    transition: border-color .18s;
+  }
+  .field input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(31,110,67,.08); }
+  .field input::placeholder { color: #b0bfc8; }
+
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 46px; }
+  .pw-eye {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    font-size: 1.1rem; line-height:1; padding: 4px;
+    transition: color .15s;
+  }
+  .pw-eye:hover { color: var(--green); }
+
+  .caps-warn {
+    font-size: .7rem; color: var(--amber);
+    margin-top: 5px; display: none; padding-left: 2px;
+  }
+
+  .attempt-bar {
+    display: flex; gap: 5px; align-items: center;
+    margin-bottom: 18px;
+    min-height: 20px;
+  }
+  .attempt-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border); transition: background .3s;
+  }
+  .attempt-dot.used { background: var(--red); }
+  .attempt-label { font-size: .68rem; color: var(--muted); margin-left: 6px; }
+
+  .login-btn {
+    width: 100%; padding: 13px;
+    background: var(--green);
+    color: #fff;
+    border: none; border-radius: 12px;
+    font-family: 'Sora', sans-serif;
+    font-size: .95rem; font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: background .2s, transform .1s;
+    letter-spacing: -.1px;
+  }
+  .login-btn:hover:not(:disabled) { background: var(--green-d); }
+  .login-btn:active:not(:disabled) { transform: scale(.99); }
+  .login-btn:disabled { opacity: .6; cursor: not-allowed; }
+  .login-btn .spinner {
+    width: 16px; height: 16px;
+    border: 2.5px solid rgba(255,255,255,.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .65s linear infinite;
+    display: none;
+  }
+  .login-btn.loading .spinner { display: block; }
+  .login-btn.loading .btn-text { display: none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .error-box {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    font-size: .78rem;
+    color: var(--red);
+    display: none;
+  }
+  .error-box.show { display: block; animation: fadein .2s ease; }
+  @keyframes fadein { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+
+  .lockout-box {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 10px;
+    font-size: .78rem;
+    color: #92400e;
+    display: none;
+  }
+  .lockout-box.show { display: block; }
+  .lockout-timer { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+
+  .footer {
+    text-align: center;
+    margin-top: 24px;
+    font-size: .7rem;
+    color: var(--muted);
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <div class="logo-wrap">🧬</div>
+    <h1>MU'UJIZA DIAGNOSTICS</h1>
+    <p>Laboratory Information System</p>
+    <div class="sec-badge">Secure Access Portal</div>
+  </div>
+
+  <div class="section-label">Select Your Role</div>
+  <div class="roles" id="roleGrid">
+    <button class="role-btn" data-role="reception"><span class="icon">🗂️</span> Reception</button>
+    <button class="role-btn" data-role="technologist"><span class="icon">🔬</span> Tech/Result</button>
+    <button class="role-btn" data-role="supervisor"><span class="icon">📋</span> Supervisor/HOD</button>
+    <button class="role-btn" data-role="admin"><span class="icon">⚙️</span> Admin/SCI.</button>
+    <button class="role-btn wide" data-role="patient"><span class="icon">👤</span>Result Collection</button>
+  </div>
+
+  <div class="field">
+    <label>Username</label>
+    <input type="text" id="usernameInput" placeholder="Enter your username" autocomplete="username">
+  </div>
+
+  <div class="field">
+    <label>Password</label>
+    <div class="pw-wrap">
+      <input type="password" id="passwordInput" placeholder="Enter your password" autocomplete="current-password">
+      <button class="pw-eye" id="pwEye" type="button" aria-label="Toggle password visibility">👁</button>
+    </div>
+    <div class="caps-warn" id="capsWarn">⚠ Caps Lock is ON</div>
+  </div>
+
+  <div class="attempt-bar" id="attemptBar" style="display:none">
+    <div class="attempt-dot" id="dot1"></div>
+    <div class="attempt-dot" id="dot2"></div>
+    <div class="attempt-dot" id="dot3"></div>
+    <div class="attempt-dot" id="dot4"></div>
+    <div class="attempt-dot" id="dot5"></div>
+    <span class="attempt-label" id="attemptLabel"></span>
+  </div>
+
+  <button class="login-btn" id="loginBtn">
+    <div class="spinner"></div>
+    <span class="btn-text">Sign In Securely</span>
+  </button>
+
+  <div class="error-box" id="errorBox"></div>
+  <div class="lockout-box" id="lockoutBox">
+    🔒 Account temporarily locked after too many failed attempts.
+    Try again in <span class="lockout-timer" id="lockoutTimer">—</span>
+  </div>
+
+  <div class="footer">
+    Access is logged. Unauthorized use is prohibited and traceable.
+  </div>
+</div>
+
+<script>
+// ========== CONFIGURATION ==========
+const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
+
+// Use a unique name to avoid conflict with the global 'supabase' object (if any)
+let supabaseClient = null;
+try {
+  if (typeof window.supabase !== 'undefined') {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('✅ Supabase client initialized');
+  } else {
+    console.error('❌ window.supabase is not defined – check that the Supabase script loaded');
+  }
+} catch (e) {
+  console.error('❌ Failed to create Supabase client:', e);
+}
+
+const MAX_ATTEMPTS   = 5;
+const LOCKOUT_MS     = 5 * 60 * 1000;
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+const ROLE_PAGES = {
+  reception:    'accession.html',
+  technologist: 'result_entry.html',
+  supervisor:   'management1.html',
+  admin:        'management.html',
+  patient:      'pending_portal.html'
+};
+
+let selectedRole    = null;
+let lockoutInterval = null;
+
+// ========== BRUTE‑FORCE PROTECTION ==========
+function getAttemptData(username) {
+  try {
+    const raw = localStorage.getItem(`lis_attempts_${username}`);
+    return raw ? JSON.parse(raw) : { count: 0, lockedUntil: null };
+  } catch { return { count: 0, lockedUntil: null }; }
+}
+function saveAttemptData(username, data) {
+  localStorage.setItem(`lis_attempts_${username}`, JSON.stringify(data));
+}
+function recordFailure(username) {
+  const d = getAttemptData(username);
+  d.count++;
+  if (d.count >= MAX_ATTEMPTS) {
+    d.lockedUntil = Date.now() + LOCKOUT_MS;
+    d.count = MAX_ATTEMPTS;
+  }
+  saveAttemptData(username, d);
+  return d;
+}
+function clearAttempts(username) {
+  localStorage.removeItem(`lis_attempts_${username}`);
+}
+function isLockedOut(username) {
+  const d = getAttemptData(username);
+  if (!d.lockedUntil) return false;
+  if (Date.now() < d.lockedUntil) return true;
+  clearAttempts(username);
+  return false;
+}
+function remainingLockoutMs(username) {
+  const d = getAttemptData(username);
+  if (!d.lockedUntil) return 0;
+  return Math.max(0, d.lockedUntil - Date.now());
+}
+function updateAttemptBar(username) {
+  const d = getAttemptData(username);
+  if (d.count === 0) { document.getElementById('attemptBar').style.display = 'none'; return; }
+  document.getElementById('attemptBar').style.display = 'flex';
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById(`dot${i}`).classList.toggle('used', i <= d.count);
+  }
+  const remaining = MAX_ATTEMPTS - d.count;
+  document.getElementById('attemptLabel').textContent =
+    remaining > 0 ? `${remaining} attempt${remaining !== 1 ? 's' : ''} remaining` : 'Account locked';
+}
+function startLockoutTimer(username) {
+  document.getElementById('lockoutBox').classList.add('show');
+  document.getElementById('loginBtn').disabled = true;
+  if (lockoutInterval) clearInterval(lockoutInterval);
+  function tick() {
+    const ms = remainingLockoutMs(username);
+    if (ms <= 0) {
+      clearInterval(lockoutInterval);
+      document.getElementById('lockoutBox').classList.remove('show');
+      document.getElementById('loginBtn').disabled = false;
+      clearAttempts(username);
+      updateAttemptBar(username);
+      return;
+    }
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    document.getElementById('lockoutTimer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  }
+  tick();
+  lockoutInterval = setInterval(tick, 1000);
+}
+
+// ========== ROLE BUTTONS – with safety checks ==========
+console.log('Attaching role button listeners...');
+const roleBtns = document.querySelectorAll('.role-btn');
+console.log(`Found ${roleBtns.length} role buttons`);
+roleBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    console.log('Role clicked:', btn.dataset.role);
+    roleBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedRole = btn.dataset.role;
+    hideError();
+    const usernameInput = document.getElementById('usernameInput');
+    if (usernameInput) usernameInput.focus();
+  });
+});
+
+// ========== UI HELPERS with null checks ==========
+const pwEye = document.getElementById('pwEye');
+if (pwEye) {
+  pwEye.addEventListener('click', () => {
+    const pw = document.getElementById('passwordInput');
+    if (pw) {
+      const show = pw.type === 'password';
+      pw.type = show ? 'text' : 'password';
+      pwEye.textContent = show ? '🙈' : '👁';
+      pw.focus();
+    }
+  });
+}
+const passwordInput = document.getElementById('passwordInput');
+if (passwordInput) {
+  passwordInput.addEventListener('keyup', e => {
+    const on = e.getModifierState && e.getModifierState('CapsLock');
+    const capsWarn = document.getElementById('capsWarn');
+    if (capsWarn) capsWarn.style.display = on ? 'block' : 'none';
+  });
+}
+['usernameInput','passwordInput'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', hideError);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter') attemptLogin(); });
+const loginBtn = document.getElementById('loginBtn');
+if (loginBtn) loginBtn.addEventListener('click', attemptLogin);
+
+// ========== SECURE LOGIN USING RPC (via supabaseClient) ==========
+async function attemptLogin() {
+  hideError();
+  console.log('Login attempt, role:', selectedRole);
+
+  if (!selectedRole) {
+    showError('Please select a role first.');
+    return;
+  }
+
+  const username = document.getElementById('usernameInput').value.trim();
+  const password = document.getElementById('passwordInput').value;
+
+  if (!username) return showError('Please enter your username.');
+  if (!password) return showError('Please enter your password.');
+
+  if (isLockedOut(username)) {
+    startLockoutTimer(username);
+    return;
+  }
+
+  setBusy(true);
+
+  try {
+    if (!supabaseClient) throw new Error('Supabase client not available. Check your internet connection.');
+
+    console.log('Calling authenticate_user RPC...');
+    const { data: authResult, error: rpcError } = await supabaseClient.rpc('authenticate_user', {
+      p_username: username,
+      p_password: password
+    });
+
+    if (rpcError || !authResult || authResult.length === 0) {
+      recordFailure(username);
+      updateAttemptBar(username);
+      if (getAttemptData(username).count >= MAX_ATTEMPTS) startLockoutTimer(username);
+
+      try {
+        if (supabaseClient) await supabaseClient.from('audit_log').insert({
+          ts: new Date().toISOString(),
+          user_name: username,
+          user_role: selectedRole || 'unknown',
+          action: 'Failed Login',
+          details: 'Invalid username or password'
+        });
+      } catch (e) { console.warn('Audit log failed', e); }
+
+      throw new Error('Invalid username or password.');
+    }
+
+    const user = authResult[0];
+
+    if (user.role !== selectedRole) {
+      try {
+        if (supabaseClient) await supabaseClient.from('audit_log').insert({
+          ts: new Date().toISOString(),
+          user_name: username,
+          user_role: selectedRole,
+          action: 'Failed Login',
+          details: `Role mismatch: user role is ${user.role}, attempted ${selectedRole}`
+        });
+      } catch (e) {}
+      throw new Error(`Access denied. You are registered as "${user.role}", but you selected "${selectedRole}".`);
+    }
+
+    const destination = ROLE_PAGES[selectedRole];
+    if (!destination) throw new Error('No page configured for your role.');
+
+    clearAttempts(username);
+    const sessionPayload = {
+      username:   user.username,
+      name:       user.username,
+      role:       selectedRole,
+      expiresAt:  Date.now() + SESSION_TTL_MS,
+      _sig:       btoa(`${user.username}:${selectedRole}:${Date.now()}`)
+    };
+    sessionStorage.setItem('muujiza_session', JSON.stringify(sessionPayload));
+
+    // Log successful login (fire-and-forget)
+    if (supabaseClient) {
+      supabaseClient.from('access_log').insert({
+        username:   user.username,
+        role:       selectedRole,
+        action:     'login',
+        created_at: new Date().toISOString()
+      }).then(() => {}).catch(() => {});
+      supabaseClient.from('audit_log').insert({
+        ts: new Date().toISOString(),
+        user_name: user.username,
+        user_role: selectedRole,
+        action: 'Login',
+        details: 'Successful login'
+      }).then(() => {}).catch(() => {});
+    }
+
+    window.location.replace(destination);
+
+  } catch (err) {
+    console.error('Login error:', err);
+    showError(err.message || 'Login failed. Please try again.');
+  } finally {
+    setBusy(false);
+  }
+}
+
+function setBusy(on) {
+  const btn = document.getElementById('loginBtn');
+  if (btn) {
+    btn.classList.toggle('loading', on);
+    btn.disabled = on;
+  }
+}
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  if (box) {
+    box.textContent = msg;
+    box.classList.add('show');
+  }
+}
+function hideError() {
+  const box = document.getElementById('errorBox');
+  if (box) box.classList.remove('show');
+}
+
+// ========== PWA Service Worker ==========
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('Service Worker registered', reg);
+  }).catch(err => {
+    console.log('Service Worker registration failed', err);
+  });
+}
+
+console.log('Login page script loaded successfully');
+</script>
+</body>
+</html>

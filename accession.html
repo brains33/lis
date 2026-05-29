@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<title>MU'UJIZA LIS – Accession</title>
+<style>
+:root { --primary: #1F6E43; --primary-dark: #155a38; --bg: #eef2f9; --surface: white; --text: #1a2c3e; --text2: #5a7e94; --text3: #7f9eb0; --border: #e2edf2; --red-light: #dc2626; --yellow-light: #d97706; --green-glow: #10b981; --mono: 'DM Mono', monospace; }
+* { margin:0; padding:0; box-sizing:border-box; font-family:'DM Sans',system-ui,sans-serif; }
+body { background:var(--bg); padding:20px; color:var(--text); }
+.app { max-width:1400px; margin:0 auto; }
+.topbar { display:flex; justify-content:space-between; align-items:center; background:var(--surface); padding:12px 24px; border-radius:28px; margin-bottom:24px; border:1px solid var(--border); }
+.brand-name { font-weight:800; font-size:1.3rem; background:linear-gradient(135deg,#1F4E6E,#2C7A5E); background-clip:text; -webkit-background-clip:text; color:transparent; }
+.topbar-clock { font-family:var(--mono); font-size:0.9rem; background:#f0f4f9; padding:4px 12px; border-radius:40px; }
+.topbar-user { display:flex; align-items:center; gap:12px; }
+.logout-btn { background:none; border:1px solid var(--border); padding:6px 14px; border-radius:40px; cursor:pointer; font-size:0.85rem; transition:0.2s; }
+.logout-btn:hover { border-color:#dc2626; color:#dc2626; }
+.card { background:var(--surface); border-radius:28px; border:1px solid var(--border); margin-bottom:24px; overflow:hidden; }
+.card-header { padding:16px 24px; border-bottom:1px solid var(--border); font-weight:600; display:flex; align-items:center; gap:8px; }
+.card-body { padding:20px 24px; }
+.form-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; }
+.form-group { display:flex; flex-direction:column; gap:6px; }
+.form-label { font-size:0.7rem; font-weight:700; text-transform:uppercase; color:var(--text2); }
+.form-input, .form-select, .form-textarea {
+  padding:10px 14px; border-radius:18px; border:1.5px solid var(--border);
+  background:white; font-size:0.85rem; outline:none; transition:border-color 0.15s;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color:var(--primary); }
+.form-input.required-empty { border-color:var(--red-light); }
+.btn { padding:8px 20px; border-radius:40px; border:none; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition:0.2s; }
+.btn-primary { background:var(--primary); color:white; }
+.btn-primary:hover:not(:disabled) { background:var(--primary-dark); }
+.btn-secondary { background:#eef2f7; color:var(--text2); }
+.btn-secondary:hover:not(:disabled) { background:#dce6ef; }
+.btn:disabled { opacity:0.55; cursor:not-allowed; }
+.btn .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,0.35); border-top-color:white; border-radius:50%; animation:spin 0.65s linear infinite; display:none; }
+.btn.loading .spinner { display:inline-block; }
+.btn.loading .btn-label { display:none; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.test-cart { background:#f9fbfd; border-radius:20px; padding:12px; margin-top:12px; min-height:60px; }
+.test-chip { display:inline-flex; align-items:center; gap:6px; background:#e6f0f5; padding:4px 12px; border-radius:30px; margin:4px; font-size:0.75rem; }
+.chip-remove { background:none; border:none; cursor:pointer; font-size:1rem; color:var(--red-light); line-height:1; }
+.chip-remove:hover { color:#9b1c1c; }
+.payment-summary { background:#f0f7f3; border-radius:20px; padding:16px; margin-top:16px; }
+.payment-line { display:flex; justify-content:space-between; margin:8px 0; font-size:0.9rem; }
+.toast-stack { position:fixed; bottom:20px; right:20px; z-index:1000; }
+.toast { background:var(--text); color:white; padding:10px 20px; border-radius:60px; margin-top:8px; font-size:0.85rem; animation:fadeIn 0.2s; }
+.toast.error { background:#dc2626; }
+.toast.warn  { background:#d97706; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; } }
+.overlay { position:fixed; top:0;left:0; width:100%;height:100%; background:rgba(0,0,0,0.5); backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; z-index:2000; }
+.modal-sm { background:white; border-radius:32px; max-width:480px; width:90%; padding:24px; text-align:center; max-height:85vh; overflow-y:auto; }
+.no-tests-notice { background:#fff9ec; border:1px solid #fde68a; border-radius:14px; padding:10px 16px; font-size:0.82rem; color:#92400e; margin-bottom:12px; display:none; }
+.pay-badge { display:inline-block; padding:3px 12px; border-radius:40px; font-size:0.75rem; font-weight:700; }
+.pay-paid    { background:#dcfce7; color:#15803d; }
+.pay-partial { background:#fef3c7; color:#92400e; }
+.pay-unpaid  { background:#fee2e2; color:#b91c1c; }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- ── Auth guard — same pattern as management.html ───────────── -->
+<script>
+  const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
+
+  // Single Supabase client (anon) — used for DB queries, no auth calls
+  window._supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Identical to management.html checkAuth
+  function checkAuth(allowedRoles) {
+    try {
+      const raw = sessionStorage.getItem('muujiza_session');
+      if (!raw) throw new Error('No session');
+      const session = JSON.parse(raw);
+      if (!session || Date.now() > session.expiresAt) throw new Error('Session expired');
+      if (allowedRoles && !allowedRoles.includes(session.role)) throw new Error('Unauthorised role');
+      return session;
+    } catch (e) {
+      sessionStorage.removeItem('muujiza_session');
+      window.location.replace('login.html');
+      return null;
+    }
+  }
+
+  function logoutUser() {
+    sessionStorage.removeItem('muujiza_session');
+    window.location.replace('login.html');
+  }
+
+  // Reception, admin, and supervisors can register samples
+  const currentSession = checkAuth(['reception', 'admin', 'supervisor']);
+</script>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand-name">MU'UJIZA DIAGNOSTICS – Accession</div>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div class="topbar-clock" id="clockDisplay"></div>
+      <div class="topbar-user">
+        <span id="userDisplay"></span>
+        <button class="logout-btn" onclick="logoutUser()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Patient Information -->
+  <div class="card">
+    <div class="card-header"><i class="fas fa-user-plus"></i> Patient Information</div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:span 2;">
+          <label class="form-label">Full Name *</label>
+          <input type="text" class="form-input" id="f-name" autocomplete="off">
+        </div>
+        <div class="form-group"><label class="form-label">Age</label><input type="number" class="form-input" id="f-age" min="0" max="150"></div>
+        <div class="form-group"><label class="form-label">Gender</label>
+          <select class="form-select" id="f-gender">
+            <option>Male</option><option>Female</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Phone</label><input type="tel" class="form-input" id="f-phone"></div>
+        <div class="form-group"><label class="form-label">ID / File No.</label><input type="text" class="form-input" id="f-nid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clinical & Sample -->
+  <div class="card">
+    <div class="card-header"><i class="fas fa-stethoscope"></i> Clinical &amp; Sample</div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Clinician</label><input type="text" class="form-input" id="f-clinician"></div>
+        <div class="form-group"><label class="form-label">History</label><textarea class="form-textarea" id="f-history" rows="2"></textarea></div>
+        <div class="form-group"><label class="form-label">Priority</label>
+          <select class="form-select" id="f-priority">
+            <option>Routine</option><option>Urgent</option><option>STAT</option>
+          </select>
+        </div>
+<div class="form-group">
+  <label class="form-label">Sample Type</label>
+  <select class="form-select" id="f-stype">
+    <option>Whole Blood (EDTA)</option>
+    <option>Serum</option>
+    <option>Plasma (Citrate/Heparin/Fluoride)</option>
+    <option>Capillary Blood (Finger prick)</option>
+    <option>Urine</option>
+    <option>Stool</option>
+    <option>Sputum</option>
+    <option>CSF (Cerebrospinal fluid)</option>
+    <option>Pleural Fluid</option>
+    <option>Ascitic Fluid</option>
+    <option>Synovial Fluid</option>
+    <option>Swab (Throat/Nasopharyngeal/Vaginal/Urethral)</option>
+    <option>Tissue Biopsy</option>
+    <option>Bone Marrow Aspirate</option>
+    <option>Semen</option>
+    <option>Bronchoalveolar Lavage (BAL)</option>
+    <option>Amniotic Fluid</option>
+    <option>Saliva</option>
+    <option>Vitreous Humor</option>
+    <option>OTHERS</option>
+  </select>
+</div>
+       <div class="form-group">
+  <label class="form-label">Tube</label>
+  <select class="form-select" id="f-tube">
+    <option>Purple top (EDTA) – Haematology (CBC, Hb, HCT, malaria)</option>
+    <option>Red top (Plain/SST) – Serum chemistry (LFT, RFT, lipids, serology)</option>
+    <option>Blue top (Sodium Citrate) – Coagulation (PT/APTT, INR)</option>
+    <option>Green top (Heparin) – Plasma chemistry (STAT electrolytes, ammonia)</option>
+    <option>Grey top (Fluoride/Oxalate) – Glucose, lactate, OGTT</option>
+    <option>Yellow top (ACD/SPS) – Blood culture, DNA studies, paternity</option>
+    <option>Pink top (EDTA) – Blood bank (crossmatch, blood group)</option>
+    <option>Black top (Sodium Citrate) – ESR (Westergren tube)</option>
+    <option>Royal blue top (Trace element) – Heavy metals, copper, zinc</option>
+    <option>Gold top (SST) – Same as red SST, but with gel separator</option>
+    <option>swab stick</option>
+    <option>OTHERS</option>
+  </select>
+</div>
+        <div class="form-group"><label class="form-label">Collection Date</label><input type="date" class="form-input" id="f-collDate"></div>
+        <div class="form-group"><label class="form-label">Collection Time</label><input type="time" class="form-input" id="f-collTime"></div>
+        <div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-input" id="f-due"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Test Requests -->
+  <div class="card">
+    <div class="card-header"><i class="fas fa-vials"></i> Test Requests</div>
+    <div class="card-body">
+      <div class="no-tests-notice" id="noTestsNotice">
+        <i class="fas fa-exclamation-triangle"></i>
+        No tests configured. Ask an Admin to add units and tests.
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Unit</label>
+          <select class="form-select" id="f-unit"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Test</label>
+          <select class="form-select" id="f-test"></select>
+        </div>
+        <div class="form-group" style="justify-content:flex-end;">
+          <label class="form-label">&nbsp;</label>
+          <button class="btn btn-secondary" id="addTestBtn"><i class="fas fa-plus"></i> Add Test</button>
+        </div>
+      </div>
+      <div id="testCart" class="test-cart">
+        <span style="color:var(--text3);">No tests added yet.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment -->
+  <div class="card">
+    <div class="card-header"><i class="fas fa-credit-card"></i> Payment &amp; Billing</div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Payment Mode</label>
+          <select class="form-select" id="f-paymode">
+            <option>Cash</option><option>Card</option>
+            <option>Mobile Money</option><option>Insurance</option><option>NHIF</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Insurance No. (if applicable)</label>
+          <input type="text" class="form-input" id="f-insurance">
+        </div>
+      </div>
+      <div class="payment-summary">
+        <div class="payment-line"><strong>Total Amount:</strong> <span id="totalAmount">0.00</span> NGN</div>
+        <div class="form-group" style="margin:8px 0;">
+          <label class="form-label">Amount Paid (NGN)</label>
+          <input type="number" step="0.01" min="0" class="form-input" id="amountPaid" value="0">
+        </div>
+        <div class="payment-line"><strong>Balance Due:</strong> <span id="balanceDue">0.00</span> NGN</div>
+        <div class="payment-line" style="margin-top:8px;">
+          <strong>Payment Status:</strong>
+          <span id="payStatusBadge" class="pay-badge pay-unpaid">Unpaid</span>
+        </div>
+        <div class="payment-line" style="font-size:0.75rem; color:var(--text2);">Receipt number generated on registration.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; justify-content:flex-end; gap:12px; margin-bottom:20px;">
+    <button class="btn btn-secondary" id="clearBtn"><i class="fas fa-times"></i> Clear Form</button>
+    <button class="btn btn-primary" id="registerBtn">
+      <div class="spinner"></div>
+      <span class="btn-label"><i class="fas fa-syringe"></i> Register &amp; Print Receipt</span>
+    </button>
+  </div>
+</div>
+
+<!-- Receipt Modal -->
+<div id="labelModal" class="overlay">
+  <div class="modal-sm" id="labelContent"></div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+(function () {
+  // ── Use the already-initialised client from the auth guard above ──
+  const db = window._supabaseClient;
+
+  // ── Show logged-in user in header ─────────────────────────────────
+  document.getElementById('userDisplay').innerHTML =
+    `<i class="fas fa-user-circle"></i> ${esc(currentSession.name)} (${esc(currentSession.role)})`;
+
+  // ── Clock ─────────────────────────────────────────────────────────
+  function startClock() {
+    function tick() { document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-GB'); }
+    tick(); setInterval(tick, 1000);
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────
+  function esc(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, m =>
+      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+  }
+
+  function toast(msg, type = 'success') {
+    let stack = document.getElementById('toastStack');
+    if (!stack) return;
+    let div = document.createElement('div');
+    div.className = `toast ${type}`;
+    let icon = type === 'error' ? 'times-circle' : type === 'warn' ? 'exclamation-triangle' : 'check-circle';
+    div.innerHTML = `<i class="fas fa-${icon}"></i> `;
+    let span = document.createElement('span');
+    span.textContent = msg;
+    div.appendChild(span);
+    stack.appendChild(div);
+    setTimeout(() => { div.style.opacity = '0'; setTimeout(() => div.remove(), 300); }, 3500);
+  }
+
+  // ── Audit log ─────────────────────────────────────────────────────
+  async function addAudit(action, sampleId, details) {
+    try {
+      await db.from('audit_log').insert([{
+        ts: new Date().toISOString(),
+        user_name: currentSession.name || 'Unknown',
+        user_role: currentSession.role || 'Unknown',
+        action,
+        sample_id: sampleId,
+        details: details || ''
+      }]);
+    } catch (err) { console.warn('Audit failed', err); }
+  }
+
+  // ── Test definitions ──────────────────────────────────────────────
+  let testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+
+  async function loadTestDefinitions() {
+    try {
+      const { data, error } = await db.from('test_definitions').select('*');
+      if (error) throw error;
+      testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+      data.forEach(td => {
+        if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
+        testDefinitions.units[td.unit_name].push(td.test_name);
+        testDefinitions.testPrices[td.test_name] = td.price_ngn;
+        if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
+      });
+      populateUnits();
+    } catch (err) {
+      console.error(err);
+      toast('Failed to load test definitions', 'error');
+      document.getElementById('noTestsNotice').style.display = 'block';
+      document.getElementById('addTestBtn').disabled = true;
+    }
+  }
+
+  function getTestPrice(testName) { return testDefinitions.testPrices[testName] || 0; }
+
+  function populateUnits() {
+    let units = Object.keys(testDefinitions.units);
+    let notice = document.getElementById('noTestsNotice');
+    let addBtn = document.getElementById('addTestBtn');
+    if (!units.length) {
+      if (notice) notice.style.display = 'block';
+      if (addBtn)  addBtn.disabled = true;
+      return;
+    }
+    if (notice) notice.style.display = 'none';
+    if (addBtn)  addBtn.disabled = false;
+    let sel = document.getElementById('f-unit');
+    if (sel) sel.innerHTML = units.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+    updateTests();
+  }
+
+  function updateTests() {
+    let unit  = document.getElementById('f-unit')?.value;
+    let tests = testDefinitions.units[unit] || [];
+    let sel   = document.getElementById('f-test');
+    if (sel) sel.innerHTML = tests.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  }
+
+  // ── Test cart ─────────────────────────────────────────────────────
+  let tempTests = [];
+
+  function renderCart() {
+    let cart = document.getElementById('testCart');
+    if (!cart) return;
+    if (!tempTests.length) {
+      cart.innerHTML = '<span style="color:var(--text3);">No tests added yet.</span>';
+      updateTotal(); return;
+    }
+    cart.innerHTML = tempTests.map((t, i) => `
+      <div class="test-chip">
+        <span>${esc(t.unit_name)}: ${esc(t.test_name)} – <strong>${getTestPrice(t.test_name).toFixed(2)} NGN</strong></span>
+        <button class="chip-remove" data-idx="${i}" title="Remove">×</button>
+      </div>`).join('');
+    cart.querySelectorAll('.chip-remove').forEach(btn => {
+      btn.addEventListener('click', () => { tempTests.splice(parseInt(btn.dataset.idx), 1); renderCart(); });
+    });
+    updateTotal();
+  }
+
+  function updateTotal() {
+    let total   = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
+    let paidRaw = parseFloat(document.getElementById('amountPaid')?.value) || 0;
+    if (paidRaw > total) {
+      paidRaw = total;
+      if (document.getElementById('amountPaid')) document.getElementById('amountPaid').value = total.toFixed(2);
+      toast('Amount paid capped at total', 'warn');
+    }
+    let balance = total - paidRaw;
+    if (document.getElementById('totalAmount')) document.getElementById('totalAmount').textContent = total.toFixed(2);
+    if (document.getElementById('balanceDue'))  document.getElementById('balanceDue').textContent  = balance.toFixed(2);
+    let badge = document.getElementById('payStatusBadge');
+    if (badge) {
+      if (total === 0 || (balance > 0 && paidRaw === 0)) {
+        badge.textContent = 'Unpaid';   badge.className = 'pay-badge pay-unpaid';
+      } else if (balance > 0) {
+        badge.textContent = 'Partial';  badge.className = 'pay-badge pay-partial';
+      } else {
+        badge.textContent = 'Paid';     badge.className = 'pay-badge pay-paid';
+      }
+    }
+  }
+
+  function addTest() {
+    let unit = document.getElementById('f-unit')?.value;
+    let test = document.getElementById('f-test')?.value;
+    if (!unit || !test) { toast('Select a unit and test first', 'warn'); return; }
+    if (tempTests.find(t => t.unit_name === unit && t.test_name === test)) {
+      toast(`"${test}" already in the cart`, 'warn'); return;
+    }
+    let testType = testDefinitions.testTypes[test] || 'simple';
+    tempTests.push({ unit_name: unit, test_name: test, test_type: testType,
+      result: '', result_json: null, tech_name: '', status: 'Collected', sort_order: tempTests.length });
+    renderCart();
+    toast(`${test} added`);
+  }
+
+  // ── Register sample ───────────────────────────────────────────────
+  async function registerSample() {
+    let name = document.getElementById('f-name')?.value.trim();
+    if (document.getElementById('f-name'))
+      document.getElementById('f-name').classList.toggle('required-empty', !name);
+    if (!name)         { toast('Patient name is required', 'error'); document.getElementById('f-name')?.focus(); return; }
+    if (!tempTests.length) { toast('Add at least one test', 'error'); return; }
+
+    let total     = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
+    let paid      = Math.min(parseFloat(document.getElementById('amountPaid')?.value) || 0, total);
+    let balance   = total - paid;
+    let paystatus = balance <= 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
+    let now       = new Date();
+    let collDate  = document.getElementById('f-collDate')?.value || now.toISOString().slice(0, 10);
+    let collTime  = document.getElementById('f-collTime')?.value || now.toTimeString().slice(0, 5);
+    let receiptNo = `RCP-${Date.now()}`;
+
+    let btn = document.getElementById('registerBtn');
+    if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+
+    try {
+      // 1. Insert sample
+      const sampleRow = {
+        patient:         name,
+        age:             parseInt(document.getElementById('f-age')?.value) || null,
+        gender:          document.getElementById('f-gender')?.value || 'Male',
+        phone:           document.getElementById('f-phone')?.value.trim() || null,
+        nid:             document.getElementById('f-nid')?.value.trim() || null,
+        clinician:       document.getElementById('f-clinician')?.value.trim() || null,
+        history:         document.getElementById('f-history')?.value.trim() || null,
+        priority:        document.getElementById('f-priority')?.value || 'Routine',
+        sample_type:     document.getElementById('f-stype')?.value || 'Whole Blood (EDTA)',
+        tube:            document.getElementById('f-tube')?.value || 'Purple top (EDTA)',
+        collection_date: collDate,
+        collection_time: collTime,
+        due_date:        document.getElementById('f-due')?.value || null,
+        pay_mode:        document.getElementById('f-paymode')?.value || 'Cash',
+        insurance_no:    document.getElementById('f-insurance')?.value.trim() || null,
+        pay_status:      paystatus,
+        total_amount:    total,
+        amount_paid:     paid,
+        balance_due:     balance,
+        receipt_no:      receiptNo,
+        payment_date:    now.toISOString(),
+        status:          'Collected',
+        registered_by:   currentSession.name || 'Reception'
+      };
+
+      const { data: sampleData, error: sampleError } = await db
+        .from('samples').insert(sampleRow).select('id').single();
+      if (sampleError) throw sampleError;
+
+      const sampleId = sampleData.id;
+      receiptNo = `RCP-${sampleId}-${Date.now()}`;
+      await db.from('samples').update({ receipt_no: receiptNo }).eq('id', sampleId);
+
+      // 2. Insert sample_tests
+      const testRows = tempTests.map((t, idx) => ({
+        sample_id:   sampleId,
+        test_name:   t.test_name,
+        unit_name:   t.unit_name,
+        test_type:   t.test_type,
+        result:      '',
+        result_json: null,
+        tech_name:   '',
+        status:      'Collected',
+        sort_order:  idx
+      }));
+      const { error: testError } = await db.from('sample_tests').insert(testRows);
+      if (testError) throw testError;
+
+      // 3. COC events
+      await db.from('coc_events').insert([
+        { sample_id: sampleId, step_index: 0, step_name: 'Registered', done: true,  active: false,
+          actor_name: currentSession.name || 'Reception', occurred_at: now.toISOString() },
+        { sample_id: sampleId, step_index: 1, step_name: 'Collected',  done: false, active: true,
+          actor_name: null, occurred_at: now.toISOString() }
+      ]);
+
+      await addAudit('Sample Registered', sampleId,
+        `${tempTests.length} test(s) | Total: ${total} NGN | Paid: ${paid} | Balance: ${balance} | Status: ${paystatus}`);
+
+      toast(`MU-${sampleId} registered ✓`);
+
+      showReceiptModal({
+        id: sampleId, patient: name, priority: sampleRow.priority, tests: tempTests,
+        totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
+        paymode: sampleRow.pay_mode, receiptNo, paymentDate: now.toISOString()
+      });
+
+      clearForm();
+
+    } catch (err) {
+      console.error(err);
+      toast(`Registration failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+    }
+  }
+
+  // ── Clear form ────────────────────────────────────────────────────
+  function clearForm() {
+    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    if (document.getElementById('f-name'))     document.getElementById('f-name').classList.remove('required-empty');
+    if (document.getElementById('f-age'))      document.getElementById('f-age').value = '';
+    if (document.getElementById('f-gender'))   document.getElementById('f-gender').value = 'Male';
+    if (document.getElementById('f-priority')) document.getElementById('f-priority').value = 'Routine';
+    if (document.getElementById('f-stype'))    document.getElementById('f-stype').value = 'Whole Blood (EDTA)';
+    if (document.getElementById('f-tube'))     document.getElementById('f-tube').value = 'Purple top (EDTA)';
+    if (document.getElementById('f-paymode'))  document.getElementById('f-paymode').value = 'Cash';
+    setDefaultDates();
+    tempTests = [];
+    renderCart();
+    if (document.getElementById('amountPaid')) document.getElementById('amountPaid').value = '0';
+    updateTotal();
+  }
+
+  // ── Receipt modal ─────────────────────────────────────────────────
+  function showReceiptModal(sample) {
+    let modal   = document.getElementById('labelModal');
+    let content = document.getElementById('labelContent');
+    if (!modal || !content) return;
+
+    let testRows = (sample.tests || []).map(t => {
+      let tname = t.test_name || t.test || '';
+      return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee;">
+        <span>${esc(tname)}</span>
+        <span>${getTestPrice(tname).toFixed(2)} NGN</span>
+      </div>`;
+    }).join('');
+
+    let payClass = sample.paystatus === 'Paid' ? 'pay-paid'
+                 : sample.paystatus === 'Partial' ? 'pay-partial' : 'pay-unpaid';
+
+    content.innerHTML = `
+      <div style="text-align:left;">
+        <canvas id="receiptBarcode" style="display:block;margin:0 auto 12px;"></canvas>
+        <h3 style="color:#1F6E43;margin-bottom:4px;">MU'UJIZA DIAGNOSTICS</h3>
+        <p style="font-size:0.78rem;color:#5a7e94;margin-bottom:12px;">Laboratory Information System</p>
+        <p style="margin-bottom:2px;"><strong>Receipt No:</strong> ${esc(sample.receiptNo)}</p>
+        <p style="margin-bottom:2px;"><strong>Sample ID:</strong> MU-${sample.id}</p>
+        <p style="margin-bottom:2px;"><strong>Patient:</strong> ${esc(sample.patient)}</p>
+        <p style="margin-bottom:12px;"><strong>Priority:</strong> ${esc(sample.priority)}</p>
+        <div style="margin-bottom:12px;">${testRows}</div>
+        <div style="background:#f0f7f3;border-radius:12px;padding:10px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;"><span>Total</span><strong>${sample.totalAmount.toFixed(2)} NGN</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Paid</span><strong>${sample.amountPaid.toFixed(2)} NGN</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Balance</span><strong>${sample.balanceDue.toFixed(2)} NGN</strong></div>
+          <div style="margin-top:6px;">Status: <span class="pay-badge ${payClass}">${esc(sample.paystatus)}</span></div>
+        </div>
+        <p style="font-size:0.75rem;color:#5a7e94;margin-bottom:16px;">
+          ${esc(sample.paymode)} &nbsp;|&nbsp; ${new Date(sample.paymentDate).toLocaleString()}
+        </p>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+          <button class="btn btn-secondary" onclick="closeLabelModal()">Close</button>
+        </div>
+      </div>`;
+
+    modal.style.display = 'flex';
+    setTimeout(() => {
+      try {
+        JsBarcode('#receiptBarcode', sample.receiptNo, { format:'CODE128', width:2, height:40, displayValue:false });
+      } catch(e) {}
+    }, 60);
+  }
+
+  window.closeLabelModal = function () {
+    const modal = document.getElementById('labelModal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  // ── Default dates ─────────────────────────────────────────────────
+  function setDefaultDates() {
+    let today = new Date().toISOString().slice(0, 10);
+    if (document.getElementById('f-collDate')) document.getElementById('f-collDate').value = today;
+    if (document.getElementById('f-collTime')) document.getElementById('f-collTime').value = new Date().toTimeString().slice(0, 5);
+    let due = new Date(); due.setDate(due.getDate() + 1);
+    if (document.getElementById('f-due')) document.getElementById('f-due').value = due.toISOString().slice(0, 10);
+  }
+
+  // ── Event listeners ───────────────────────────────────────────────
+  document.getElementById('addTestBtn')?.addEventListener('click', addTest);
+  document.getElementById('registerBtn')?.addEventListener('click', registerSample);
+  document.getElementById('clearBtn')?.addEventListener('click', clearForm);
+  document.getElementById('f-unit')?.addEventListener('change', updateTests);
+  document.getElementById('amountPaid')?.addEventListener('input', updateTotal);
+  document.getElementById('f-name')?.addEventListener('input', () =>
+    document.getElementById('f-name')?.classList.remove('required-empty'));
+  document.getElementById('f-test')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
+  document.getElementById('f-unit')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
+  document.getElementById('labelModal')?.addEventListener('click', e => {
+    if (e.target === document.getElementById('labelModal')) closeLabelModal();
+  });
+
+  // ── Boot ──────────────────────────────────────────────────────────
+  setDefaultDates();
+  startClock();
+  loadTestDefinitions();
+
+})();
+
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      console.log('Service Worker registered', reg);
+    }).catch(err => {
+      console.log('Service Worker registration failed', err);
+    });
+  }
+</script>
+</body>
+</html>
