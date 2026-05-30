@@ -8,21 +8,25 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="auth-guard.js"></script>
 <style>
  :root { 
   --primary: #1F6E43; 
   --primary-dark: #155a38; 
   --bg: #eef2f9; 
   --surface: white; 
+  --white: #ffffff;
   --text: #1a2c3e; 
   --text2: #5a7e94; 
   --text3: #7f9eb0; 
   --border: #e2edf2; 
+  --red: #dc2626;
+  --red-l: #fee2e2;
   --red-light: #dc2626; 
-  --yellow-light: #d97706; 
+  --yellow-light: #d97706;
+  --amber: #d97706;
   --green-glow: #10b981; 
   --mono: 'DM Mono', monospace;
-  /* Add these for global components */
   --green: #1F6E43;
   --green-d: #155a38;
   --green-l: #e8f4ed;
@@ -357,31 +361,17 @@
 </head>
 <body>
 
-<!-- Auth guard -->
+<!-- Auth guard (provided by auth-guard.js loaded in <head>) -->
 <script>
-  const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
+  const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  function checkAuth(allowedRoles) {
-    try {
-      const raw = sessionStorage.getItem('muujiza_session');
-      if (!raw) throw new Error('No session');
-      const session = JSON.parse(raw);
-      if (!session || Date.now() > session.expiresAt) throw new Error('Session expired');
-      if (allowedRoles && !allowedRoles.includes(session.role)) throw new Error('Unauthorised role');
-      return session;
-    } catch (e) {
-      sessionStorage.removeItem('muujiza_session');
-      window.location.replace('login.html');
-      return null;
-    }
-  }
-  function logoutUser() {
-    sessionStorage.removeItem('muujiza_session');
-    window.location.replace('login.html');
-  }
+  // checkAuth() and logoutUser() come from auth-guard.js
   const currentSession = checkAuth(['admin', 'supervisor']);
+
+  // Build token-authenticated client — injects x-lis-token on every request
+  window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const db = window._supabaseClient;
 </script>
 
 <div class="topbar">
@@ -845,7 +835,7 @@
 </script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').then(reg => console.log('Service Worker registered', reg)).catch(err => console.log('Service Worker registration failed', err));
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 </script>
 <script src="global.js"></script>
