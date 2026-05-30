@@ -747,7 +747,8 @@ async function attemptLogin() {
     const sessionPayload = {
       id:        user.username,
       username:  user.username,
-      name:      user.display_name || user.username,
+      // Try all common name fields the RPC might return — fall back to username
+      name:      user.display_name || user.full_name || user.name || user.username,
       role:      selectedRole,
       token:     sessionToken,           // DB session token for RLS
       loginAt:   Date.now(),

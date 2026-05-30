@@ -568,7 +568,7 @@ async function loadSamples() {
   try {
     const { data, error } = await db
       .from('samples')
-      .select('*, sample_tests(id,test_name,status,result,result_data,price_ngn)')
+      .select('*, sample_tests(id,test_name,status,result,result_data,price_ngn,tech_name)')
       .order('id', { ascending: false })
       .limit(500);
     if (error) throw error;
@@ -584,7 +584,8 @@ async function loadSamples() {
       collTime: s.collection_time,
       totalAmount: s.total_amount,
       amountPaid: s.amount_paid,
-      balanceDue: s.balance_due
+      balanceDue: s.balance_due,
+      releasedAt: s.released_at
     }));
   } catch (err) {
     console.error(err);
@@ -785,25 +786,50 @@ async function addUnit() {
   }]);
   if (error) { toast('Failed to create unit: ' + error.message, 'error'); return; }
 
-  await loadTestDefinitions();
+  // Update local cache — no DB re-fetch needed
+  testDefinitions.units[unitName] = [];
   renderUnitsList();
   const input = document.getElementById('newUnitName');
   if (input) input.value = '';
   toast(`Unit "${unitName}" added`);
 }
+
 async function deleteUnit(unit) {
   if (!confirm(`Delete unit "${unit}" and all its tests?`)) return;
   try {
-    await db.from('test_definitions').delete().eq('unit_name', unit);
-    await loadTestDefinitions();
+    const { error } = await db.from('test_definitions').delete().eq('unit_name', unit);
+    if (error) throw error;
+
+    // Update local cache — remove unit and clean up price/type maps
+    const tests = testDefinitions.units[unit] || [];
+    tests.forEach(t => {
+      delete testDefinitions.testPrices[t];
+      delete testDefinitions.testTypes[t];
+    });
+    delete testDefinitions.units[unit];
+
     renderUnitsList();
     toast(`Unit "${unit}" deleted`, 'warn');
-  } catch(err) { toast("Delete failed: "+err.message, "error"); }
+  } catch(err) { toast("Delete failed: " + err.message, "error"); }
 }
+
 async function addTestToUnit(unit, testName, testType) {
   testName = (testName || '').trim();
   if (!testName) { toast('Test name required', 'error'); return; }
-  if ((testDefinitions.units[unit] || []).includes(testName)) { toast('Test already exists in this unit', 'error'); return; }
+
+  // Check local cache first — same unit
+  if ((testDefinitions.units[unit] || []).includes(testName)) {
+    toast('Test already exists in this unit', 'error'); return;
+  }
+
+  // Check all other units — DB has a global unique constraint on test_name
+  const existingUnit = Object.entries(testDefinitions.units).find(
+    ([u, tests]) => u !== unit && tests.includes(testName)
+  );
+  if (existingUnit) {
+    toast(`"${testName}" already exists in unit "${existingUnit[0]}". Test names must be unique across all units.`, 'error');
+    return;
+  }
 
   const { error } = await db.from('test_definitions').insert([{
     unit_name: unit,
@@ -811,9 +837,22 @@ async function addTestToUnit(unit, testName, testType) {
     test_type: testType,
     price_ngn: 0
   }]);
-  if (error) { toast('Failed to add test: ' + error.message, 'error'); return; }
 
-  await loadTestDefinitions();
+  if (error) {
+    if (error.code === '23505') {
+      toast(`"${testName}" already exists in another unit. Use a unique name (e.g. "Urinalysis (Micro)" vs "Urinalysis (Chem)").`, 'error');
+    } else {
+      toast('Failed to add test: ' + error.message, 'error');
+    }
+    return;
+  }
+
+  // Update local cache — no DB re-fetch needed
+  if (!testDefinitions.units[unit]) testDefinitions.units[unit] = [];
+  testDefinitions.units[unit].push(testName);
+  testDefinitions.testPrices[testName] = 0;
+  if (testType !== 'simple') testDefinitions.testTypes[testName] = testType;
+
   renderUnitsList();
 
   const unitId = unit.replace(/[^a-z0-9]/gi, '_');
@@ -822,23 +861,39 @@ async function addTestToUnit(unit, testName, testType) {
 
   toast(`Test "${testName}" added to ${unit}`);
 }
+
 async function deleteTest(unit, test) {
   if (!confirm(`Delete test "${test}"?`)) return;
   try {
-    await db.from('test_definitions').delete().eq('test_name', test);
-    await loadTestDefinitions();
+    const { error } = await db.from('test_definitions')
+      .delete()
+      .eq('unit_name', unit)
+      .eq('test_name', test);
+    if (error) throw error;
+
+    // Update local cache — no DB re-fetch needed
+    testDefinitions.units[unit] = (testDefinitions.units[unit] || []).filter(t => t !== test);
+    delete testDefinitions.testPrices[test];
+    delete testDefinitions.testTypes[test];
+
     renderUnitsList();
     toast(`Test "${test}" deleted`, 'warn');
-  } catch(err) { toast("Delete failed: "+err.message, "error"); }
+  } catch(err) { toast("Delete failed: " + err.message, "error"); }
 }
+
 async function updateTestPrice(test, price) {
   let p = parseFloat(price);
-  if (isNaN(p)) p = 0;
+  if (isNaN(p) || p < 0) p = 0;
   try {
-    await db.from('test_definitions').update({ price_ngn: p }).eq('test_name', test);
-    await loadTestDefinitions();
-    toast(`Price for "${test}" set to ${p} NGN`);
-  } catch(err) { toast("Update failed: "+err.message, "error"); }
+    const { error } = await db.from('test_definitions')
+      .update({ price_ngn: p })
+      .eq('test_name', test);
+    if (error) throw error;
+
+    // Update local cache — no DB re-fetch needed
+    testDefinitions.testPrices[test] = p;
+    toast(`Price for "${test}" saved — ${p.toLocaleString()} NGN`);
+  } catch(err) { toast("Update failed: " + err.message, "error"); }
 }
 
 // ========== EXPANDED PARAMETER DEFINITIONS (FULL) ==========
@@ -1344,13 +1399,13 @@ async function renderVerifyTable() {
     const statusBadge = isReleased
       ? '<span class="badge badge-paid"><i class="fas fa-check-circle"></i> Released</span>'
       : '<span class="badge badge-partial">Verifying</span>';
-    const releasedAt = isReleased && s.releasedAt ? new Date(s.releasedAt).toLocaleString() : (isReleased ? '&mdash;' : '');
+    const releasedAt = isReleased && s.releasedAt ? new Date(s.releasedAt).toLocaleString() : (isReleased ? '—' : '');
     const actions = `<button class="btn btn-primary btn-sm" onclick="openVerifyModal(${s.id})"><i class="fas fa-eye"></i> Review</button>`;
     return `<tr style="${isReleased ? 'opacity:0.85;background:#f8fff9;' : ''}">
       <td style="font-family:monospace;">MU-${s.id}</td>
       <td><strong>${esc(s.patient)}</strong><br><small>${s.age ?? '?'}y ${esc(s.gender)}</small></td>
       <td><small>${s.tests.map(t => esc(t.test_name)).join('<br>')}</small></td>
-      <td>${esc(s.tests.find(t => t.tech_name)?.tech_name || '&mdash;')}</td>
+      <td>${s.tests.find(t => t.tech_name)?.tech_name || '—'}</td>
       <td>${statusBadge}</td>
       <td><small>${releasedAt}</small></td>
       <td>${actions}</td>
