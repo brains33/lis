@@ -125,7 +125,7 @@
                     sender_name: currentUser?.name || 'Staff',
                     sender_role: currentUser?.role || 'staff',
                     created_at: new Date().toISOString(),
-                    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                    expires_at: new Date(Date.now() + 30 * 60 * 60 * 1000).toISOString(), // 30 hours
                     is_pinned: false
                 }]);
 
