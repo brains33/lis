@@ -6,9 +6,26 @@
 <link rel="manifest" href="manifest.json">
 <title>MU'UJIZA LIS – Management Hub</title>
 <style>
-/* ========== ALL YOUR EXISTING STYLES (keep as they are) ========== */
-:root { --primary: #1F6E43; --primary-dark: #155a38; --bg: #eef2f9; --surface: white; --text: #1a2c3e; --text2: #5a7e94; --text3: #7f9eb0; --border: #e2edf2; --red-light: #dc2626; --yellow-light: #d97706; --green-glow: #10b981; --mono: 'DM Mono', monospace; }
-* { margin:0; padding:0; box-sizing:border-box; font-family:'DM Sans',system-ui,sans-serif; }
+:root { 
+  --primary: #1F6E43; 
+  --primary-dark: #155a38; 
+  --bg: #eef2f9; 
+  --surface: white; 
+  --text: #1a2c3e; 
+  --text2: #5a7e94; 
+  --text3: #7f9eb0; 
+  --border: #e2edf2; 
+  --red-light: #dc2626; 
+  --yellow-light: #d97706; 
+  --green-glow: #10b981; 
+  --mono: 'DM Mono', monospace;
+  /* Add these for global components */
+  --green: #1F6E43;
+  --green-d: #155a38;
+  --green-l: #e8f4ed;
+  --slate: #1e2a35;
+  --muted: #5a7e94;
+}
 body { background:var(--bg); padding:20px; color:var(--text); }
 .app { max-width:1600px; margin:0 auto; }
 .topbar { display:flex; justify-content:space-between; align-items:center; background:var(--surface); padding:12px 24px; border-radius:28px; margin-bottom:24px; border:1px solid var(--border); }
@@ -71,6 +88,196 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 .form-label  { font-size:0.7rem; font-weight:700; text-transform:uppercase; color:var(--text2); display:block; margin-bottom:4px; }
 .form-group  { display:flex; flex-direction:column; gap:4px; }
 .interp-abnormal { background:#fee2e2; color:#b91c1c; border-radius:12px; padding:8px 14px; font-size:0.82rem; margin-top:8px; }
+/* Global notification panel styles */
+.global-notification-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  max-width: calc(100vw - 40px);
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  z-index: 1000;
+  border: 1px solid var(--border);
+  transition: all 0.3s ease;
+}
+
+.notification-header {
+  background: var(--green);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.notification-header i {
+  transition: transform 0.3s;
+}
+
+.notification-header.collapsed i {
+  transform: rotate(180deg);
+}
+
+.notification-content {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px;
+  display: block;
+}
+
+.notification-content.collapsed {
+  display: none;
+}
+
+.notification-message {
+  background: #f8fafb;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--green);
+  font-size: 0.8rem;
+}
+
+.notification-message.pinned {
+  background: #fff7ed;
+  border-left-color: #f59e0b;
+}
+
+.notification-message .message-text {
+  margin-bottom: 5px;
+  color: var(--slate);
+}
+
+.notification-message .message-meta {
+  font-size: 0.65rem;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.send-message-form {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  background: #f9fafb;
+  border-radius: 0 0 20px 20px;
+}
+
+.send-message-form input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.send-message-form button {
+  background: var(--green);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.send-message-form button:hover {
+  background: var(--green-d);
+}
+
+.unread-badge {
+  background: #ef4444;
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  margin-left: 8px;
+}
+
+/* Global sample search */
+.global-sample-search {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  width: 300px;
+  z-index: 999;
+}
+
+.search-container {
+  background: white;
+  border-radius: 40px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.search-container input {
+  flex: 1;
+  border: none;
+  padding: 8px 8px 8px 4px;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.search-container button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--green);
+  padding: 6px;
+}
+
+.search-results-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 8px;
+  display: none;
+  z-index: 1000;
+}
+
+.search-results-dropdown.show {
+  display: block;
+}
+
+.search-result-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.search-result-item:hover {
+  background: var(--green-l);
+}
+
+.search-result-item .sample-id {
+  font-weight: 700;
+  color: var(--green);
+}
+
+.search-result-item .sample-patient {
+  color: var(--slate);
+  font-size: 0.75rem;
+}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1471,5 +1678,6 @@ if (currentUser) {
   setInterval(() => { if(!currentVerifySample) Promise.all([renderVerifyTable(), renderAllSamples(), renderDashboard()]); }, 30000);
 }
 </script>
+<script src="global.js"></script>
 </body>
 </html>
