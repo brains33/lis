@@ -292,6 +292,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="auth-guard.js"></script>
 </head>
 <body>
 <div class="app">
@@ -364,33 +365,17 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <div class="toast-stack" id="toastStack"></div>
 
 <script>
-// ========== USE ANON KEY ONLY (NO SERVICE KEY) ==========
-const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
+// ========== SUPABASE CLIENT ==========
+const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ========== SESSION-BASED AUTH ==========
-let currentUser = null;
-function checkAuth(allowedRoles) {
-  try {
-    const raw = sessionStorage.getItem('muujiza_session');
-    if (!raw) throw new Error('No session');
-    const session = JSON.parse(raw);
-    if (!session || Date.now() > session.expiresAt) throw new Error('Session expired');
-    if (allowedRoles && !allowedRoles.includes(session.role)) throw new Error('Unauthorised role');
-    return session;
-  } catch (e) {
-    sessionStorage.removeItem('muujiza_session');
-    window.location.replace('login.html');
-    return null;
-  }
-}
-function logoutUser() {
-  sessionStorage.removeItem('muujiza_session');
-  window.location.replace('login.html');
-}
-currentUser = checkAuth(['technologist', 'admin', 'supervisor']);
+// ========== AUTH — checkAuth() and logoutUser() from auth-guard.js ==========
+const currentSession = checkAuth(['technologist', 'admin', 'supervisor']);
+const currentUser    = currentSession;
 
+// Build token-authenticated client — injects x-lis-token on every request
+window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const db = window._supabaseClient;
 // ========== HELPERS ==========
 function esc(str) {
   if (str === null || str === undefined) return '';
@@ -467,8 +452,6 @@ async function loadTestDefinitions() {
         testDefinitions.testTypes[td.test_name] = td.test_type;
       }
     });
-    console.log('Test definitions loaded:', testDefinitions.testTypes);
-    console.log('Known test names from DB:', Object.keys(testDefinitions.testTypes));
   } catch (err) {
     console.error(err);
     toast('Failed to load test definitions', 'error');
@@ -481,13 +464,11 @@ let currentSample = null;
 
 async function loadSamples() {
   try {
-    console.log('Loading samples from Supabase...');
     const { data, error } = await db
       .from('samples')
       .select('*, sample_tests(*)')
       .order('id', { ascending: false });
     if (error) throw error;
-    console.log('Samples loaded:', data?.length || 0);
     samples = data.map(s => ({
       ...s,
       tests: s.sample_tests || [],
@@ -825,13 +806,11 @@ function getFlag(val, param) {
 
 // ========== RENDER SAMPLES TABLE ==========
 async function renderProcessingSamples() {
-  console.log('renderProcessingSamples called');
   await loadSamples();
   let search = document.getElementById('sampleSearch')?.value.toLowerCase().trim() || '';
   let priority = document.getElementById('priorityFilter')?.value || 'all';
 
   let ready = samples.filter(s => s.status === 'Processing' || s.status === 'Collected');
-  console.log('Ready samples (Collected + Processing):', ready.length);
 
   if (search) ready = ready.filter(s => s.id.toString().includes(search) || s.patient.toLowerCase().includes(search));
   if (priority !== 'all') ready = ready.filter(s => s.priority === priority);
@@ -1768,7 +1747,6 @@ document.addEventListener('keydown', e => {
 
 // ========== INIT ==========
 (async function init() {
-  console.log('Initializing Result Entry page...');
   await loadTestDefinitions();
   await renderProcessingSamples();
   startClock();

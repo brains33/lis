@@ -274,6 +274,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="auth-guard.js"></script>
 </head>
 <body>
 <div class="app">
@@ -313,32 +314,15 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <div class="toast-stack" id="toastStack"></div>
 
 <script>
-// ========== USE ANON KEY ONLY (NO SERVICE KEY) ==========
-const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
+const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ========== SESSION-BASED AUTH ==========
-let currentUser = null;
-function checkAuth(allowedRoles) {
-  try {
-    const raw = sessionStorage.getItem('muujiza_session');
-    if (!raw) throw new Error('No session');
-    const session = JSON.parse(raw);
-    if (!session || Date.now() > session.expiresAt) throw new Error('Session expired');
-    if (allowedRoles && !allowedRoles.includes(session.role)) throw new Error('Unauthorised role');
-    return session;
-  } catch (e) {
-    sessionStorage.removeItem('muujiza_session');
-    window.location.replace('login.html');
-    return null;
-  }
-}
-function logoutUser() {
-  sessionStorage.removeItem('muujiza_session');
-  window.location.replace('login.html');
-}
-currentUser = checkAuth(['patient', 'admin', 'supervisor', 'technologist', 'reception']);
+// checkAuth() and logoutUser() come from auth-guard.js
+const currentSession = checkAuth(['patient', 'admin', 'supervisor', 'technologist', 'reception']);
+const currentUser = currentSession;
+
+// Build token-authenticated client — injects x-lis-token on every request
+window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ========== HELPERS ==========
 function esc(str) {
@@ -376,6 +360,8 @@ async function addAudit(action, sampleId, details) {
     }]);
   } catch (err) { console.warn('Audit failed', err); }
 }
+
+const db = window._supabaseClient;
 
 // ========== LOAD DATA ==========
 let samples = [];

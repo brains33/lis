@@ -305,40 +305,20 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.paystack.co/v1/inline.js"></script>
+<script src="auth-guard.js"></script>
 </head>
 <body>
 
-<!-- ── Auth guard — same pattern as management.html ───────────── -->
+<!-- ── Auth guard (provided by auth-guard.js loaded in <head>) ── -->
 <script>
   const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
 
-  // Single Supabase client (anon) — used for DB queries, no auth calls
-  window._supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-  // Identical to management.html checkAuth
-  function checkAuth(allowedRoles) {
-    try {
-      const raw = sessionStorage.getItem('muujiza_session');
-      if (!raw) throw new Error('No session');
-      const session = JSON.parse(raw);
-      if (!session || Date.now() > session.expiresAt) throw new Error('Session expired');
-      if (allowedRoles && !allowedRoles.includes(session.role)) throw new Error('Unauthorised role');
-      return session;
-    } catch (e) {
-      sessionStorage.removeItem('muujiza_session');
-      window.location.replace('login.html');
-      return null;
-    }
-  }
-
-  function logoutUser() {
-    sessionStorage.removeItem('muujiza_session');
-    window.location.replace('login.html');
-  }
-
-  // Reception, admin, and supervisors can register samples
+  // checkAuth() and logoutUser() come from auth-guard.js
   const currentSession = checkAuth(['reception', 'admin', 'supervisor']);
+
+  // Build token-authenticated client — injects x-lis-token on every request
+  window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 </script>
 
 <div class="app">
@@ -550,7 +530,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 
 <script>
 (function () {
-  // ── Use the already-initialised client from the auth guard above ──
+  // ── Use the token-authenticated client built in the auth block above ──
   const db = window._supabaseClient;
 
   // ── Show logged-in user in header ─────────────────────────────────
@@ -1179,11 +1159,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 </script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').then(reg => {
-      console.log('Service Worker registered', reg);
-    }).catch(err => {
-      console.log('Service Worker registration failed', err);
-    });
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 </script>
 <script src="global.js"></script>
