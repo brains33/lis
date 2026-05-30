@@ -309,10 +309,10 @@
         if (window.supabaseService) return window.supabaseService;
         
         // Create client if needed (but avoid if already exists)
-        if (window.supabase && typeof window.supabase.createClient === 'function') {
+        if (typeof window.buildAuthClient === 'function') {
             const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
             const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-            window._supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             return window._supabaseClient;
         }
         

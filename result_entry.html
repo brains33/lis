@@ -467,7 +467,9 @@ async function loadSamples() {
     const { data, error } = await db
       .from('samples')
       .select('*, sample_tests(*)')
-      .order('id', { ascending: false });
+      .in('status', ['Collected', 'Processing'])
+      .order('id', { ascending: false })
+      .limit(200);
     if (error) throw error;
     samples = data.map(s => ({
       ...s,

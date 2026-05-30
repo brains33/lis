@@ -319,6 +319,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 
   // Build token-authenticated client — injects x-lis-token on every request
   window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const db = window._supabaseClient;
 </script>
 
 <div class="app">
@@ -531,7 +532,6 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <script>
 (function () {
   // ── Use the token-authenticated client built in the auth block above ──
-  const db = window._supabaseClient;
 
   // ── Show logged-in user in header ─────────────────────────────────
   document.getElementById('userDisplay').innerHTML =

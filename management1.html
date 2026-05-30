@@ -494,7 +494,7 @@ function payBadge(paystatus) {
 }
 async function addAudit(action, sampleId, details) {
   try {
-    await supabaseService.from('audit_log').insert([{
+    await db.from('audit_log').insert([{
       ts: new Date().toISOString(),
       user_name: currentUser?.name || 'Unknown',
       user_role: currentUser?.role || 'Unknown',
@@ -543,7 +543,7 @@ function getReferenceRange(testName, age, gender) {
 // ========== LOAD TEST DEFINITIONS ==========
 async function loadTestDefinitions() {
   try {
-    const { data, error } = await supabaseService.from('test_definitions').select('*');
+    const { data, error } = await db.from('test_definitions').select('*');
     if (error) throw error;
     testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
     data.forEach(td => {
@@ -566,10 +566,11 @@ async function loadTestDefinitions() {
 // ========== LOAD SAMPLES ==========
 async function loadSamples() {
   try {
-    const { data, error } = await supabaseService
+    const { data, error } = await db
       .from('samples')
-      .select('*, sample_tests(*)')
-      .order('id', { ascending: false });
+      .select('*, sample_tests(id,test_name,status,result,result_data,price_ngn)')
+      .order('id', { ascending: false })
+      .limit(500);
     if (error) throw error;
     samples = data.map(s => ({
       ...s,
@@ -592,7 +593,7 @@ async function loadSamples() {
   }
 }
 async function saveSample(sample) {
-  const { error } = await supabaseService
+  const { error } = await db
     .from('samples')
     .update({
       patient: sample.patient,
@@ -624,21 +625,21 @@ async function saveSample(sample) {
   if (error) throw error;
 }
 async function deleteSampleFromServer(id) {
-  await supabaseService.from('sample_tests').delete().eq('sample_id', id);
-  const { error } = await supabaseService.from('samples').delete().eq('id', id);
+  await db.from('sample_tests').delete().eq('sample_id', id);
+  const { error } = await db.from('samples').delete().eq('id', id);
   if (error) throw error;
 }
 
 // ========== QC ==========
 async function loadQC() {
   try {
-    const { data, error } = await supabaseService.from('qc_runs').select('*').order('run_at', { ascending: false });
+    const { data, error } = await db.from('qc_runs').select('*').order('run_at', { ascending: false });
     if (error) throw error;
     qcHistory = data.map(q => ({ ts: q.run_at, results: q.results }));
   } catch (err) { qcHistory = []; }
 }
 async function saveQC(qcData) {
-  const { error } = await supabaseService.from('qc_runs').insert([{
+  const { error } = await db.from('qc_runs').insert([{
     run_at: new Date().toISOString(),
     run_by: currentUser?.name || 'Unknown',
     all_pass: qcData.results.every(r => r.pass),
@@ -776,7 +777,7 @@ async function addUnit() {
   if (!unitName) { toast('Unit name required', 'error'); return; }
   if (testDefinitions.units[unitName]) { toast('Unit already exists', 'error'); return; }
 
-  const { error } = await supabaseService.from('test_definitions').insert([{
+  const { error } = await db.from('test_definitions').insert([{
     unit_name: unitName,
     test_name: '__unit_placeholder__',
     test_type: 'simple',
@@ -793,7 +794,7 @@ async function addUnit() {
 async function deleteUnit(unit) {
   if (!confirm(`Delete unit "${unit}" and all its tests?`)) return;
   try {
-    await supabaseService.from('test_definitions').delete().eq('unit_name', unit);
+    await db.from('test_definitions').delete().eq('unit_name', unit);
     await loadTestDefinitions();
     renderUnitsList();
     toast(`Unit "${unit}" deleted`, 'warn');
@@ -804,7 +805,7 @@ async function addTestToUnit(unit, testName, testType) {
   if (!testName) { toast('Test name required', 'error'); return; }
   if ((testDefinitions.units[unit] || []).includes(testName)) { toast('Test already exists in this unit', 'error'); return; }
 
-  const { error } = await supabaseService.from('test_definitions').insert([{
+  const { error } = await db.from('test_definitions').insert([{
     unit_name: unit,
     test_name: testName,
     test_type: testType,
@@ -824,7 +825,7 @@ async function addTestToUnit(unit, testName, testType) {
 async function deleteTest(unit, test) {
   if (!confirm(`Delete test "${test}"?`)) return;
   try {
-    await supabaseService.from('test_definitions').delete().eq('test_name', test);
+    await db.from('test_definitions').delete().eq('test_name', test);
     await loadTestDefinitions();
     renderUnitsList();
     toast(`Test "${test}" deleted`, 'warn');
@@ -834,7 +835,7 @@ async function updateTestPrice(test, price) {
   let p = parseFloat(price);
   if (isNaN(p)) p = 0;
   try {
-    await supabaseService.from('test_definitions').update({ price_ngn: p }).eq('test_name', test);
+    await db.from('test_definitions').update({ price_ngn: p }).eq('test_name', test);
     await loadTestDefinitions();
     toast(`Price for "${test}" set to ${p} NGN`);
   } catch(err) { toast("Update failed: "+err.message, "error"); }
@@ -1405,7 +1406,7 @@ async function releaseResults() {
 }
 function closeVerifyModal() { document.getElementById('verifyModal').style.display = 'none'; currentVerifySample = null; }
 async function renderAudit() {
-  let { data, error } = await supabaseService.from('audit_log').select('*').order('ts', { ascending: false }).limit(500);
+  let { data, error } = await db.from('audit_log').select('ts,user_name,user_role,action,sample_id,details').order('ts', { ascending: false }).limit(500);
   if (error) return;
   document.getElementById('auditTableBody').innerHTML = data.map(e => `<tr>
     <td>${new Date(e.ts).toLocaleString()}</td>

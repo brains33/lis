@@ -384,30 +384,7 @@ async function loadTestDefinitions() {
   }
 }
 
-async function loadSamples() {
-  try {
-    const { data, error } = await db
-      .from('samples')
-      .select('*, sample_tests(*)')
-      .order('id', { ascending: false });
-    if (error) throw error;
-    samples = data.map(s => ({
-      ...s,
-      tests: s.sample_tests || [],
-      stype: s.sample_type,
-      due: s.due_date,
-      paystatus: s.pay_status,
-      paymode: s.pay_mode,
-      insurance: s.insurance_no,
-      collDate: s.collection_date,
-      collTime: s.collection_time
-    }));
-  } catch (err) {
-    console.error(err);
-    toast('Failed to load samples', 'error');
-    samples = [];
-  }
-}
+// loadSamples removed — portalSearch queries DB directly with filters
 
 // ========== DYNAMIC REFERENCE RANGE HELPER ==========
 function getReferenceRange(testName, age, gender) {
@@ -446,7 +423,6 @@ function getReferenceRange(testName, age, gender) {
 
 // ========== PORTAL SEARCH (only released results) ==========
 async function portalSearch() {
-  await loadSamples();
   let sid  = document.getElementById('portalId').value.trim().replace(/MU-?/i, '');
   let name = document.getElementById('portalName').value.trim().toLowerCase();
 
@@ -456,10 +432,33 @@ async function portalSearch() {
     return;
   }
 
-  let released = samples.filter(s => s.status === 'Result Released');
-  let matches = sid
-    ? released.filter(s => s.id.toString() === sid)
-    : released.filter(s => s.patient.toLowerCase().includes(name));
+  // Query DB with filters — never load all samples into browser
+  try {
+    let query = db.from('samples')
+      .select('*, sample_tests(*)')
+      .eq('status', 'Result Released');
+    if (sid)  query = query.eq('id', parseInt(sid));
+    if (name) query = query.ilike('patient', `%${name}%`);
+    const { data, error } = await query.order('id', { ascending: false }).limit(50);
+    if (error) throw error;
+    samples = (data || []).map(s => ({
+      ...s,
+      tests: s.sample_tests || [],
+      stype: s.sample_type,
+      due: s.due_date,
+      paystatus: s.pay_status,
+      paymode: s.pay_mode,
+      insurance: s.insurance_no,
+      collDate: s.collection_date,
+      collTime: s.collection_time
+    }));
+  } catch (err) {
+    console.error(err);
+    toast('Search failed', 'error');
+    return;
+  }
+
+  let matches = samples;
 
   let searchTerm = sid ? `Sample ID: MU-${sid}` : `Patient Name: ${name}`;
   await addAudit('Patient Portal Search', null, `${searchTerm} → ${matches.length} result(s) found`);

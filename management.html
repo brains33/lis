@@ -653,7 +653,7 @@
 
   async function loadSamplesForTracking() {
     try {
-      const { data, error } = await db.from('samples').select('id, patient, age, gender, priority, status, released_at, collection_date').order('id', { ascending: false });
+      const { data, error } = await db.from('samples').select('id, patient, age, gender, priority, status, released_at, collection_date').order('id', { ascending: false }).limit(500);
       if (error) throw error;
       allSamples = data || [];
     } catch (err) {
@@ -763,7 +763,7 @@
     tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px;"><span class="spinner-inline"></span>Loading…</td></tr>`;
     if (countEl) countEl.textContent = '';
     try {
-      const { data, error } = await db.from('audit_log').select('*').order('ts', { ascending: false }).limit(500);
+      const { data, error } = await db.from('audit_log').select('ts,user_name,user_role,action,sample_id,details').order('ts', { ascending: false }).limit(500);
       if (error) throw error;
       allAuditEntries = data || [];
       renderAuditTable();
