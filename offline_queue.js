@@ -44,7 +44,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const OQ_DB_NAME    = 'muujiza_offline';
-const OQ_DB_VERSION = 1;
+const OQ_DB_VERSION = 3;
 const STORE_OUTBOX  = 'outbox';       // pending writes
 const STORE_SAMPLES = 'samples_cache';// last-known sample list
 const STORE_META    = 'meta';         // e.g. last-sync timestamp
