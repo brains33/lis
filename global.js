@@ -267,13 +267,23 @@
                     return;
                 }
                 
-                dropdown.innerHTML = data.map(s => `
+                dropdown.innerHTML = data.map(s => {
+                    let statusBadge;
+                    if (s.status === 'Rejected') {
+                        statusBadge = `<span style="display:inline-block;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:20px;padding:1px 8px;font-size:0.68rem;font-weight:700;">✖ Rejected</span>`;
+                    } else if (s.status === 'Result Released') {
+                        statusBadge = `<span style="display:inline-block;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:20px;padding:1px 8px;font-size:0.68rem;font-weight:700;">✓ ${escapeHtml(s.status)}</span>`;
+                    } else {
+                        statusBadge = `<span style="display:inline-block;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:20px;padding:1px 8px;font-size:0.68rem;font-weight:600;">⏳ ${escapeHtml(s.status)}</span>`;
+                    }
+                    return `
                     <div class="search-result-item" onclick="viewSampleDetails(${s.id})">
                         <div class="sample-id">MU-${s.id}</div>
                         <div class="sample-patient">${escapeHtml(s.patient)}</div>
-                        <div style="font-size:0.7rem; color:var(--muted);">Status: ${s.status} ${s.status === 'Result Released' ? '✓' : '⏳'}</div>
-                    </div>
-                `).join('');
+                        <div style="margin-top:3px;">${statusBadge}</div>
+                        ${s.status === 'Rejected' && s.rejection_reason ? `<div style="font-size:0.68rem;color:#b91c1c;margin-top:2px;"><i class="fas fa-info-circle"></i> ${escapeHtml(s.rejection_reason)}</div>` : ''}
+                    </div>`;
+                }).join('');
                 dropdown.classList.add('show');
                 
             } catch(err) {

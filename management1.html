@@ -285,6 +285,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="offline_queue.js"></script>  <!-- before auth-guard.js -->
 <script src="auth-guard.js"></script>
 </head>
 <body>
@@ -313,7 +314,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
   <!-- All Samples -->
   <div id="tab-all" class="tab-content active">
     <div class="toolbar">
-      <div class="search-bar"><i class="fas fa-search" style="color:var(--text3);"></i><input type="text" id="allSearch" placeholder="Search ID or patient…"></div>
+      <div class="search-bar"><i class="fas fa-search" style="color:var(--text3);"></i><input type="text" id="allSearch" placeholder="Search ID, patient or OFFLINE-DRAFT-…"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <select id="allStatusFilter" class="filter-select">
           <option value="all">All status</option>
@@ -360,7 +361,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
   <!-- Verify & Release -->
   <div id="tab-verify" class="tab-content">
     <div class="toolbar">
-      <div class="search-bar"><i class="fas fa-search" style="color:var(--text3);"></i><input type="text" id="verifySearch" placeholder="Search by ID or patient…"></div>
+      <div class="search-bar"><i class="fas fa-search" style="color:var(--text3);"></i><input type="text" id="verifySearch" placeholder="Search ID, patient or OFFLINE-DRAFT-…"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <select id="verifyStatusFilter" class="filter-select">
           <option value="all" selected>All (Verifying + Released)</option>
@@ -568,7 +569,7 @@ async function loadSamples() {
   try {
     const { data, error } = await db
       .from('samples')
-      .select('*, sample_tests(id,test_name,status,result,result_data,price_ngn,tech_name)')
+      .select('*, sample_tests(id,test_name,status,result,result_data,price_ngn,tech_name,done_by,done_at)')
       .order('id', { ascending: false })
       .limit(500);
     if (error) throw error;
@@ -1182,7 +1183,15 @@ function buildReportPreview(s) {
   let rows = '';
   s.tests.forEach(t => {
     let testType = getTestType(t.test_name);
-    rows += `<tr style="background:#f8fafb;"><td colspan="4" style="padding:8px 12px; font-weight:600;">${esc(t.test_name)}</td></tr>`;
+    const techWho  = t.tech_name || t.done_by || null;
+    const techDone = t.done_at   ? new Date(t.done_at).toLocaleString() : null;
+    const techBadge = techWho
+      ? `<span style="font-size:0.72rem;font-weight:500;color:#1a6840;background:#eaf5ef;
+                       border:1px solid #c6e8d4;border-radius:20px;padding:1px 9px;margin-left:8px;">
+           <i class="fas fa-user-circle" style="font-size:0.65rem;"></i>&nbsp;${esc(techWho)}${techDone ? ` &middot; ${techDone}` : ''}
+         </span>`
+      : `<span style="font-size:0.72rem;color:#9ca3af;margin-left:8px;">No tech recorded</span>`;
+    rows += `<tr style="background:#f8fafb;"><td colspan="4" style="padding:8px 12px; font-weight:600;">${esc(t.test_name)}${techBadge}</td></tr>`;
     if (t.result && t.result.startsWith('{')) {
       try {
         let d = JSON.parse(t.result);
@@ -1310,7 +1319,7 @@ async function renderAllSamples() {
   let filtered = samples.filter(s => {
     if (status !== 'all' && s.status !== status) return false;
     if (payment !== 'all' && s.paystatus !== payment) return false;
-    if (search && !s.id.toString().includes(search) && !s.patient.toLowerCase().includes(search)) return false;
+    if (search && !s.id.toString().includes(search) && !s.patient.toLowerCase().includes(search) && !(s.offline_ref || '').toLowerCase().includes(search) && !(s.receipt_no || '').toLowerCase().includes(search)) return false;
     return true;
   });
   let tbody = document.getElementById('allSamplesTable');
@@ -1321,7 +1330,7 @@ async function renderAllSamples() {
     let isOverdue = s.due && s.due < today && s.status !== 'Result Released' && s.status !== 'Rejected';
     let priCls = s.priority === 'STAT' ? 'badge-stat' : s.priority === 'Urgent' ? 'badge-urgent' : 'badge-routine';
     return `<tr>
-      <td style="font-family:monospace;">MU-${s.id}</td>
+      <td style="font-family:monospace;">MU-${s.id}${s.offline_ref ? `<br><span style="font-size:0.6rem;background:#fff9ec;border:1px solid #fde68a;color:#92400e;padding:1px 5px;border-radius:5px;font-family:monospace;">${esc(s.offline_ref)}</span>` : ''}</td>
       <td><strong>${esc(s.patient)}</strong><br><small>${s.age ?? '?'}y ${esc(s.gender)}</small></td>
       <td><small>${s.tests.map(t => esc(t.test_name)).join('<br>')}</small></td>
       <td><small>${esc(s.stype || '')}</small></td>
@@ -1390,7 +1399,7 @@ async function renderVerifyTable() {
     if (statusFilter === 'all') return s.status === 'Verifying' || s.status === 'Result Released';
     return s.status === statusFilter;
   });
-  if (search) filtered = filtered.filter(s => s.id.toString().includes(search) || s.patient.toLowerCase().includes(search));
+  if (search) filtered = filtered.filter(s => s.id.toString().includes(search) || s.patient.toLowerCase().includes(search) || (s.offline_ref || '').toLowerCase().includes(search) || (s.receipt_no || '').toLowerCase().includes(search));
   let tbody = document.getElementById('verifyTable');
   if (!tbody) return;
   if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;">No samples found.</td></tr>'; return; }
@@ -1402,10 +1411,13 @@ async function renderVerifyTable() {
     const releasedAt = isReleased && s.releasedAt ? new Date(s.releasedAt).toLocaleString() : (isReleased ? '—' : '');
     const actions = `<button class="btn btn-primary btn-sm" onclick="openVerifyModal(${s.id})"><i class="fas fa-eye"></i> Review</button>`;
     return `<tr style="${isReleased ? 'opacity:0.85;background:#f8fff9;' : ''}">
-      <td style="font-family:monospace;">MU-${s.id}</td>
+      <td style="font-family:monospace;">MU-${s.id}${s.offline_ref ? `<br><span style="font-size:0.6rem;background:#fff9ec;border:1px solid #fde68a;color:#92400e;padding:1px 5px;border-radius:5px;font-family:monospace;">${esc(s.offline_ref)}</span>` : ''}</td>
       <td><strong>${esc(s.patient)}</strong><br><small>${s.age ?? '?'}y ${esc(s.gender)}</small></td>
       <td><small>${s.tests.map(t => esc(t.test_name)).join('<br>')}</small></td>
-      <td>${s.tests.find(t => t.tech_name)?.tech_name || '—'}</td>
+      <td><small>${s.tests.map(t => {
+        const who = t.tech_name || t.done_by || '—';
+        return `<span style="display:block;">${esc(t.test_name)}: <strong>${esc(who)}</strong></span>`;
+      }).join('')}</small></td>
       <td>${statusBadge}</td>
       <td><small>${releasedAt}</small></td>
       <td>${actions}</td>
@@ -1440,24 +1452,29 @@ async function openVerifyModal(id) {
   document.getElementById('verifyModal').style.display = 'flex';
 }
 async function returnToTech() {
-  if (!currentVerifySample) return;
-  currentVerifySample.status = 'Processing';
-  await saveSample(currentVerifySample);
-  await addAudit('Returned to Tech', currentVerifySample.id, document.getElementById('supervisorComment')?.value || '');
-  await Promise.all([renderVerifyTable(), renderAllSamples()]);
+  if (!currentVerifySample) { toast('No sample selected', 'error'); return; }
+  const s = currentVerifySample; // capture before closeVerifyModal clears it
+  const comment = document.getElementById('supervisorComment')?.value || '';
+  s.status = 'Processing';
+  // Reset all test done-stamps so techs must re-enter and re-mark
+  if (s.tests) s.tests.forEach(t => { t.status = 'Processing'; t.done_by = null; t.done_at = null; });
+  await saveSample(s);
+  await addAudit('Returned to Tech', s.id, comment);
   closeVerifyModal();
-  toast(`MU-${currentVerifySample.id} returned to technologist`);
+  await Promise.all([renderVerifyTable(), renderAllSamples()]);
+  toast(`MU-${s.id} returned to technologist`);
 }
 async function releaseResults() {
-  if (!currentVerifySample) return;
-  currentVerifySample.status = 'Result Released';
-  currentVerifySample.releasedAt = new Date().toISOString();
-  currentVerifySample.supervisorComment = document.getElementById('supervisorComment')?.value || '';
-  await saveSample(currentVerifySample);
-  await addAudit('Released', currentVerifySample.id, `Authorised by ${currentUser?.name}. ${currentVerifySample.supervisorComment}`);
-  await Promise.all([renderVerifyTable(), renderAllSamples(), renderDashboard()]);
+  if (!currentVerifySample) { toast('No sample selected', 'error'); return; }
+  const s = currentVerifySample;
+  s.status = 'Result Released';
+  s.releasedAt = new Date().toISOString();
+  s.supervisorComment = document.getElementById('supervisorComment')?.value || '';
+  await saveSample(s);
+  await addAudit('Released', s.id, `Authorised by ${currentUser?.name}. ${s.supervisorComment}`);
   closeVerifyModal();
-  toast(`MU-${currentVerifySample.id} released ✓`);
+  await Promise.all([renderVerifyTable(), renderAllSamples(), renderDashboard()]);
+  toast(`MU-${s.id} released ✓`);
 }
 function closeVerifyModal() { document.getElementById('verifyModal').style.display = 'none'; currentVerifySample = null; }
 async function renderAudit() {

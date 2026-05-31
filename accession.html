@@ -585,23 +585,39 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     try {
       const { data, error } = await db.from('test_definitions').select('*');
       if (error) throw error;
-      testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
-      data.forEach(td => {
-        if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
-        testDefinitions.units[td.unit_name].push(td.test_name);
-        testDefinitions.testPrices[td.test_name] = td.price_ngn;
-        if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
-      });
-      populateUnits();
+      _applyTestDefinitions(data);
     } catch (err) {
-      console.error(err);
-      toast('Failed to load test definitions', 'error');
-      document.getElementById('noTestsNotice').style.display = 'block';
-      document.getElementById('addTestBtn').disabled = true;
+      console.warn('loadTestDefinitions online failed, trying cache:', err);
+      // Try IDB cache (populated by offline_queue.js pre-fetch)
+      const cached = window._oqCachedTestDefs
+                  || (window._oqGetCachedTestDefinitions ? await window._oqGetCachedTestDefinitions() : null);
+      if (cached) {
+        _applyTestDefinitions(cached);
+        toast('Using cached test definitions (offline)', 'warn');
+      } else {
+        toast('Failed to load test definitions', 'error');
+        document.getElementById('noTestsNotice').style.display = 'block';
+        document.getElementById('addTestBtn').disabled = true;
+      }
     }
   }
 
+  // Expose for offline_queue.js to call when it gets cached defs first
+  window._oqRestoreTestDefs = function(data) { _applyTestDefinitions(data); };
+
+  function _applyTestDefinitions(data) {
+    testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+    data.forEach(td => {
+      if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
+      testDefinitions.units[td.unit_name].push(td.test_name);
+      testDefinitions.testPrices[td.test_name] = td.price_ngn;
+      if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
+    });
+    populateUnits();
+  }
+
   function getTestPrice(testName) { return testDefinitions.testPrices[testName] || 0; }
+  window.getTestPrice = getTestPrice;   // expose for offline_queue.js
 
   function populateUnits() {
     let units = Object.keys(testDefinitions.units);
@@ -628,6 +644,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 
   // ── Test cart ─────────────────────────────────────────────────────
   let tempTests = [];
+  window.tempTests = tempTests;   // expose for offline_queue.js
 
   function renderCart() {
     let cart = document.getElementById('testCart');
@@ -883,6 +900,9 @@ body { background:var(--bg); padding:20px; color:var(--text); }
       if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
     }
   }
+  // Expose immediately — offline_queue.js patches this on its load event.
+  // Must be set before offline_queue.js runs, so the patch can wrap the real function.
+  window.registerSample = registerSample;
 
   // ── Clear form ────────────────────────────────────────────────────
   function clearForm() {
@@ -899,10 +919,13 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     handlePaymodeChange();
     setDefaultDates();
     tempTests = [];
+    window.tempTests = tempTests;
     renderCart();
     if (document.getElementById('amountPaid')) document.getElementById('amountPaid').value = '0';
     updateTotal();
   }
+  window.clearForm = clearForm;       // expose for offline_queue.js
+  // window.registerSample already set right after function definition above
 
   // ── Balance Settlement Panel ──────────────────────────────────────
   window.toggleSettlePanel = function () {
@@ -1136,7 +1159,11 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 
   // ── Event listeners ───────────────────────────────────────────────
   document.getElementById('addTestBtn')?.addEventListener('click', addTest);
-  document.getElementById('registerBtn')?.addEventListener('click', registerSample);
+  // Always call through window.registerSample so offline_queue.js can patch it.
+  // If the patch hasn't loaded yet (e.g. script error), fall back to the local function.
+  document.getElementById('registerBtn')?.addEventListener('click', () =>
+    (window.registerSample || registerSample)()
+  );
   document.getElementById('clearBtn')?.addEventListener('click', clearForm);
   document.getElementById('f-unit')?.addEventListener('change', updateTests);
   document.getElementById('amountPaid')?.addEventListener('input', updateTotal);
@@ -1154,6 +1181,23 @@ body { background:var(--bg); padding:20px; color:var(--text); }
   startClock();
   loadTestDefinitions();
 
+  // ── Offline-mode register button label ────────────────────────────
+  function _updateRegisterBtnOfflineState() {
+    const btn   = document.getElementById('registerBtn');
+    const label = document.getElementById('registerBtnLabel');
+    if (!btn || !label) return;
+    if (!navigator.onLine) {
+      label.innerHTML = '<i class="fas fa-database"></i> Save Offline Draft';
+      btn.title = 'Internet is offline — sample will be saved locally and synced when reconnected';
+    } else {
+      label.innerHTML = '<i class="fas fa-syringe"></i> Register &amp; Print Receipt';
+      btn.title = '';
+    }
+  }
+  window.addEventListener('online',  _updateRegisterBtnOfflineState);
+  window.addEventListener('offline', _updateRegisterBtnOfflineState);
+  _updateRegisterBtnOfflineState();
+
 })();
 
 </script>
@@ -1162,6 +1206,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 </script>
-<script src="global.js"></script>
+<script src="offline_queue.js"></script>  <!-- before auth-guard.js -->
+<script src="auth-guard.js"></script>
 </body>
 </html>

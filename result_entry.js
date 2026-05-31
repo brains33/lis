@@ -10,6 +10,7 @@ const currentUser    = currentSession;
 // Build token-authenticated client — injects x-lis-token on every request
 window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const db = window._supabaseClient;
+window.db = db; // expose for offline_queue.js
 // ========== HELPERS ==========
 function esc(str) {
   if (str === null || str === undefined) return '';
@@ -55,23 +56,41 @@ async function addAudit(action, sampleId, details) {
 const COC_STEPS = ['Registered','Collected','Received','Processing','Result Entry','Verification','Released'];
 
 async function loadCOCEvents(sampleId) {
-  const { data, error } = await db
-    .from('coc_events')
-    .select('step_index, done, active')
-    .eq('sample_id', sampleId)
-    .order('step_index');
-  if (error) throw error;
-  let cocMap = {};
-  data.forEach(e => { cocMap[e.step_index] = { done: e.done, active: e.active }; });
-  return cocMap;
+  try {
+    const { data, error } = await db
+      .from('coc_events')
+      .select('step_index, done, active')
+      .eq('sample_id', sampleId)
+      .order('step_index');
+    if (error) throw error;
+    let cocMap = {};
+    data.forEach(e => { cocMap[e.step_index] = { done: e.done, active: e.active }; });
+    return cocMap;
+  } catch(err) {
+    // Offline: return a sensible default so the modal still opens
+    console.warn('[RE] loadCOCEvents offline, using default map');
+    return { 0:{done:true,active:false}, 1:{done:true,active:false},
+             2:{done:true,active:false}, 3:{done:false,active:true} };
+  }
 }
 
 async function updateCOCEvent(sampleId, stepIndex, done, active) {
-  const { error } = await db
-    .from('coc_events')
-    .update({ done, active, actor_name: currentUser?.name || 'Tech', occurred_at: new Date().toISOString() })
-    .match({ sample_id: sampleId, step_index: stepIndex });
-  if (error) throw error;
+  try {
+    const { error } = await db
+      .from('coc_events')
+      .update({ done, active, actor_name: currentUser?.name || 'Tech', occurred_at: new Date().toISOString() })
+      .match({ sample_id: sampleId, step_index: stepIndex });
+    if (error) throw error;
+  } catch(err) {
+    // Queue for sync when back online
+    if (typeof _oqEnqueue === 'function') {
+      const actorName = currentUser?.name || 'Tech';
+      await _oqEnqueue('updateCOCEvent', { sampleId, stepIndex, done, active, actorName });
+      console.warn('[RE] updateCOCEvent queued offline');
+    } else {
+      throw err;
+    }
+  }
 }
 
 // ========== LOAD TEST DEFINITIONS ==========
@@ -86,8 +105,27 @@ async function loadTestDefinitions() {
         testDefinitions.testTypes[td.test_name] = td.test_type;
       }
     });
+    // Cache raw data for offline use (offline_queue.js reads this)
+    if (typeof _oqCacheTestDefinitions === 'function') {
+      _oqCacheTestDefinitions(data).catch(() => {});
+    }
   } catch (err) {
     console.error(err);
+    // Offline fallback — try to restore from IDB cache
+    if (typeof _oqGetCachedTestDefinitions === 'function') {
+      try {
+        const cached = await _oqGetCachedTestDefinitions();
+        if (cached && cached.length) {
+          testDefinitions.testTypes = {};
+          cached.forEach(td => {
+            if (td.test_type && td.test_type !== 'simple')
+              testDefinitions.testTypes[td.test_name] = td.test_type;
+          });
+          console.log('[RE] loadTestDefinitions: restored from offline cache');
+          return; // silent success
+        }
+      } catch(e) {}
+    }
     toast('Failed to load test definitions', 'error');
   }
 }
@@ -116,34 +154,60 @@ async function loadSamples() {
       collDate: s.collection_date,
       collTime: s.collection_time
     }));
+    // Warm the offline cache every successful load
+    if (typeof _oqMergeSampleList === 'function') _oqMergeSampleList(samples).catch(() => {});
   } catch (err) {
-    console.error('Error loading samples:', err);
+    console.warn('[RE] loadSamples failed — attempting offline cache:', err);
+    // Fall back to IndexedDB cache (offline_queue.js must be loaded first)
+    if (typeof _oqGetCachedSamples === 'function') {
+      try {
+        const cached = await _oqGetCachedSamples();
+        samples = cached.filter(s => s.status === 'Processing' || s.status === 'Collected');
+        if (samples.length) {
+          toast('Offline — showing cached samples', 'warn');
+          return;
+        }
+      } catch(e) {}
+    }
     toast('Failed to load samples', 'error');
     samples = [];
   }
 }
 
 async function saveSample(sample) {
-  const { error: sampleError } = await db
-    .from('samples')
-    .update({
-      status: sample.status,
-      released_at: sample.released_at,
-      supervisor_comment: sample.supervisor_comment
-    })
-    .eq('id', sample.id);
-  if (sampleError) throw sampleError;
+  // Always update local cache first so offline edits survive
+  if (typeof _oqCacheSample === 'function') _oqCacheSample(sample).catch(() => {});
 
-  for (const test of sample.tests) {
-    const { error: testError } = await db
-      .from('sample_tests')
+  try {
+    const { error: sampleError } = await db
+      .from('samples')
       .update({
-        result: test.result,
-        tech_name: test.tech,
-        status: test.status
+        status: sample.status,
+        released_at: sample.released_at,
+        supervisor_comment: sample.supervisor_comment
       })
-      .eq('id', test.id);
-    if (testError) throw testError;
+      .eq('id', sample.id);
+    if (sampleError) throw sampleError;
+
+    for (const test of sample.tests) {
+      const { error: testError } = await db
+        .from('sample_tests')
+        .update({
+          result: test.result,
+          tech_name: test.tech,
+          status: test.status
+        })
+        .eq('id', test.id);
+      if (testError) throw testError;
+    }
+  } catch(err) {
+    // Queue for sync when back online
+    if (typeof _oqEnqueue === 'function') {
+      await _oqEnqueue('saveSample', { sample: JSON.parse(JSON.stringify(sample)) });
+      console.warn('[RE] saveSample queued offline:', err);
+    } else {
+      throw err; // No offline queue — let caller handle
+    }
   }
 }
 
@@ -448,7 +512,12 @@ async function renderProcessingSamples() {
 
   let ready = samples.filter(s => s.status === 'Processing' || s.status === 'Collected');
 
-  if (search) ready = ready.filter(s => s.id.toString().includes(search) || s.patient.toLowerCase().includes(search));
+  if (search) ready = ready.filter(s =>
+    s.id.toString().includes(search) ||
+    (s.patient || '').toLowerCase().includes(search) ||
+    (s.offline_ref  || '').toLowerCase().includes(search) ||
+    (s.receipt_no   || '').toLowerCase().includes(search)
+  );
   if (priority !== 'all') ready = ready.filter(s => s.priority === priority);
 
   const priOrder = { STAT:0, Urgent:1, Routine:2 };
@@ -483,7 +552,7 @@ async function renderProcessingSamples() {
       return `${icon} ${esc(t.test_name)}`;
     }).join('<br>');
     return `<tr>
-      <td style="font-family:monospace; font-weight:600;">MU-${s.id}</td>
+      <td style="font-family:monospace; font-weight:600;">MU-${s.id}${s.offline_ref ? `<br><span style="font-family:monospace;font-size:0.65rem;color:var(--amber);background:var(--amber-l);border:1px solid #fde68a;padding:1px 6px;border-radius:6px;display:inline-block;margin-top:3px;" title="Offline draft ref">${esc(s.offline_ref)}</span>` : ''}</td>
       <td><strong>${esc(s.patient)}</strong><br><small style="color:var(--text2);">${s.age ?? '?'}y ${esc(s.gender)}</small></td>
       <td><small>${testList}</small>${progressNote}</td>
       <td><span class="badge ${priCls}">${esc(s.priority)}</span></td>
@@ -1106,11 +1175,35 @@ window.toggleTestDone = async function(idx) {
 
   renderReadinessBar();
 
-  // Check if ALL tests in this modal are now Done
-  const allDone = currentSample.tests.every(t => t.status === 'Ready');
-  if (allDone) {
-    toast('All tests done — submitting for verification…', 'info');
-    setTimeout(() => markMyTestsReady(), 800); // small pause so tech sees the toast
+  // Check if ALL tests belonging to this tech are now Done
+  const techName2 = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
+  const myTests   = currentSample.tests.filter(t =>
+    !t.tech || t.tech === techName2 || t.tech === 'Unknown Tech'
+  );
+  const allMyDone = myTests.length > 0 && myTests.every(t => t.status === 'Ready');
+
+  if (allMyDone) {
+    // Stamp done_by / done_at on any test that doesn't have it yet
+    for (const t of myTests) {
+      if (!t.done_by) t.done_by = techName2;
+      if (!t.done_at) t.done_at = new Date().toISOString();
+    }
+
+    const allSampleDone = currentSample.tests.every(t => t.status === 'Ready');
+
+    if (allSampleDone) {
+      // Every tech is done — auto mark ready AND send to verify
+      toast('All tests done — sending for verification…', 'info');
+      await addAudit('Tests Marked Ready', currentSample.id,
+        `${techName2} marked ready via done toggle: ${myTests.map(t => t.test_name).join(', ')}`);
+      setTimeout(() => sendToVerify(), 600);
+    } else {
+      // This tech finished their share — mark ready, wait for others
+      toast('Your tests marked ready ✓ — waiting for other technologists', 'info');
+      await addAudit('Tests Marked Ready', currentSample.id,
+        `${techName2} marked ready via done toggle: ${myTests.map(t => t.test_name).join(', ')}`);
+      renderReadinessBar();
+    }
   }
 };
 
@@ -1232,7 +1325,10 @@ function collectSingleTestResult(idx) {
     let ta = document.getElementById(`textResult_${idx}`);
     if (ta) test.result = ta.value;
   }
-  test.tech = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
+  // Only stamp tech if this test is not already marked Ready by someone else
+  if (test.status !== 'Ready') {
+    test.tech = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
+  }
 }
 
 // ========== COLLECT RESULTS FROM FORMS ==========
@@ -1385,9 +1481,12 @@ function collectResultsFromForms() {
       let ta = document.getElementById(`textResult_${idx}`);
       if (ta) test.result = ta.value;
     }
-    // Use display name if available, fall back to username, never store raw 'Unknown'
-    test.tech = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
-    test.status = 'Processing';
+    // Only stamp tech/status if this test is NOT already marked Ready by someone else.
+    // Preserves the original entrant when multiple techs share a sample.
+    if (test.status !== 'Ready') {
+      test.tech   = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
+      test.status = 'Processing';
+    }
   });
 }
 
@@ -1429,8 +1528,10 @@ async function markMyTestsReady() {
   }
 
   for (let test of myTests) {
-    test.tech = techName;
-    test.status = 'Ready';
+    test.tech    = techName;
+    test.done_by = techName;
+    test.done_at = test.done_at || new Date().toISOString(); // keep original if already set
+    test.status  = 'Ready';
   }
 
   await saveSample(currentSample);
@@ -1439,6 +1540,7 @@ async function markMyTestsReady() {
 
   await loadSamples();
   const fresh = samples.find(s => s.id === currentSample.id);
+  // Offline: fresh may not be in filtered list — keep currentSample as-is
   if (fresh) currentSample.tests = fresh.tests;
 
   const allReady = currentSample.tests.every(t => t.status === 'Ready');
@@ -1707,12 +1809,78 @@ function generatePDFRows(testName, data, testType, age, gender) {
   return header + rows;
 }
 
+// ========== REJECT SAMPLE ==========
+function openRejectModal() {
+  if (!currentSample) return;
+  const modal = document.getElementById('rejectModal');
+  const labelEl = document.getElementById('rejectModalSampleId');
+  const input = document.getElementById('rejectionReasonInput');
+  if (!modal) return;
+  if (labelEl) labelEl.textContent = `MU-${currentSample.id} — ${currentSample.patient}`;
+  if (input) input.value = '';
+  modal.style.display = 'flex';
+  setTimeout(() => input && input.focus(), 80);
+}
+window.closeRejectModal = function() {
+  const modal = document.getElementById('rejectModal');
+  if (modal) modal.style.display = 'none';
+};
+window.confirmReject = async function() {
+  const input = document.getElementById('rejectionReasonInput');
+  const reason = (input?.value || '').trim();
+  if (!reason) {
+    input && (input.style.borderColor = '#dc2626');
+    input && input.focus();
+    toast('Please enter a rejection reason', 'error');
+    return;
+  }
+  if (!currentSample) return;
+
+  const btn = document.querySelector('#rejectModal button[onclick="confirmReject()"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rejecting…'; }
+
+  try {
+    // Update status + rejection reason in DB
+    const { error } = await db
+      .from('samples')
+      .update({ status: 'Rejected', rejection_reason: reason })
+      .eq('id', currentSample.id);
+    if (error) throw error;
+
+    // Log to sample_timeline (best-effort)
+    try {
+      await db.from('sample_timeline').insert([{
+        sample_id: currentSample.id,
+        event_type: 'Sample Rejected',
+        event_description: reason,
+        performed_by: currentUser?.name || 'Technologist',
+        performed_role: currentUser?.role || 'technologist',
+        created_at: new Date().toISOString()
+      }]);
+    } catch(e) { console.warn('[RE] timeline insert failed', e); }
+
+    // Audit log
+    await addAudit('Sample Rejected', currentSample.id, reason);
+
+    toast(`MU-${currentSample.id} rejected — ${reason}`, 'warn');
+    window.closeRejectModal();
+    closeModal();
+    await renderProcessingSamples();
+  } catch(err) {
+    toast('Rejection failed: ' + (err.message || err), 'error');
+    console.error('[RE] rejectSample error', err);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-ban"></i> Confirm Rejection'; }
+  }
+};
+
 // ========== EVENT LISTENERS ==========
 document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
 document.getElementById('closeModalBtn2')?.addEventListener('click', closeModal);
 document.getElementById('saveDraftBtn')?.addEventListener('click', saveDraft);
 document.getElementById('markReadyBtn')?.addEventListener('click', markMyTestsReady);
 document.getElementById('sendVerifyBtn')?.addEventListener('click', sendToVerify);
+document.getElementById('rejectSampleBtn')?.addEventListener('click', openRejectModal);
 document.getElementById('resultModal')?.addEventListener('click', e => { if (e.target === document.getElementById('resultModal')) closeModal(); });
 document.getElementById('sampleSearch')?.addEventListener('input', renderProcessingSamples);
 document.getElementById('priorityFilter')?.addEventListener('change', renderProcessingSamples);
@@ -1734,6 +1902,8 @@ document.addEventListener('keydown', e => {
 })();
 
 setInterval(async () => {
+  // Skip auto-refresh when offline — cached data is already shown
+  if (!navigator.onLine) return;
   if (!currentSample && document.getElementById('resultModal')?.style.display !== 'flex') {
     await renderProcessingSamples();
   }

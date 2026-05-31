@@ -273,7 +273,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="auth-guard.js"></script>
 </head>
 <body>
@@ -290,25 +290,47 @@ body { background:var(--bg); padding:20px; color:var(--text); }
   </div>
 
   <div class="card">
-    <div class="card-header">
-      <i class="fas fa-file-alt"></i> Search Your Results
-    </div>
-    <div class="card-body">
-      <div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:20px; align-items:flex-end;">
-        <div class="form-group" style="flex:1; min-width:150px;">
-          <label class="form-label">Sample ID</label>
-          <input type="text" id="portalId" class="form-input" placeholder="e.g., MU-123">
+    <div class="card-header" style="justify-content:space-between;">
+      <span><i class="fas fa-file-alt"></i> Released Results</span>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <span id="releasedCount" style="font-size:0.78rem; color:var(--text2); font-weight:500;"></span>
+        <div style="position:relative;">
+          <input type="text" id="portalSearch" class="form-input" placeholder="Search by ID, name, phone…"
+            style="padding-left:34px; min-width:220px; font-size:0.82rem;"
+            oninput="filterTable()">
+          <i class="fas fa-search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text3); font-size:0.8rem; pointer-events:none;"></i>
         </div>
-        <div class="form-group" style="flex:1; min-width:150px;">
-          <label class="form-label">Patient Name</label>
-          <input type="text" id="portalName" class="form-input" placeholder="Enter your full name">
-        </div>
-        <button class="btn btn-primary" id="portalSearchBtn"><i class="fas fa-search"></i> Search</button>
-        <button class="btn btn-secondary" id="portalClearBtn">Clear</button>
+        <button class="btn btn-secondary btn-sm" id="refreshBtn" onclick="loadAndRender()">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
       </div>
-      <div id="portalResults"></div>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <div id="portalTableWrap" style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+          <thead>
+            <tr style="background:#f8fafb; border-bottom:2px solid var(--border);">
+              <th style="padding:10px 14px; text-align:left; font-size:0.7rem; text-transform:uppercase; color:var(--text2);">Sample ID</th>
+              <th style="padding:10px 14px; text-align:left; font-size:0.7rem; text-transform:uppercase; color:var(--text2);">Patient</th>
+              <th style="padding:10px 14px; text-align:left; font-size:0.7rem; text-transform:uppercase; color:var(--text2);">Tests</th>
+              <th style="padding:10px 14px; text-align:left; font-size:0.7rem; text-transform:uppercase; color:var(--text2);">Collected</th>
+              <th style="padding:10px 14px; text-align:left; font-size:0.7rem; text-transform:uppercase; color:var(--text2);">Released</th>
+              <th style="padding:10px 14px; text-align:left; font-size:0.7rem; text-transform:uppercase; color:var(--text2);">Payment</th>
+              <th style="padding:10px 14px; text-align:left; font-size:0.7rem; text-transform:uppercase; color:var(--text2);">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="portalTableBody">
+            <tr><td colspan="7" style="padding:40px; text-align:center; color:var(--text2);">
+              <i class="fas fa-spinner fa-spin"></i> Loading released results…
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
+
+  <!-- Expanded Result Detail Card -->
+  <div id="portalResultDetail" style="display:none;"></div>
 </div>
 
 <div class="toast-stack" id="toastStack"></div>
@@ -421,27 +443,22 @@ function getReferenceRange(testName, age, gender) {
   }
 }
 
-// ========== PORTAL SEARCH (only released results) ==========
-async function portalSearch() {
-  let sid  = document.getElementById('portalId').value.trim().replace(/MU-?/i, '');
-  let name = document.getElementById('portalName').value.trim().toLowerCase();
+// ========== LOAD ALL RELEASED SAMPLES + RENDER TABLE ==========
+let allSamples = [];
 
-  if (!sid && !name) {
-    document.getElementById('portalResults').innerHTML =
-      `<p style="color:var(--text2);">Enter a Sample ID or patient name to search.</p>`;
-    return;
-  }
+async function loadAndRender() {
+  const tbody = document.getElementById('portalTableBody');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px; text-align:center; color:var(--text2);"><i class="fas fa-spinner fa-spin"></i> Loading…</td></tr>`;
 
-  // Query DB with filters — never load all samples into browser
   try {
-    let query = db.from('samples')
+    const { data, error } = await db
+      .from('samples')
       .select('*, sample_tests(*)')
-      .eq('status', 'Result Released');
-    if (sid)  query = query.eq('id', parseInt(sid));
-    if (name) query = query.ilike('patient', `%${name}%`);
-    const { data, error } = await query.order('id', { ascending: false }).limit(50);
+      .eq('status', 'Result Released')
+      .order('id', { ascending: false });
     if (error) throw error;
-    samples = (data || []).map(s => ({
+
+    allSamples = (data || []).map(s => ({
       ...s,
       tests: s.sample_tests || [],
       stype: s.sample_type,
@@ -452,30 +469,114 @@ async function portalSearch() {
       collDate: s.collection_date,
       collTime: s.collection_time
     }));
+
+    const countEl = document.getElementById('releasedCount');
+    if (countEl) countEl.textContent = `${allSamples.length} result${allSamples.length !== 1 ? 's' : ''}`;
+
+    filterTable();
   } catch (err) {
     console.error(err);
-    toast('Search failed', 'error');
-    return;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:30px; text-align:center; color:var(--red-light);"><i class="fas fa-exclamation-circle"></i> Failed to load results. Please refresh.</td></tr>`;
+    toast('Failed to load results', 'error');
   }
-
-  let matches = samples;
-
-  let searchTerm = sid ? `Sample ID: MU-${sid}` : `Patient Name: ${name}`;
-  await addAudit('Patient Portal Search', null, `${searchTerm} → ${matches.length} result(s) found`);
-
-  let container = document.getElementById('portalResults');
-  if (!container) return;
-  if (!matches.length) {
-    container.innerHTML = `<p style="color:var(--text3); margin-top:8px;">No released results found. Results only appear here after a supervisor authorises them.</p>`;
-    return;
-  }
-  container.innerHTML = matches.map(s => buildResultCard(s)).join('');
 }
 
-function portalClear() {
-  document.getElementById('portalId').value   = '';
-  document.getElementById('portalName').value = '';
-  document.getElementById('portalResults').innerHTML = '';
+function filterTable() {
+  const q = (document.getElementById('portalSearch')?.value || '').toLowerCase().trim();
+  const filtered = q
+    ? allSamples.filter(s =>
+        s.id.toString().includes(q) ||
+        (s.patient || '').toLowerCase().includes(q) ||
+        (s.phone || '').toLowerCase().includes(q) ||
+        (s.offline_ref || '').toLowerCase().includes(q) ||
+        (s.tests || []).some(t => t.test_name?.toLowerCase().includes(q))
+      )
+    : allSamples;
+
+  const tbody = document.getElementById('portalTableBody');
+  if (!tbody) return;
+
+  const countEl = document.getElementById('releasedCount');
+  if (countEl) countEl.textContent = q
+    ? `${filtered.length} of ${allSamples.length} result${allSamples.length !== 1 ? 's' : ''}`
+    : `${allSamples.length} result${allSamples.length !== 1 ? 's' : ''}`;
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:40px; text-align:center; color:var(--text2);">
+      <i class="fas fa-search" style="font-size:1.5rem; opacity:0.3; display:block; margin-bottom:8px;"></i>
+      No results found${q ? ` for "<strong>${esc(q)}</strong>"` : ''}.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(s => {
+    const paycts = s.paystatus === 'Paid' ? 'badge-paid' : s.paystatus === 'Partial' ? 'badge-partial' : 'badge-unpaid';
+    const relDate = s.released_at ? new Date(s.released_at).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+    const testList = (s.tests || []).map(t => `<span style="display:inline-block; background:#f0f6f3; border-radius:6px; padding:1px 6px; font-size:0.7rem; margin:1px;">${esc(t.test_name)}</span>`).join('');
+    return `<tr style="border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.15s;"
+              onmouseover="this.style.background='#f8fafb'" onmouseout="this.style.background=''"
+              onclick="expandResult(${s.id})">
+      <td style="padding:10px 14px;">
+        <span style="font-family:monospace; font-weight:700; color:var(--primary);">MU-${s.id}</span>
+        ${s.offline_ref ? `<br><span style="font-family:monospace; font-size:0.62rem; color:#92400e; background:#fff9ec; border:1px solid #fde68a; border-radius:4px; padding:1px 5px; display:inline-block; margin-top:2px;" title="Offline Draft Ref"><i class="fas fa-link" style="margin-right:2px;font-size:0.6rem;"></i>${esc(s.offline_ref)}</span>` : ''}
+      </td>
+      <td style="padding:10px 14px;">
+        <strong>${esc(s.patient)}</strong><br>
+        <small style="color:var(--text2);">${s.age ?? '?'}y ${esc(s.gender)}</small>
+      </td>
+      <td style="padding:10px 14px;">${testList}</td>
+      <td style="padding:10px 14px; color:var(--text2); font-size:0.8rem;">${esc(s.collDate || '—')}</td>
+      <td style="padding:10px 14px; color:var(--text2); font-size:0.8rem;">${relDate}</td>
+      <td style="padding:10px 14px;"><span class="badge ${paycts}">${esc(s.paystatus || '—')}</span></td>
+      <td style="padding:10px 14px; white-space:nowrap;">
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); expandResult(${s.id})">
+          <i class="fas fa-eye"></i> View
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); generatePDF(${s.id})">
+          <i class="fas fa-file-pdf"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ========== EXPAND RESULT ROW → DETAIL CARD ==========
+let currentExpandedId = null;
+
+function expandResult(id) {
+  const s = allSamples.find(x => x.id === id);
+  if (!s) return;
+
+  const detail = document.getElementById('portalResultDetail');
+  if (!detail) return;
+
+  // Toggle: clicking same row again collapses
+  if (currentExpandedId === id && detail.style.display !== 'none') {
+    detail.style.display = 'none';
+    currentExpandedId = null;
+    return;
+  }
+
+  currentExpandedId = id;
+  detail.style.display = 'block';
+  detail.innerHTML = `
+    <div class="card" style="margin-top:0; border-top:3px solid var(--primary);">
+      <div class="card-header" style="justify-content:space-between;">
+        <span><i class="fas fa-microscope"></i> Result Detail — MU-${s.id} · ${esc(s.patient)}</span>
+        <button class="btn btn-secondary btn-sm" onclick="closeDetail()"><i class="fas fa-times"></i> Close</button>
+      </div>
+      <div class="card-body">
+        ${buildResultCard(s)}
+      </div>
+    </div>`;
+
+  detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  addAudit('Portal Result Viewed', s.id, `Viewed by ${currentUser?.name || 'Unknown'}`);
+}
+
+function closeDetail() {
+  const detail = document.getElementById('portalResultDetail');
+  if (detail) detail.style.display = 'none';
+  currentExpandedId = null;
 }
 
 // ========== STATUS TRACKING HELPER ==========
@@ -774,6 +875,7 @@ function buildResultCard(s) {
             &nbsp;|&nbsp; Released: ${s.released_at ? new Date(s.released_at).toLocaleString() : '—'}
           </div>
           ${s.clinician ? `<div style="font-size:0.8rem; color:var(--text2);">Clinician: ${esc(s.clinician)}</div>` : ''}
+          ${s.offline_ref ? `<div style="margin-top:4px;"><span style="font-family:var(--mono); font-size:0.68rem; background:#fff9ec; border:1px solid #fde68a; color:#92400e; padding:2px 8px; border-radius:6px; display:inline-block;"><i class="fas fa-link" style="margin-right:3px;"></i>${esc(s.offline_ref)}</span></div>` : ''}
         </div>
         <div style="text-align:right;">
           <span class="badge ${payBadgeClass(s.pay_status)}">${esc(s.pay_status)}</span><br>
@@ -1012,237 +1114,322 @@ function buildParamTable(testName, data, testType, age, gender) {
   return `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></td>`;
 }
 
-// ========== PDF GENERATION (multi‑page) ==========
+// ========== PDF GENERATION — native jsPDF (no html2canvas, clean page breaks) ==========
 async function generatePDF(id) {
-  let s = samples.find(x => x.id === id);
-  if (!s) return;
+  let s = (typeof allSamples !== 'undefined' ? allSamples : samples || []).find(x => x.id === id);
+  if (!s) { toast('Sample not found', 'error'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const PW = 210, PH = 297, ML = 14, MR = 14, MT = 14, MB = 14;
+  const CW = PW - ML - MR; // usable content width = 182 mm
+  const GREEN = [31, 110, 67];
+  const DARK  = [26, 44, 62];
+  const GRAY  = [90, 126, 148];
+  const LGRAY = [240, 244, 249];
+
+  // ── helper: add repeating header/footer on every page ──
+  function addPageChrome() {
+    const total = pdf.getNumberOfPages();
+    for (let p = 1; p <= total; p++) {
+      pdf.setPage(p);
+      // header bar
+      pdf.setFillColor(...GREEN);
+      pdf.rect(0, 0, PW, 18, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.setTextColor(255,255,255);
+      pdf.text("MU'UJIZA DIAGNOSTICS", PW / 2, 10, { align: 'center' });
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Accredited Laboratory · ISO 15189', PW / 2, 15, { align: 'center' });
+      // footer
+      pdf.setDrawColor(...GREEN);
+      pdf.setLineWidth(0.3);
+      pdf.line(ML, PH - 10, PW - MR, PH - 10);
+      pdf.setFontSize(7);
+      pdf.setTextColor(...GRAY);
+      pdf.text('Electronically generated by MU\'UJIZA DIAGNOSTICS LIS', ML, PH - 6);
+      pdf.text(`Page ${p} of ${total}`, PW - MR, PH - 6, { align: 'right' });
+    }
+  }
+
+  // ── patient info block ──
+  let y = 24; // below header bar
+  pdf.setFontSize(9);
+  pdf.setTextColor(...DARK);
+
+  const infoLines = [
+    [`Sample ID: MU-${s.id}${s.offline_ref ? '  [Draft Ref: ' + s.offline_ref + ']' : ''}`,
+     `Collected: ${s.collection_date || '—'}`],
+    [`Patient: ${s.patient || '—'}  (${s.age ?? '?'}y, ${s.gender || '—'})`,
+     `Released: ${s.released_at ? new Date(s.released_at).toLocaleString() : '—'}`],
+    [`Payment: ${s.pay_status || '—'}  |  Paid: ${(s.amount_paid || 0).toFixed(2)} NGN  |  Balance: ${(s.balance_due || 0).toFixed(2)} NGN`,
+     s.clinician ? `Clinician: ${s.clinician}` : '']
+  ];
+  if (s.supervisor_comment) {
+    infoLines.push([`Supervisor Note: ${s.supervisor_comment}`, '']);
+  }
+
+  pdf.setFillColor(...LGRAY);
+  pdf.roundedRect(ML, y, CW, infoLines.length * 6 + 6, 2, 2, 'F');
+  y += 5;
+  infoLines.forEach(([left, right]) => {
+    pdf.setFont('helvetica', 'bold');
+    const boldParts = left.match(/^([^:]+:)(.*)/);
+    if (boldParts) {
+      pdf.text(boldParts[1], ML + 3, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(boldParts[2], ML + 3 + pdf.getTextWidth(boldParts[1]), y);
+    } else {
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(left, ML + 3, y);
+    }
+    if (right) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(right, PW - MR - 3, y, { align: 'right' });
+    }
+    y += 6;
+  });
+  y += 4;
+
+  // ── build autoTable rows ──
+  const tableBody = [];
   const groups = groupTestsByUnit(s.tests);
-  let rows = '';
+
   for (const [unitName, unitTests] of Object.entries(groups)) {
-    rows += `<tr style="background:#e2e8f0;"><td colspan="4" style="padding:8px; font-weight:bold;">${esc(unitName)}</td></tr>`;
+    // section header row (spans all 4 cols via didParseCell)
+    tableBody.push([{ content: unitName, colSpan: 4, styles: { fillColor: GREEN, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 } }]);
+
     for (let t of unitTests) {
       let testType = testDefinitions.testTypes[t.test_name] || '';
       if (!t.result || !t.result.startsWith('{')) {
-        rows += `<tr><td style="padding:5px;">${esc(t.test_name)}</td><td colspan="3">${esc(t.result || '—')}</td></tr>`;
+        tableBody.push([t.test_name, t.result || '—', '', '']);
       } else {
         try {
           let data = JSON.parse(t.result);
-          rows += generatePDFRows(t.test_name, data, testType, s.age, s.gender);
+          collectAutoTableRows(tableBody, t.test_name, data, testType, s.age, s.gender);
         } catch(e) {
-          rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result)}</td></tr>`;
+          tableBody.push([t.test_name, t.result || '—', '', '']);
         }
       }
     }
   }
 
-  let wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed; left:-9999px; top:0; width:800px; background:white; padding:30px; font-family:Arial; font-size:12px;';
-  wrap.innerHTML = `
-    <div style="text-align:center; margin-bottom:20px; border-bottom:2px solid #1F6E43; padding-bottom:16px;">
-      <h1 style="color:#1F6E43;">MU'UJIZA DIAGNOSTICS</h1>
-      <p style="font-size:11px;">Accredited Laboratory · ISO 15189</p>
-    </div>
-    <div style="margin-bottom:16px;">
-      <p><strong>Sample ID:</strong> MU-${s.id}</p>
-      <p><strong>Patient:</strong> ${esc(s.patient)} (${s.age ?? '?'}y, ${esc(s.gender)})</p>
-      <p><strong>Collected:</strong> ${s.collection_date} | <strong>Released:</strong> ${s.released_at ? new Date(s.released_at).toLocaleString() : '—'}</p>
-      <p><strong>Payment:</strong> ${s.pay_status} | Paid: ${(s.amount_paid || 0).toFixed(2)} NGN | Balance: ${(s.balance_due || 0).toFixed(2)} NGN</p>
-      ${s.supervisor_comment ? `<p><strong>Supervisor Note:</strong> ${esc(s.supervisor_comment)}</p>` : ''}
-    </div>
-    <table border="1" style="border-collapse:collapse; width:100%;">
-      <thead><tr style="background:#f0f0f0;"><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div style="margin-top:20px; text-align:center; font-size:9px;">Electronically generated by MU'UJIZA DIAGNOSTICS LIS</div>`;
-  document.body.appendChild(wrap);
+  pdf.autoTable({
+    startY: y,
+    head: [[
+      { content: 'Parameter', styles: { fillColor: LGRAY, textColor: DARK, fontStyle: 'bold' } },
+      { content: 'Result',    styles: { fillColor: LGRAY, textColor: DARK, fontStyle: 'bold' } },
+      { content: 'Unit',      styles: { fillColor: LGRAY, textColor: DARK, fontStyle: 'bold' } },
+      { content: 'Reference', styles: { fillColor: LGRAY, textColor: DARK, fontStyle: 'bold' } }
+    ]],
+    body: tableBody,
+    margin: { left: ML, right: MR, top: 22, bottom: 16 },
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2.5, textColor: DARK, lineColor: [210,220,230], lineWidth: 0.2 },
+    columnStyles: {
+      0: { cellWidth: 64 },
+      1: { cellWidth: 46 },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 40 }
+    },
+    didParseCell: function(data) {
+      // Colour HIGH/LOW flags
+      if (data.section === 'body' && data.column.index === 1) {
+        const txt = String(data.cell.raw || '');
+        if (txt.includes('↑')) data.cell.styles.textColor = [185, 28, 28];
+        if (txt.includes('↓')) data.cell.styles.textColor = [59, 130, 246];
+      }
+      // Alternate row tint for regular rows
+      if (data.section === 'body' && data.row.index % 2 === 0) {
+        if (!data.cell.styles.fillColor || data.cell.styles.fillColor === 'transparent') {
+          // only tint rows that aren't already styled
+          if (!(data.cell.raw && typeof data.cell.raw === 'object' && data.cell.raw.styles && data.cell.raw.styles.fillColor)) {
+            data.cell.styles.fillColor = [252, 253, 254];
+          }
+        }
+      }
+    },
+    didDrawPage: function() {
+      // re-draw green header strip on each new page (autoTable fires this after each page)
+      pdf.setFillColor(...GREEN);
+      pdf.rect(0, 0, PW, 18, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.setTextColor(255,255,255);
+      pdf.text("MU'UJIZA DIAGNOSTICS", PW / 2, 10, { align: 'center' });
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Accredited Laboratory · ISO 15189', PW / 2, 15, { align: 'center' });
+    }
+  });
 
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-  const canvas = await html2canvas(wrap, { scale: 2 });
-  const imgData = canvas.toDataURL('image/png');
-  const imgWidth = 190;
-  const pageHeight = 277;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  let heightLeft = imgHeight;
-  let position = 0;
-
-  pdf.addImage(imgData, 'PNG', 10, position + 10, imgWidth, imgHeight);
-  heightLeft -= pageHeight;
-  while (heightLeft > 0) {
-    position -= pageHeight;
-    pdf.addPage();
-    pdf.addImage(imgData, 'PNG', 10, position + 10, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-  }
-
+  addPageChrome();
   pdf.save(`MU${s.id}_${(s.patient || 'patient').replace(/\s/g, '_')}.pdf`);
-  document.body.removeChild(wrap);
   await addAudit('PDF Downloaded', s.id, `Report downloaded by ${currentUser ? currentUser.name : 'Unknown'}`);
   toast('PDF downloaded');
 }
 
-function generatePDFRows(testName, data, testType, age, gender) {
+// ── collect rows for autoTable (mirrors generatePDFRows logic) ──
+function collectAutoTableRows(body, testName, data, testType, age, gender) {
+  const HIGH_COLOR = [185, 28, 28];
+  const LOW_COLOR  = [59, 130, 246];
+
   const dynamicTests = ['complex_pcv', 'complex_hb', 'complex_esr', 'complex_rbs', 'complex_fbs'];
   if (dynamicTests.includes(testType)) {
     let key = testType.split('_')[1];
-    let val = data[key];
-    if (val === undefined) val = '';
-    let range = getReferenceRange(testName, age, gender);
-    if (!range) range = { low: 0, high: 100, unit: '' };
-    let flag = '';
+    let val = data[key] !== undefined ? data[key] : '';
+    let range = getReferenceRange(testName, age, gender) || { low: 0, high: 100, unit: '' };
+    let flag = ''; let col = null;
     let num = parseFloat(val);
     if (!isNaN(num)) {
-      if (num > range.high) flag = '↑';
-      else if (num < range.low) flag = '↓';
+      if (num > range.high) { flag = ' ↑'; col = HIGH_COLOR; }
+      else if (num < range.low) { flag = ' ↓'; col = LOW_COLOR; }
     }
-    return `<tr><td style="font-weight:bold;">${esc(testName)}</td><td>${val} ${flag}</td><td>${esc(range.unit)}</td><td>${range.low}–${range.high}</td></tr>`;
+    body.push([testName, { content: val + flag, styles: col ? { textColor: col, fontStyle: 'bold' } : {} }, range.unit, `${range.low}–${range.high}`]);
+    return;
   }
 
   if (testType === 'complex_widal') {
-    const rows = [
-      { organism: 'Salmonella Typhi',       o: data.o  ?? '—', h: data.h  ?? '—' },
-      { organism: 'Salmonella Paratyphi A', o: data.ao ?? '—', h: data.ah ?? '—' },
-      { organism: 'Salmonella Paratyphi B', o: data.bo ?? '—', h: data.bh ?? '—' },
-      { organism: 'Salmonella Paratyphi C', o: data.co ?? '—', h: data.ch ?? '—' }
+    body.push([{ content: 'Widal Test', colSpan: 4, styles: { fillColor: [232, 244, 240], fontStyle: 'bold' } }]);
+    body.push(['Organism', 'O Antigen (TO)', 'H Antigen (TH)', '']);
+    const widalRows = [
+      { org: 'S. Typhi',       o: data.o, h: data.h },
+      { org: 'S. Paratyphi A', o: data.ao, h: data.ah },
+      { org: 'S. Paratyphi B', o: data.bo, h: data.bh },
+      { org: 'S. Paratyphi C', o: data.co, h: data.ch }
     ];
-    let tableRows = '';
-    for (let r of rows) {
-      const oFlag    = (parseInt(r.o) >= 160) ? ' ↑' : '';
-      const hFlag    = (parseInt(r.h) >= 160) ? ' ↑' : '';
-      const oDisplay = r.o !== '—' ? `1:${r.o}${oFlag}` : '—';
-      const hDisplay = r.h !== '—' ? `1:${r.h}${hFlag}` : '—';
-      const oColour  = oFlag ? '#b91c1c' : '#1a1a1a';
-      const hColour  = hFlag ? '#b91c1c' : '#1a1a1a';
-      tableRows += `<tr>
-        <td style="padding:6px 10px; font-style:italic; width:44%;">${r.organism}</td>
-        <td style="padding:6px 10px; text-align:center; width:28%; font-weight:${oFlag?'bold':'normal'}; color:${oColour};">${oDisplay}</td>
-        <td style="padding:6px 10px; text-align:center; width:28%; font-weight:${hFlag?'bold':'normal'}; color:${hColour};">${hDisplay}</td>
-      </tr>`;
-    }
-    return `
-      <tr style="background:#e8f4f0;"><td colspan="4" style="font-weight:bold; padding:8px 10px; font-size:13px;">Widal Test</td></tr>
-      <tr><td colspan="4" style="padding:6px 10px;">
-        <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #d1d5db;">
-          <colgroup><col style="width:44%;"><col style="width:28%;"><col style="width:28%;"></colgroup>
-          <thead><tr style="background:#f3f4f6;"><th style="padding:7px 10px; text-align:left; border:1px solid #d1d5db; font-size:11px;">Organism</th><th style="padding:7px 10px; text-align:center; border:1px solid #d1d5db; font-size:11px;">O Antigen (TO)</th><th style="padding:7px 10px; text-align:center; border:1px solid #d1d5db; font-size:11px;">H Antigen (TH)</th></tr></thead>
-          <tbody style="font-size:11px;">${tableRows}</tbody>
-        </table>
-      </td></tr>`;
+    widalRows.forEach(r => {
+      const oFlag = parseInt(r.o) >= 160 ? ' ↑' : '';
+      const hFlag = parseInt(r.h) >= 160 ? ' ↑' : '';
+      const oTxt = r.o !== undefined && r.o !== null ? `1:${r.o}${oFlag}` : '—';
+      const hTxt = r.h !== undefined && r.h !== null ? `1:${r.h}${hFlag}` : '—';
+      body.push([
+        { content: r.org, styles: { fontStyle: 'italic' } },
+        { content: oTxt, styles: oFlag ? { textColor: HIGH_COLOR, fontStyle: 'bold' } : {} },
+        { content: hTxt, styles: hFlag ? { textColor: HIGH_COLOR, fontStyle: 'bold' } : {} },
+        ''
+      ]);
+    });
+    return;
   }
 
   if (testType === 'complex_culture' || testType === 'complex_stool_cs') {
-    let organism = data.organism || 'Not specified';
-    let html = `<tr style="background:#e8f4f0;"><td colspan="4" style="font-weight:bold; padding:7px;">${esc(testName)}</td></tr>
-                <tr><td colspan="4" style="padding:6px;"><strong>Organism:</strong> <em>${esc(organism)}</em></td></tr>`;
+    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [232, 244, 240], fontStyle: 'bold' } }]);
+    body.push(['Organism', { content: data.organism || 'Not specified', colSpan: 3, styles: { fontStyle: 'italic' } }]);
     if (data.sensitivities && data.sensitivities.length) {
-      html += `<tr style="background:#f0f0f0;"><th style="padding:6px;">Antibiotic</th><th style="padding:6px;">Result</th><th style="padding:6px;">Interpretation</th><th style="padding:6px;"></th></tr>`;
+      body.push([{ content: 'Antibiotic', styles: { fontStyle: 'bold' } }, { content: 'Result', styles: { fontStyle: 'bold' } }, { content: 'Interpretation', colSpan: 2, styles: { fontStyle: 'bold' } }]);
       data.sensitivities.forEach(s => {
         const label  = s.result === 'S' ? 'Sensitive' : s.result === 'R' ? 'Resistant' : s.result === 'I' ? 'Intermediate' : s.result || '—';
-        const colour = s.result === 'S' ? '#15803d'   : s.result === 'R' ? '#b91c1c'   : s.result === 'I' ? '#92400e'      : '#374151';
-        html += `<tr><td style="padding:5px;">${esc(s.antibiotic)}</td><td style="padding:5px; font-weight:bold; color:${colour};">${esc(s.result)}</td><td style="padding:5px; color:${colour};">${label}</td><td></td></tr>`;
+        const col    = s.result === 'S' ? [21,128,61] : s.result === 'R' ? HIGH_COLOR : s.result === 'I' ? [146,64,14] : [55,65,81];
+        body.push([s.antibiotic, { content: s.result || '—', styles: { textColor: col, fontStyle: 'bold' } }, { content: label, colSpan: 2, styles: { textColor: col } }]);
       });
     } else {
-      html += `<tr><td colspan="4" style="padding:5px; color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+      body.push([{ content: 'No antibiotic sensitivities recorded.', colSpan: 4, styles: { textColor: [107,114,128] } }]);
     }
-    return html;
+    return;
   }
 
   if (testType === 'complex_urine_mcs' || testType === 'complex_stool_mcs') {
     const isMCS = testType === 'complex_urine_mcs';
     const MICRO_PARAMS = isMCS ? URINE_MICRO_PARAMS : STOOL_MICRO_PARAMS;
     const sections = isMCS ? ['Physical','Chemical','Microscopy'] : ['Macroscopy','Microscopy'];
-    let html = `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:bold; padding:8px;">${esc(testName)}</td></tr>`;
+    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [219, 234, 254], fontStyle: 'bold' } }]);
     sections.forEach(sec => {
-      html += `<tr style="background:#eff6ff;"><td colspan="4" style="font-weight:700; padding:5px 8px; font-size:0.72rem; text-transform:uppercase; letter-spacing:1px;">${sec}</td></tr>`;
+      let secRows = [];
       MICRO_PARAMS.filter(p => p.section === sec).forEach(p => {
         let v = data[p.key];
         if (v === undefined || v === '' || v === 'None' || v === 'None seen' || v === 'Absent' || v === 'Negative') return;
-        let flag = '';
-        if (p.low !== undefined) { let n = parseFloat(v); if (!isNaN(n)) { if (n > p.high) flag = '↑'; else if (n < p.low) flag = '↓'; } }
-        html += `<tr><td style="padding:4px 8px;">${esc(p.name)}</td><td style="padding:4px 8px;${flag?'font-weight:bold;color:#b91c1c;':''}">${esc(v)} ${flag}</td><td style="padding:4px 8px;">${esc(p.unit||'')}</td><td>—</td></tr>`;
+        let flag = ''; let col = null;
+        if (p.type === 'number' && p.low !== undefined) {
+          let n = parseFloat(v);
+          if (!isNaN(n)) { if (n > p.high) { flag = ' ↑'; col = HIGH_COLOR; } else if (n < p.low) { flag = ' ↓'; col = LOW_COLOR; } }
+        }
+        secRows.push([p.name, { content: v + flag, styles: col ? { textColor: col, fontStyle: 'bold' } : {} }, p.unit || '', '—']);
       });
+      if (!secRows.length) return;
+      body.push([{ content: sec, colSpan: 4, styles: { fillColor: [239, 246, 255], fontStyle: 'bold', fontSize: 7 } }]);
+      secRows.forEach(r => body.push(r));
     });
-    html += `<tr style="background:#eff6ff;"><td colspan="4" style="font-weight:700; padding:5px 8px; font-size:0.72rem; text-transform:uppercase; letter-spacing:1px;">Culture &amp; Sensitivity</td></tr>`;
-    html += `<tr><td style="padding:4px 8px;">Organism</td><td colspan="3" style="padding:4px 8px; font-style:italic;">${esc(data.organism || 'No growth / Not specified')}</td></tr>`;
+    // C&S
+    body.push([{ content: 'Culture & Sensitivity', colSpan: 4, styles: { fillColor: [239, 246, 255], fontStyle: 'bold', fontSize: 7 } }]);
+    body.push(['Organism', { content: data.organism || 'No growth / Not specified', colSpan: 3, styles: { fontStyle: 'italic' } }]);
     if (data.sensitivities && data.sensitivities.length) {
-      html += `<tr style="background:#f0f0f0;"><th style="padding:5px;">Antibiotic</th><th style="padding:5px;">Result</th><th style="padding:5px;">Interpretation</th><th></th></tr>`;
       data.sensitivities.forEach(s => {
-        const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
-        const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
-        html += `<tr><td style="padding:5px;">${esc(s.antibiotic)}</td><td style="padding:5px;font-weight:bold;color:${colour};">${esc(s.result)}</td><td style="padding:5px;color:${colour};">${label}</td><td></td></tr>`;
+        const label = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
+        const col   = s.result==='S'?[21,128,61]:s.result==='R'?HIGH_COLOR:s.result==='I'?[146,64,14]:[55,65,81];
+        body.push([s.antibiotic, { content: s.result||'—', styles: { textColor: col, fontStyle: 'bold' } }, { content: label, colSpan: 2, styles: { textColor: col } }]);
       });
     } else {
-      html += `<tr><td colspan="4" style="padding:5px;color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+      body.push([{ content: 'No antibiotic sensitivities recorded.', colSpan: 4, styles: { textColor: [107,114,128] } }]);
     }
-    return html;
+    return;
   }
 
   if (testType === 'complex_malaria') {
-    let rows = '';
-    if (data.species) rows += `<tr><td>Species</td><td colspan="3">${esc(data.species)}</td></tr>`;
-    if (data.stage) rows += `<tr><td>Stage</td><td colspan="3">${esc(data.stage)}</td></tr>`;
-    if (data.density !== undefined) rows += `<tr><td>Parasite Density</td><td colspan="3">${esc(data.density)} parasites/µL</td></tr>`;
-    return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
+    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [232, 244, 240], fontStyle: 'bold' } }]);
+    if (data.species)  body.push(['Species', { content: data.species, colSpan: 3 }]);
+    if (data.stage)    body.push(['Stage',   { content: data.stage, colSpan: 3 }]);
+    if (data.density !== undefined) body.push(['Parasite Density', { content: data.density + ' parasites/µL', colSpan: 3 }]);
+    return;
   }
 
   if (testType === 'complex_tb_genexpert') {
-    let rows = '';
-    if (data.mtb_detected) rows += `<tr><td>MTB Detected</td><td colspan="3">${esc(data.mtb_detected)}</td></tr>`;
-    if (data.rif_resistance) rows += `<tr><td>Rifampicin Resistance</td><td colspan="3">${esc(data.rif_resistance)}</td></tr>`;
+    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [232, 244, 240], fontStyle: 'bold' } }]);
+    if (data.mtb_detected) body.push(['MTB Detected', { content: data.mtb_detected, colSpan: 3 }]);
+    if (data.rif_resistance) body.push(['Rifampicin Resistance', { content: data.rif_resistance, colSpan: 3 }]);
     for (let probe of ['probeA_ct','probeB_ct','probeC_ct','probeD_ct','probeE_ct']) {
-      if (data[probe] !== undefined) rows += `<tr><td>${probe.replace('_ct',' Probe Ct')}</td><td colspan="3">${esc(data[probe])}</td></tr>`;
+      if (data[probe] !== undefined) body.push([probe.replace('_ct',' Probe Ct'), { content: data[probe], colSpan: 3 }]);
     }
-    return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
+    return;
   }
 
   if (testType === 'complex_serology') {
-    let rows = '';
+    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [232, 244, 240], fontStyle: 'bold' } }]);
     for (let p of SEROLOGY_PARAMS) {
-      if (data[p.key] !== undefined) rows += `<tr><td>${esc(p.name)}</td><td colspan="3">${esc(data[p.key])}</td></tr>`;
+      if (data[p.key] !== undefined) body.push([p.name, { content: data[p.key], colSpan: 3 }]);
     }
-    return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
+    return;
   }
 
+  // Standard numeric panels
   let params = [];
-  if (testType === 'complex_cbc') params = CBC_PARAMS;
-  else if (testType === 'complex_lft') params = LFT_PARAMS_FULL;
-  else if (testType === 'complex_rft') params = RFT_PARAMS_FULL;
+  if (testType === 'complex_cbc')       params = CBC_PARAMS;
+  else if (testType === 'complex_lft')  params = LFT_PARAMS_FULL;
+  else if (testType === 'complex_rft')  params = RFT_PARAMS_FULL;
   else if (testType === 'complex_thyroid') params = THYROID_PARAMS;
-  else if (testType === 'complex_lipid') params = LIPID_PARAMS;
-  else if (testType === 'complex_coag') params = COAG_PARAMS;
+  else if (testType === 'complex_lipid')   params = LIPID_PARAMS;
+  else if (testType === 'complex_coag')    params = COAG_PARAMS;
   else if (testType === 'complex_urinalysis') params = URINALYSIS_MICRO_PARAMS;
-  else if (testType === 'complex_iron') params = IRON_PARAMS;
-  else if (testType === 'complex_bone') params = BONE_PARAMS;
+  else if (testType === 'complex_iron')    params = IRON_PARAMS;
+  else if (testType === 'complex_bone')    params = BONE_PARAMS;
   else if (testType === 'complex_cardiac') params = CARDIAC_PARAMS;
-  else if (testType === 'complex_ogtt') params = OGTT_PARAMS;
-  else if (testType === 'complex_csf') params = CSF_PARAMS;
-  else if (testType === 'complex_abg') params = ABG_PARAMS;
-  else if (testType === 'complex_semen') params = SEMEN_PARAMS;
+  else if (testType === 'complex_ogtt')    params = OGTT_PARAMS;
+  else if (testType === 'complex_csf')     params = CSF_PARAMS;
+  else if (testType === 'complex_abg')     params = ABG_PARAMS;
+  else if (testType === 'complex_semen')   params = SEMEN_PARAMS;
 
   if (!params.length) {
-    return `<tr><td colspan="4">${esc(testName)}: ${esc(JSON.stringify(data))}</td></tr>`;
+    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [240, 244, 249], fontStyle: 'bold' } }]);
+    Object.entries(data).forEach(([k, v]) => body.push([k, { content: String(v), colSpan: 3 }]));
+    return;
   }
-  let rows = '';
+
+  body.push([{ content: testName, colSpan: 4, styles: { fillColor: [240, 244, 249], fontStyle: 'bold' } }]);
   for (let p of params) {
     let val = data[p.key];
-    if (val === undefined) continue;
-    let flag = '';
+    if (val === undefined || val === '') continue;
+    let flag = ''; let col = null;
+    let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—';
     let n = parseFloat(val);
     if (!isNaN(n)) {
-      if (p.high !== null && n > p.high) flag = '↑';
-      if (p.low !== null && n < p.low) flag = '↓';
+      if (p.high !== null && n > p.high) { flag = ' ↑'; col = HIGH_COLOR; }
+      if (p.low  !== null && n < p.low)  { flag = ' ↓'; col = LOW_COLOR; }
     }
-    let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : (p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—');
-    rows += `<tr><td>${esc(p.name)}</td><td>${val} ${flag}</td><td>${esc(p.unit)}</td><td>${esc(ref)}</td></tr>`;
+    body.push([p.name, { content: String(val) + flag, styles: col ? { textColor: col, fontStyle: 'bold' } : {} }, p.unit || '', ref]);
   }
-  return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
 }
-
-// ========== EVENT LISTENERS ==========
-document.getElementById('portalSearchBtn').addEventListener('click', portalSearch);
-document.getElementById('portalClearBtn').addEventListener('click', portalClear);
-document.getElementById('portalId').addEventListener('keypress', e => { if (e.key === 'Enter') portalSearch(); });
-document.getElementById('portalName').addEventListener('keypress', e => { if (e.key === 'Enter') portalSearch(); });
 
 // ========== CLOCK ==========
 function startClock() {
@@ -1257,9 +1444,12 @@ function startClock() {
 (async function init() {
   console.log('Initializing Patient Portal...');
   await loadTestDefinitions();
+  await loadAndRender();
   startClock();
   document.getElementById('userDisplay').innerHTML = `<i class="fas fa-user-circle"></i> ${esc(currentUser.name)} (${esc(currentUser.role)})`;
   document.getElementById('logoutBtn').addEventListener('click', logoutUser);
+  // Auto-refresh every 60 seconds
+  setInterval(loadAndRender, 60000);
 })();
 </script>
 <script>
@@ -1271,6 +1461,7 @@ function startClock() {
     });
   }
 </script>
-<script src="global.js"></script>
+<script src="offline_queue.js"></script>  <!-- before auth-guard.js -->
+<script src="auth-guard.js"></script>
 </body>
 </html>

@@ -2,28 +2,34 @@
  * sw.js — MU'UJIZA LIS Service Worker
  * ═══════════════════════════════════════════════════════════════
  *
- * SECURITY RULE: Protected HTML pages are NEVER cached.
- * Caching authenticated pages means a logged-out user on a shared
- * device can open them offline and see the full page shell —
- * bypassing the auth guard entirely.
+ * All pages use stale-while-revalidate — no redirects ever.
+ * When the device goes offline every page stays exactly where
+ * it is. If a page has never been visited (no cache entry yet)
+ * the browser shows its own "no connection" screen instead of
+ * being pushed somewhere unexpected.
  *
- * Only truly static, public assets are cached:
- *   • login.html        — the only public-facing page
- *   • Static assets     — icons, manifest, fonts fallback
+ * Cache strategies:
+ *   • Supabase API               → network-only  (always)
+ *   • Everything else            → stale-while-revalidate
  *
- * All other requests (protected HTML, Supabase API calls) always
- * go to the network. If the network is unavailable, the browser
- * shows its default offline message rather than a stale page.
+ * Pages with full offline capability (shell + IndexedDB queue):
+ *   • result_entry.html          — offline_queue.js handles writes, COC, test defs
+ *   • accession.html             — offline registration queue, test def dropdowns
+ *   • pending_portal.html        — all Released results cached with tests
+ *   • management1.html           — verify/release queued offline, test defs cached
+ *
+ * Pages with read-only offline capability (cached shell only):
+ *   • management.html / login.html
  * ═══════════════════════════════════════════════════════════════
  */
 
-// Bump this version string whenever you deploy changes.
-// The old cache will be deleted automatically on activation.
-const CACHE_VERSION = 'lis-v3';
+const CACHE_VERSION = 'lis-v8';
 
-// Only these files are safe to serve from cache.
-// DO NOT add accession.html, result_entry.html, management*.html,
-// or pending_portal.html — those require a live auth check.
+// ── Pre-cache on install ─────────────────────────────────────────
+// All shared assets + every page shell so they're available from
+// the very first offline moment, even before the user visits them.
+
+// Shared local assets — hard requirement, install fails if missing
 const STATIC_CACHE = [
   'login.html',
   'manifest.json',
@@ -31,86 +37,111 @@ const STATIC_CACHE = [
   'icon-512.png',
   'auth-guard.js',
   'global.js',
+  'offline_queue.js',
+  'result_entry.js',
 ];
 
-// HTML pages that must ALWAYS be fetched from the network.
-// Requests for these will never be served from cache.
-const PROTECTED_PAGES = [
-  'accession.html',
+// Page shells — best-effort (large files; warn and continue if slow)
+const PAGE_SHELLS = [
   'result_entry.html',
+  'accession.html',
+  'pending_portal.html',
   'management.html',
   'management1.html',
-  'pending_portal.html',
 ];
 
-// ── Install: cache only static assets ───────────────────────────
+// CDN assets shared across pages — best-effort
+const CDN_ASSETS = [
+  // Fonts
+  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap',
+  'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap',
+  'https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@500&display=swap',
+  // Icons
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  // Scripts
+  'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+  'https://js.paystack.co/v1/inline.js',
+  // Font Awesome webfonts (needed for icons to render offline)
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2',
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2',
+];
+
+// ── Install ──────────────────────────────────────────────────────
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_VERSION)
-      .then(cache => cache.addAll(STATIC_CACHE))
-      .then(() => self.skipWaiting()) // activate immediately, don't wait for old SW to die
+    caches.open(CACHE_VERSION).then(async cache => {
+      // Local static files — must all succeed
+      await cache.addAll(STATIC_CACHE);
+
+      // Page shells + CDN assets — best-effort, warn on individual failures
+      const bestEffort = [...PAGE_SHELLS, ...CDN_ASSETS];
+      await Promise.allSettled(
+        bestEffort.map(url =>
+          cache.add(url).catch(err =>
+            console.warn('[SW] pre-cache skipped:', url, err)
+          )
+        )
+      );
+    }).then(() => self.skipWaiting())
   );
 });
 
-// ── Activate: delete any old cache versions ──────────────────────
+// ── Activate ─────────────────────────────────────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(key => key !== CACHE_VERSION)
-          .map(key => caches.delete(key))
-      )
-    ).then(() => self.clients.claim()) // take control of all open tabs immediately
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE_VERSION).map(k => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
   );
 });
 
-// ── Fetch: network-first for protected pages, cache-first for static ──
+// ── Fetch ────────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  const filename = url.pathname.split('/').pop();
 
-  // 1. Supabase API calls — always network, never cache
+  // Supabase API — always network, never cache.
+  // offline_queue.js handles write buffering for result_entry.
   if (url.hostname.includes('supabase.co')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // 2. Protected HTML pages — always network, never cache
-  //    If network fails, return a simple auth-required response
-  //    rather than a stale cached page.
-  if (PROTECTED_PAGES.includes(filename)) {
-    event.respondWith(
-      fetch(event.request).catch(() =>
-        new Response(
-          `<!DOCTYPE html><html><head><meta charset="UTF-8">
-           <meta http-equiv="refresh" content="0;url=login.html">
-           </head><body>
-           <p>You are offline. <a href="login.html">Return to login</a>.</p>
-           </body></html>`,
-          { headers: { 'Content-Type': 'text/html' } }
-        )
-      )
-    );
-    return;
+  // Everything else — stale-while-revalidate.
+  // Cached copy served instantly with no network wait; fresh copy
+  // fetched in the background and stored for next time.
+  // No page is ever redirected away due to a network failure.
+  event.respondWith(staleWhileRevalidate(event.request));
+});
+
+// ── Helper: stale-while-revalidate ───────────────────────────────
+// 1. Return cached copy immediately (fast, works offline).
+// 2. Fetch a fresh copy in the background; update cache silently.
+// 3. If nothing cached AND network is down: return 503 (browser
+//    shows its own offline UI — no forced redirect).
+async function staleWhileRevalidate(request) {
+  // Only cache GET requests; POST/PUT pass straight through
+  if (request.method !== 'GET') {
+    return fetch(request);
   }
 
-  // 3. Static assets — cache-first, fall back to network
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        // Only cache successful same-origin responses
-        if (
-          response.ok &&
-          response.type === 'basic' &&
-          event.request.method === 'GET'
-        ) {
-          const toCache = response.clone();
-          caches.open(CACHE_VERSION).then(cache => cache.put(event.request, toCache));
-        }
-        return response;
-      });
+  const cache  = await caches.open(CACHE_VERSION);
+  const cached = await cache.match(request);
+
+  // Background network refresh — always attempted, never blocks the response
+  const networkFetch = fetch(request)
+    .then(response => {
+      if (response && response.status === 200) {
+        cache.put(request, response.clone());
+      }
+      return response;
     })
-  );
-});
+    .catch(() => null); // offline — silent, cached copy takes over
+
+  // Serve cached instantly; fall back to network if not yet cached
+  return cached || networkFetch || new Response('', { status: 503 });
+}
