@@ -1,0 +1,885 @@
+// accession.js – Fully aligned with accession.html (includes Rejected Samples panel)
+(function () {
+  // --------------------------------------------------------------
+  //  GLOBALS & INIT (same as inline script)
+  // --------------------------------------------------------------
+  const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
+  const PAYSTACK_PUBLIC_KEY = 'pk_test_8564df5226f404c1952b77183cc611d283be1a0c';
+
+  // Auth session from auth-guard.js
+  const currentSession = window.currentSession || { name: 'Reception', role: 'reception' };
+  const db = window._supabaseClient;    // token-authenticated client
+
+  // Test definitions storage
+  let testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+  let tempTests = [];                   // cart
+  window.tempTests = tempTests;
+
+  // Rejected samples storage
+  let rejectedGroups = [];
+
+  // Helper: escape HTML
+  function esc(str) {
+    if (str == null) return '';
+    return String(str).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[m]);
+  }
+
+  function toast(msg, type = 'success') {
+    const stack = document.getElementById('toastStack');
+    if (!stack) return;
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    const icon = type === 'error' ? 'times-circle' : type === 'warn' ? 'exclamation-triangle' : 'check-circle';
+    div.innerHTML = `<i class="fas fa-${icon}"></i> ${esc(msg)}`;
+    stack.appendChild(div);
+    setTimeout(() => { div.style.opacity = '0'; setTimeout(() => div.remove(), 300); }, 3500);
+  }
+
+  async function addAudit(action, sampleId, details) {
+    try {
+      await db.from('audit_log').insert([{
+        ts: new Date().toISOString(),
+        user_name: currentSession.name || 'Unknown',
+        user_role: currentSession.role || 'Unknown',
+        action,
+        sample_id: sampleId,
+        details: details || ''
+      }]);
+    } catch (err) { console.warn('Audit failed', err); }
+  }
+
+  // --------------------------------------------------------------
+  //  LOAD TEST DEFINITIONS (with offline cache)
+  // --------------------------------------------------------------
+  async function loadTestDefinitions() {
+    try {
+      const { data, error } = await db.from('test_definitions').select('*');
+      if (error) throw error;
+      applyTestDefinitions(data);
+      if (window._oqCacheTestDefinitions) window._oqCacheTestDefinitions(data);
+    } catch (err) {
+      console.warn('loadTestDefinitions online failed, trying cache:', err);
+      const cached = window._oqGetCachedTestDefinitions ? await window._oqGetCachedTestDefinitions() : null;
+      if (cached) {
+        applyTestDefinitions(cached);
+        toast('Using cached test definitions (offline)', 'warn');
+      } else {
+        toast('Failed to load test definitions', 'error');
+        document.getElementById('noTestsNotice').style.display = 'block';
+        document.getElementById('addTestBtn').disabled = true;
+      }
+    }
+  }
+
+  function applyTestDefinitions(data) {
+    testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+    data.forEach(td => {
+      if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
+      testDefinitions.units[td.unit_name].push(td.test_name);
+      testDefinitions.testPrices[td.test_name] = td.price_ngn;
+      if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
+    });
+    populateUnits();
+  }
+
+  function getTestPrice(testName) { return testDefinitions.testPrices[testName] || 0; }
+  window.getTestPrice = getTestPrice;   // for offline_queue
+
+  function populateUnits() {
+    const units = Object.keys(testDefinitions.units);
+    const notice = document.getElementById('noTestsNotice');
+    const addBtn = document.getElementById('addTestBtn');
+    if (!units.length) {
+      if (notice) notice.style.display = 'block';
+      if (addBtn) addBtn.disabled = true;
+      return;
+    }
+    if (notice) notice.style.display = 'none';
+    if (addBtn) addBtn.disabled = false;
+    const sel = document.getElementById('f-unit');
+    if (sel) sel.innerHTML = units.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+    updateTests();
+  }
+
+  function updateTests() {
+    const unit = document.getElementById('f-unit')?.value;
+    const tests = testDefinitions.units[unit] || [];
+    const sel = document.getElementById('f-test');
+    if (sel) sel.innerHTML = tests.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  }
+
+  // --------------------------------------------------------------
+  //  CART & TOTAL
+  // --------------------------------------------------------------
+  function renderCart() {
+    const cart = document.getElementById('testCart');
+    if (!cart) return;
+    if (!tempTests.length) {
+      cart.innerHTML = '<span style="color:var(--text3);">No tests added yet.</span>';
+      updateTotal();
+      return;
+    }
+    cart.innerHTML = tempTests.map((t, i) => `
+      <div class="test-chip">
+        <span>${esc(t.unit_name)}: ${esc(t.test_name)} – <strong>${getTestPrice(t.test_name).toFixed(2)} NGN</strong></span>
+        <button class="chip-remove" data-idx="${i}" title="Remove">×</button>
+      </div>`).join('');
+    cart.querySelectorAll('.chip-remove').forEach(btn => {
+      btn.addEventListener('click', () => { tempTests.splice(parseInt(btn.dataset.idx), 1); renderCart(); });
+    });
+    updateTotal();
+  }
+
+  function updateTotal() {
+    const total = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
+    let paidRaw = parseFloat(document.getElementById('amountPaid')?.value) || 0;
+    if (paidRaw > total) {
+      paidRaw = total;
+      if (document.getElementById('amountPaid')) document.getElementById('amountPaid').value = total.toFixed(2);
+      toast('Amount paid capped at total', 'warn');
+    }
+    const balance = total - paidRaw;
+    document.getElementById('totalAmount').textContent = total.toFixed(2);
+    document.getElementById('balanceDue').textContent = balance.toFixed(2);
+    const badge = document.getElementById('payStatusBadge');
+    if (badge) {
+      if (total === 0 || (balance > 0 && paidRaw === 0)) {
+        badge.textContent = 'Unpaid'; badge.className = 'pay-badge pay-unpaid';
+      } else if (balance > 0) {
+        badge.textContent = 'Partial'; badge.className = 'pay-badge pay-partial';
+      } else {
+        badge.textContent = 'Paid'; badge.className = 'pay-badge pay-paid';
+      }
+    }
+  }
+
+  function addTest() {
+    const unit = document.getElementById('f-unit')?.value;
+    const test = document.getElementById('f-test')?.value;
+    if (!unit || !test) { toast('Select a unit and test first', 'warn'); return; }
+    if (tempTests.find(t => t.unit_name === unit && t.test_name === test)) {
+      toast(`"${test}" already in the cart`, 'warn'); return;
+    }
+    const testType = testDefinitions.testTypes[test] || 'simple';
+    tempTests.push({
+      unit_name: unit, test_name: test, test_type: testType,
+      result: '', result_json: null, tech_name: '', status: 'Collected', sort_order: tempTests.length
+    });
+    renderCart();
+    toast(`${test} added`);
+  }
+
+  // --------------------------------------------------------------
+  //  REGISTER SAMPLE (online + offline queue)
+  // --------------------------------------------------------------
+  async function registerSample() {
+    let name = document.getElementById('f-name')?.value.trim();
+    document.getElementById('f-name')?.classList.toggle('required-empty', !name);
+    if (!name) { toast('Patient name is required', 'error'); document.getElementById('f-name')?.focus(); return; }
+    if (!tempTests.length) { toast('Add at least one test', 'error'); return; }
+
+    const paymode = document.getElementById('f-paymode')?.value || 'Cash';
+    const isPaystack = (paymode === 'Paystack');
+    const total = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
+    let paid = isPaystack ? 0 : Math.min(parseFloat(document.getElementById('amountPaid')?.value) || 0, total);
+    let balance = total - paid;
+    let paystatus = isPaystack ? 'Unpaid' : (balance <= 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid');
+
+    const now = new Date();
+    const collDate = document.getElementById('f-collDate')?.value || now.toISOString().slice(0, 10);
+    const collTime = document.getElementById('f-collTime')?.value || now.toTimeString().slice(0, 5);
+
+    const sampleRow = {
+      patient: name, age: parseInt(document.getElementById('f-age')?.value) || null,
+      gender: document.getElementById('f-gender')?.value || 'Male',
+      phone: document.getElementById('f-phone')?.value.trim() || null,
+      nid: document.getElementById('f-nid')?.value.trim() || null,
+      clinician: document.getElementById('f-clinician')?.value.trim() || null,
+      history: document.getElementById('f-history')?.value.trim() || null,
+      priority: document.getElementById('f-priority')?.value || 'Routine',
+      sample_type: document.getElementById('f-stype')?.value || 'Whole Blood (EDTA)',
+      tube: document.getElementById('f-tube')?.value || 'Purple top (EDTA)',
+      collection_date: collDate, collection_time: collTime,
+      due_date: document.getElementById('f-due')?.value || null,
+      pay_mode: paymode, insurance_no: document.getElementById('f-insurance')?.value.trim() || null,
+      pay_status: paystatus, total_amount: total, amount_paid: paid, balance_due: balance,
+      receipt_no: `RCP-${Date.now()}`, payment_date: now.toISOString(),
+      status: 'Collected', registered_by: currentSession.name || 'Reception'
+    };
+
+    const btn = document.getElementById('registerBtn');
+    if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+
+    // --- OFFLINE: enqueue ---
+    if (!navigator.onLine) {
+      if (typeof window._oqEnqueueSample === 'function') {
+        window._oqEnqueueSample(sampleRow, [...tempTests], currentSession.name, paystatus, isPaystack);
+        toast('Saved offline. Will sync when internet returns.', 'warn');
+        // Show offline receipt with draft reference
+        showOfflineReceipt({
+          patient: name, priority: sampleRow.priority, tests: tempTests,
+          totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
+          paymode: paymode, receiptNo: sampleRow.receipt_no, paymentDate: now.toISOString()
+        });
+        clearForm();
+      } else {
+        toast('Offline queue not available – cannot save', 'error');
+      }
+      if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+      return;
+    }
+
+    // --- ONLINE: normal Supabase transaction ---
+    try {
+      const { data: sampleData, error: sampleError } = await db.from('samples').insert(sampleRow).select('id').single();
+      if (sampleError) throw sampleError;
+
+      const sampleId = sampleData.id;
+      const finalReceipt = `RCP-${sampleId}-${Date.now()}`;
+      await db.from('samples').update({ receipt_no: finalReceipt }).eq('id', sampleId);
+
+      const testRows = tempTests.map((t, idx) => ({
+        sample_id: sampleId, test_name: t.test_name, unit_name: t.unit_name,
+        test_type: t.test_type, result: '', result_json: null, tech_name: '', status: 'Collected', sort_order: idx
+      }));
+      await db.from('sample_tests').insert(testRows);
+
+      await db.from('coc_events').insert([
+        { sample_id: sampleId, step_index: 0, step_name: 'Registered', done: true, active: false,
+          actor_name: currentSession.name || 'Reception', occurred_at: now.toISOString() },
+        { sample_id: sampleId, step_index: 1, step_name: 'Collected', done: false, active: true,
+          actor_name: null, occurred_at: now.toISOString() }
+      ]);
+
+      await addAudit('Sample Registered', sampleId, `${tempTests.length} test(s) | Total: ${total} NGN | Mode: ${paymode} | Status: ${paystatus}`);
+
+      toast(`MU-${sampleId} registered ✓`);
+
+      if (isPaystack && total > 0) {
+        if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+        const patientEmail = document.getElementById('f-patient-email')?.value.trim() || (`patient${sampleId}@muujiza-lab.com`);
+        const paystackRef = `MU-${sampleId}-${Date.now()}`;
+        window._pendingPaystack = {
+          sampleId, receiptNo: paystackRef, patient: name, priority: sampleRow.priority,
+          tests: [...tempTests], totalAmount: total, paymode
+        };
+        const handler = PaystackPop.setup({
+          key: PAYSTACK_PUBLIC_KEY, email: patientEmail, amount: Math.round(total * 100),
+          currency: 'NGN', ref: paystackRef,
+          metadata: { custom_fields: [
+            { display_name: 'Sample ID', variable_name: 'sample_id', value: 'MU-' + sampleId },
+            { display_name: 'Patient', variable_name: 'patient_name', value: name },
+            { display_name: 'Registered By', variable_name: 'registered_by', value: currentSession.name }
+          ] },
+          callback: function (response) {
+            const ctx = window._pendingPaystack;
+            const payNow = new Date().toISOString();
+            db.from('samples').update({
+              pay_status: 'Paid', amount_paid: ctx.totalAmount, balance_due: 0,
+              receipt_no: response.reference, payment_date: payNow, pay_mode: 'Paystack'
+            }).eq('id', ctx.sampleId)
+            .then(() => addAudit('Payment Confirmed (Paystack)', ctx.sampleId, `Ref: ${response.reference} | Amount: ${ctx.totalAmount} NGN`))
+            .then(() => {
+              toast(`Payment confirmed ✓ Ref: ${response.reference}`);
+              showReceiptModal({
+                id: ctx.sampleId, patient: ctx.patient, priority: ctx.priority, tests: ctx.tests,
+                totalAmount: ctx.totalAmount, amountPaid: ctx.totalAmount, balanceDue: 0,
+                paystatus: 'Paid', paymode: 'Paystack', receiptNo: response.reference, paymentDate: payNow,
+                paystackRef: response.reference
+              });
+              clearForm();
+            })
+            .catch(err => toast(`Payment captured but DB update failed: ${err.message}. Ref: ${response.reference}`, 'error'));
+          },
+          onClose: function () {
+            toast(`Payment window closed. Sample MU-${window._pendingPaystack?.sampleId} saved as Unpaid. Use "Settle Balance" later.`, 'warn');
+            clearForm();
+          }
+        });
+        handler.openIframe();
+        return;
+      } else {
+        showReceiptModal({
+          id: sampleId, patient: name, priority: sampleRow.priority, tests: tempTests,
+          totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
+          paymode, receiptNo: finalReceipt, paymentDate: now.toISOString()
+        });
+        clearForm();
+      }
+    } catch (err) {
+      console.error(err);
+      toast(`Registration failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+    }
+  }
+  window.registerSample = registerSample;
+
+  // --------------------------------------------------------------
+  //  CLEAR FORM
+  // --------------------------------------------------------------
+  function clearForm() {
+    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance','f-patient-email'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('f-name')?.classList.remove('required-empty');
+    document.getElementById('f-age').value = '';
+    document.getElementById('f-gender').value = 'Male';
+    document.getElementById('f-priority').value = 'Routine';
+    document.getElementById('f-stype').value = 'Whole Blood (EDTA)';
+    document.getElementById('f-tube').value = 'Purple top (EDTA)';
+    document.getElementById('f-paymode').value = 'Cash';
+    window.handlePaymodeChange?.();
+    setDefaultDates();
+    tempTests = [];
+    window.tempTests = tempTests;
+    renderCart();
+    document.getElementById('amountPaid').value = '0';
+    updateTotal();
+  }
+  window.clearForm = clearForm;
+
+  // --------------------------------------------------------------
+  //  PAYMENT MODE UI
+  // --------------------------------------------------------------
+  window.handlePaymodeChange = function () {
+    const mode = document.getElementById('f-paymode')?.value;
+    const isPaystack = mode === 'Paystack';
+    document.getElementById('paystackEmailGroup').style.display = isPaystack ? 'block' : 'none';
+    document.getElementById('paystackNotice').style.display = isPaystack ? 'block' : 'none';
+    document.getElementById('manualPaidGroup').style.display = isPaystack ? 'none' : 'block';
+    const lbl = document.getElementById('registerBtnLabel');
+    if (lbl) lbl.innerHTML = isPaystack
+      ? '<i class="fas fa-lock"></i> Register & Pay via Paystack'
+      : '<i class="fas fa-syringe"></i> Register & Print Receipt';
+  };
+
+  // --------------------------------------------------------------
+  //  BALANCE SETTLEMENT PANEL (with offline queue)
+  // --------------------------------------------------------------
+  window.toggleSettlePanel = function () {
+    const body = document.getElementById('settlePanelBody');
+    const chevron = document.getElementById('settlePanelChevron');
+    if (!body) return;
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? 'block' : 'none';
+    chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+  };
+
+  window.lookupSampleBalance = async function () {
+    const raw = document.getElementById('settle-sample-id')?.value.trim();
+    if (!raw) { toast('Enter a Sample ID', 'warn'); return; }
+    const numericId = parseInt(raw.replace(/[^0-9]/g, ''));
+    if (!numericId) { toast('Invalid Sample ID format', 'error'); return; }
+
+    const box = document.getElementById('settleResultBox');
+    box.style.display = 'block';
+    box.innerHTML = `<div style="padding:16px;text-align:center;"><i class="fas fa-spinner fa-spin"></i> Looking up MU-${numericId}…</div>`;
+
+    try {
+      const { data, error } = await db.from('samples')
+        .select('id,patient,total_amount,amount_paid,balance_due,pay_status,pay_mode,phone')
+        .eq('id', numericId).single();
+      if (error || !data) throw new Error('Not found');
+
+      if (data.pay_status === 'Paid') {
+        box.innerHTML = `<div style="padding:14px;background:#dcfce7;border-radius:14px;">✓ MU-${numericId} — ${esc(data.patient)} — already fully paid.</div>`;
+        return;
+      }
+
+      const balance = parseFloat(data.balance_due) || 0;
+      const total = parseFloat(data.total_amount) || 0;
+      const alreadyPaid = parseFloat(data.amount_paid) || 0;
+
+      box.innerHTML = `
+        <div style="border:1.5px solid var(--border);border-radius:18px;overflow:hidden;">
+          <div style="padding:14px 18px;background:#f8fafb;border-bottom:1px solid var(--border);">
+            <div><strong>MU-${numericId} — ${esc(data.patient)}</strong></div>
+            <div>Status: <span class="pay-badge ${data.pay_status==='Partial'?'pay-partial':'pay-unpaid'}">${esc(data.pay_status)}</span></div>
+          </div>
+          <div style="padding:16px 18px;">
+            <div style="background:#f0f7f3;border-radius:12px;padding:12px;margin-bottom:14px;">
+              <div>Invoice Total: <strong>${total.toFixed(2)} NGN</strong></div>
+              <div>Already Paid: <strong>${alreadyPaid.toFixed(2)} NGN</strong></div>
+              <div style="border-top:1px solid #c6e2d4;margin-top:6px;padding-top:6px;">Balance Due: <strong>${balance.toFixed(2)} NGN</strong></div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="settleModeRow">
+              <button class="pay-mode-settle-btn active" data-mode="Cash" onclick="setSettleMode(this,'Cash')">💵 Cash</button>
+              <button class="pay-mode-settle-btn" data-mode="POS" onclick="setSettleMode(this,'POS')">🏧 POS</button>
+              <button class="pay-mode-settle-btn" data-mode="Paystack" onclick="setSettleMode(this,'Paystack')">💳 Paystack</button>
+              <button class="pay-mode-settle-btn" data-mode="NHIS" onclick="setSettleMode(this,'NHIS')">🏥 NHIS</button>
+            </div>
+            <button id="settleConfirmBtn" style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:14px;"
+              onclick="confirmSettlement(${numericId},${balance},${total},'${esc(data.patient)}','${esc(data.phone||'')}')">
+              <i class="fas fa-check-circle"></i> Confirm Payment of ${balance.toFixed(2)} NGN
+            </button>
+          </div>
+        </div>`;
+    } catch (err) {
+      box.innerHTML = `<div style="padding:14px;background:#fee2e2;border-radius:14px;">Error: ${esc(err.message)}</div>`;
+    }
+  };
+
+  let _settleMode = 'Cash';
+  window.setSettleMode = function (btn, mode) {
+    _settleMode = mode;
+    document.querySelectorAll('.pay-mode-settle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  };
+
+  window.confirmSettlement = async function (sampleId, balance, total, patient, phone) {
+    if (_settleMode === 'Paystack') {
+      const paystackRef = `MU-${sampleId}-BAL-${Date.now()}`;
+      const email = `patient${sampleId}@muujiza-lab.com`;
+      window._pendingSettle = { sampleId, balance, total, patient };
+      const handler = PaystackPop.setup({
+        key: PAYSTACK_PUBLIC_KEY, email: email, amount: Math.round(balance * 100),
+        currency: 'NGN', ref: paystackRef,
+        metadata: { custom_fields: [
+          { display_name: 'Sample ID', variable_name: 'sample_id', value: 'MU-' + sampleId },
+          { display_name: 'Patient', variable_name: 'patient_name', value: patient },
+          { display_name: 'Type', variable_name: 'type', value: 'Balance Settlement' }
+        ] },
+        callback: function (response) { markSettlementPaid(sampleId, balance, total, patient, 'Paystack', response.reference); },
+        onClose: () => toast('Paystack window closed. Balance still outstanding.', 'warn')
+      });
+      handler.openIframe();
+      return;
+    }
+    markSettlementPaid(sampleId, balance, total, patient, _settleMode, `MANUAL-${Date.now()}`);
+  };
+
+  function markSettlementPaid(sampleId, balance, total, patient, mode, ref) {
+    const btn = document.getElementById('settleConfirmBtn');
+    if (btn) btn.disabled = true;
+
+    // Offline: enqueue settlement
+    if (!navigator.onLine) {
+      if (typeof window._oqEnqueueSettlement === 'function') {
+        window._oqEnqueueSettlement(sampleId, total, mode, ref, patient);
+        toast(`Settlement saved offline. Will sync when online.`, 'warn');
+      } else {
+        toast('Offline queue not available – cannot save settlement', 'error');
+      }
+      document.getElementById('settle-sample-id').value = '';
+      document.getElementById('settleResultBox').style.display = 'none';
+      if (btn) btn.disabled = false;
+      return;
+    }
+
+    const now = new Date().toISOString();
+    db.from('samples').update({
+      pay_status: 'Paid', amount_paid: total, balance_due: 0,
+      pay_mode: mode, receipt_no: ref, payment_date: now
+    }).eq('id', sampleId)
+    .then(() => addAudit('Balance Settled', sampleId, `Mode: ${mode} | Ref: ${ref} | Balance: ${balance} NGN`))
+    .then(() => {
+      document.getElementById('settle-sample-id').value = '';
+      document.getElementById('settleResultBox').style.display = 'none';
+      toast(`✓ MU-${sampleId} balance settled – marked as Paid`);
+    })
+    .catch(err => { toast('Settlement update failed: ' + err.message, 'error'); if(btn) btn.disabled = false; });
+  }
+
+  // --------------------------------------------------------------
+  //  REJECTED SAMPLES PANEL (with offline cache)
+  // --------------------------------------------------------------
+  async function loadRejectedSamples() {
+    const container = document.getElementById('rejectedPanelBody');
+    if (!container) return;
+
+    // Offline: serve from cache
+    if (!navigator.onLine) {
+      const cached = (typeof window._oqGetCachedRejectedGroups === 'function')
+        ? await window._oqGetCachedRejectedGroups() : null;
+      if (cached && cached.length) {
+        rejectedGroups = cached;
+        renderRejectedPanel();
+        const stale = document.createElement('div');
+        stale.style.cssText = 'font-size:0.72rem;color:var(--text2);text-align:center;padding:4px 0 8px;';
+        stale.innerHTML = '<i class="fas fa-wifi" style="opacity:0.4;margin-right:4px;"></i>Offline — showing last cached data';
+        container.prepend(stale);
+      } else {
+        container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text2);">
+          <i class="fas fa-wifi" style="opacity:0.4;"></i>&nbsp; Offline — no cached data yet.</div>`;
+      }
+      return;
+    }
+
+    container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text2);"><i class="fas fa-spinner fa-pulse"></i> Loading rejected samples...</div>`;
+
+    try {
+      const { data: rejectedTests, error: testErr } = await db
+        .from('sample_tests')
+        .select('id, sample_id, test_name, status, rejection_reason, done_by, done_at, tech_name')
+        .eq('status', 'Rejected');
+
+      if (testErr) throw testErr;
+
+      if (!rejectedTests.length) {
+        rejectedGroups = [];
+        if (typeof window._oqCacheRejectedGroups === 'function') window._oqCacheRejectedGroups([]);
+        container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--green);"><i class="fas fa-check-circle"></i> No rejected tests found.</div>`;
+        return;
+      }
+
+      const sampleIds = [...new Set(rejectedTests.map(t => t.sample_id))];
+      const { data: samplesData, error: sampleErr } = await db
+        .from('samples')
+        .select('id, patient, age, gender, phone, collection_date, status')
+        .in('id', sampleIds);
+
+      if (sampleErr) throw sampleErr;
+
+      const sampleMap = {};
+      (samplesData || []).forEach(s => { sampleMap[s.id] = s; });
+
+      const groups = {};
+      rejectedTests.forEach(t => {
+        if (!groups[t.sample_id]) groups[t.sample_id] = [];
+        groups[t.sample_id].push(t);
+      });
+
+      rejectedGroups = Object.entries(groups).map(([sid, tests]) => ({
+        sample: sampleMap[parseInt(sid)] || { id: parseInt(sid), patient: 'Unknown', age: null, gender: null },
+        tests
+      }));
+
+      if (typeof window._oqCacheRejectedGroups === 'function') {
+        window._oqCacheRejectedGroups(rejectedGroups);
+      }
+
+      renderRejectedPanel();
+    } catch (err) {
+      console.error('loadRejectedSamples error:', err);
+      if (!navigator.onLine || (err?.message || '').match(/fetch|network/i)) {
+        const cached = (typeof window._oqGetCachedRejectedGroups === 'function')
+          ? await window._oqGetCachedRejectedGroups() : null;
+        if (cached && cached.length) {
+          rejectedGroups = cached;
+          renderRejectedPanel();
+          const stale = document.createElement('div');
+          stale.style.cssText = 'font-size:0.72rem;color:var(--text2);text-align:center;padding:4px 0 8px;';
+          stale.innerHTML = '<i class="fas fa-wifi" style="opacity:0.4;margin-right:4px;"></i>Offline — showing last cached data';
+          container.prepend(stale);
+        } else {
+          container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text2);">
+            <i class="fas fa-wifi" style="opacity:0.4;"></i>&nbsp; Offline — no cached data yet.</div>`;
+        }
+      } else {
+        container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--red-light);"><i class="fas fa-exclamation-circle"></i> Failed to load rejected samples. Please try again.</div>`;
+        toast('Failed to load rejected samples', 'error');
+      }
+    }
+  }
+
+  function renderRejectedPanel() {
+    const container = document.getElementById('rejectedPanelBody');
+    if (!container) return;
+    if (!rejectedGroups.length) {
+      container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--green);"><i class="fas fa-check-circle"></i> No rejected samples pending recollection.</div>`;
+      return;
+    }
+
+    let html = '';
+    for (let group of rejectedGroups) {
+      const s = group.sample;
+      html += `
+        <div class="rejected-item">
+          <div class="rejected-header">
+            <div>
+              <span style="font-family:monospace; font-weight:700; color:var(--primary);">MU-${s.id}</span>
+              <span style="font-weight:600; margin-left:10px;">${esc(s.patient || '—')}</span>
+              <span style="color:var(--text2); font-size:0.82rem; margin-left:8px;">${s.age ?? '?'}y ${esc(s.gender || '')}</span>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="resolveRejectedSample(${s.id})">
+              <i class="fas fa-undo"></i> Resolve & Re‑enter
+            </button>
+          </div>
+          <div class="rejected-tests">
+            ${group.tests.map(t => `
+              <div class="rej-test-row">
+                <div><i class="fas fa-vial"></i> ${esc(t.test_name)}</div>
+                <div class="rejection-reason"><i class="fas fa-ban"></i> ${esc(t.rejection_reason || 'No reason given')}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+    container.innerHTML = html;
+
+    // Re-apply any active search term
+    const searchInput = document.getElementById('rejectedSearch');
+    if (searchInput && searchInput.value.trim()) {
+      filterRejectedPanel(searchInput.value);
+    }
+  }
+
+  window.filterRejectedPanel = function filterRejectedPanel(query) {
+    const term = (query || '').toLowerCase().trim();
+    const container = document.getElementById('rejectedPanelBody');
+    if (!container) return;
+
+    const items = container.querySelectorAll('.rejected-item');
+    let visibleCount = 0;
+
+    items.forEach(item => {
+      const match = !term || item.textContent.toLowerCase().includes(term);
+      item.style.display = match ? '' : 'none';
+      if (match) visibleCount++;
+    });
+
+    // Show/update "no results" message
+    let noResultRow = container.querySelector('.rej-no-results');
+    if (!visibleCount && term) {
+      if (!noResultRow) {
+        noResultRow = document.createElement('div');
+        noResultRow.className = 'rej-no-results';
+        noResultRow.style.cssText = 'text-align:center; padding:20px; color:var(--text2); font-size:0.88rem;';
+        container.appendChild(noResultRow);
+      }
+      noResultRow.innerHTML = `<i class="fas fa-search" style="margin-right:6px;"></i> No rejected samples match "<strong>${esc(query)}</strong>"`;
+    } else if (noResultRow) {
+      noResultRow.remove();
+    }
+  };
+
+  window.resolveRejectedSample = async function(sampleId) {
+    if (!confirm('Resolve this sample? The rejected tests will become available for result entry again.')) return;
+
+    // Immediately remove from UI
+    rejectedGroups = rejectedGroups.filter(g => g.sample.id !== sampleId);
+    renderRejectedPanel();
+
+    // Offline path
+    if (!navigator.onLine) {
+      if (typeof window._oqCacheRejectedGroups === 'function') {
+        window._oqCacheRejectedGroups(rejectedGroups);
+      }
+      if (typeof window._oqEnqueueResolveRejected === 'function') {
+        window._oqEnqueueResolveRejected(sampleId, currentSession.name || 'Reception');
+      } else {
+        toast('Offline — resolve queued. Will sync when internet returns.', 'warn');
+      }
+      return;
+    }
+
+    // Online path
+    try {
+      // Update only rejected tests → 'Processing', clear rejection_reason
+      const { error: updateTestErr } = await db
+        .from('sample_tests')
+        .update({ status: 'Processing', rejection_reason: null })
+        .eq('sample_id', sampleId)
+        .eq('status', 'Rejected');
+      if (updateTestErr) throw updateTestErr;
+
+      // Set sample status back to 'Processing'
+      await db.from('samples').update({ status: 'Processing' }).eq('id', sampleId);
+
+      // Check if any tests are already 'Ready' (previously done)
+      const { data: allTests } = await db
+        .from('sample_tests')
+        .select('status')
+        .eq('sample_id', sampleId);
+
+      const hasReadyTests = allTests && allTests.some(t => t.status === 'Ready');
+
+      if (hasReadyTests) {
+        await db.from('coc_events')
+          .update({ done: false, active: true, actor_name: currentSession.name, occurred_at: new Date().toISOString() })
+          .eq('sample_id', sampleId)
+          .eq('step_index', 4);
+        await db.from('coc_events')
+          .update({ done: false, active: false })
+          .eq('sample_id', sampleId)
+          .gte('step_index', 5);
+      } else {
+        await db.from('coc_events')
+          .update({ done: false, active: true, actor_name: currentSession.name, occurred_at: new Date().toISOString() })
+          .eq('sample_id', sampleId)
+          .eq('step_index', 3);
+        await db.from('coc_events')
+          .update({ done: false, active: false })
+          .eq('sample_id', sampleId)
+          .gte('step_index', 4);
+      }
+
+      await addAudit('Rejection Resolved', sampleId,
+        `Resolved by reception — rejected tests set to Processing${hasReadyTests ? '; previously Done tests preserved' : ''}`);
+      toast(`✓ MU-${sampleId} resolved — now available for result entry`);
+
+      await loadRejectedSamples(); // refresh from DB
+    } catch (err) {
+      console.error(err);
+      toast('Failed to resolve sample: ' + err.message, 'error');
+      await loadRejectedSamples();
+    }
+  };
+
+  // --------------------------------------------------------------
+  //  RECEIPT MODAL (online & offline)
+  // --------------------------------------------------------------
+  function showReceiptModal(sample) {
+    const modal = document.getElementById('labelModal');
+    const content = document.getElementById('labelContent');
+    if (!modal || !content) return;
+
+    const testRows = (sample.tests || []).map(t => {
+      const tname = t.test_name || t.test || '';
+      return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee;">
+                <span>${esc(tname)}</span>
+                <span>${getTestPrice(tname).toFixed(2)} NGN</span>
+              </div>`;
+    }).join('');
+
+    const payClass = sample.paystatus === 'Paid' ? 'pay-paid' : (sample.paystatus === 'Partial' ? 'pay-partial' : 'pay-unpaid');
+    const paystackRefLine = sample.paystackRef ? `<p><strong>Paystack Ref:</strong> ${esc(sample.paystackRef)}</p>` : '';
+    const paidBanner = sample.paystatus === 'Paid' ? `<div class="pay-paid" style="padding:8px;border-radius:12px;margin-bottom:12px;">✓ Payment Confirmed</div>` : '';
+
+    content.innerHTML = `
+      <div style="text-align:left;">
+        <canvas id="receiptBarcode" style="display:block;margin:0 auto 12px;"></canvas>
+        <h3 style="color:#1F6E43;">MU'UJIZA DIAGNOSTICS</h3>
+        <p>Laboratory Information System</p>
+        ${paidBanner}
+        <p><strong>Receipt No:</strong> ${esc(sample.receiptNo)}</p>
+        <p><strong>Sample ID:</strong> MU-${sample.id}</p>
+        ${paystackRefLine}
+        <p><strong>Patient:</strong> ${esc(sample.patient)}</p>
+        <p><strong>Priority:</strong> ${esc(sample.priority)}</p>
+        <div>${testRows}</div>
+        <div style="background:#f0f7f3;border-radius:12px;padding:10px;margin:12px 0;">
+          <div>Total: ${sample.totalAmount.toFixed(2)} NGN</div>
+          <div>Paid: ${sample.amountPaid.toFixed(2)} NGN</div>
+          <div>Balance: ${sample.balanceDue.toFixed(2)} NGN</div>
+          <div>Status: <span class="pay-badge ${payClass}">${esc(sample.paystatus)}</span></div>
+        </div>
+        <p>${esc(sample.paymode)} &nbsp;|&nbsp; ${new Date(sample.paymentDate).toLocaleString()}</p>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+          <button class="btn btn-secondary" onclick="closeLabelModal()">Close</button>
+        </div>
+      </div>`;
+    modal.style.display = 'flex';
+    setTimeout(() => { try { JsBarcode('#receiptBarcode', sample.receiptNo, { format:'CODE128', width:2, height:40, displayValue:false }); } catch(e) {} }, 60);
+  }
+
+  function showOfflineReceipt(sample) {
+    const modal = document.getElementById('labelModal');
+    const content = document.getElementById('labelContent');
+    if (!modal || !content) return;
+
+    const testRows = (sample.tests || []).map(t => {
+      const tname = t.test_name || t.test || '';
+      const price = getTestPrice(tname);
+      return `<div style="display:flex;justify-content:space-between;padding:3px 0;">${esc(tname)} <strong>${price.toFixed(2)} NGN</strong></div>`;
+    }).join('');
+
+    content.innerHTML = `
+      <div style="text-align:left;">
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px;margin-bottom:16px;">
+          <i class="fas fa-exclamation-triangle"></i> <strong>Offline Draft</strong><br>
+          Will sync and get a real MU-ID when internet returns.
+        </div>
+        <canvas id="receiptBarcode" style="display:block;margin:0 auto 12px;"></canvas>
+        <h3 style="color:#1F6E43;">MU'UJIZA DIAGNOSTICS</h3>
+        <p>Offline Registration Receipt</p>
+        <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:10px;padding:10px;margin-bottom:14px;">
+          <strong>Draft Reference:</strong> <span style="font-family:monospace;">${esc(sample.receiptNo)}</span>
+          <button onclick="window._copyOfflineDraftRef()" style="margin-left:8px;">Copy</button>
+        </div>
+        <p><strong>Patient:</strong> ${esc(sample.patient)}</p>
+        <p><strong>Priority:</strong> ${esc(sample.priority)} &nbsp;|&nbsp; <strong>Mode:</strong> ${esc(sample.paymode)}</p>
+        <div>${testRows}</div>
+        <div style="background:#f0f7f3;border-radius:12px;padding:10px;margin:12px 0;">
+          <div>Total: ${sample.totalAmount.toFixed(2)} NGN</div>
+          <div>Paid: ${sample.amountPaid.toFixed(2)} NGN</div>
+          <div>Balance: ${sample.balanceDue.toFixed(2)} NGN</div>
+          <div>Status: ${esc(sample.paystatus)}</div>
+        </div>
+        <p>Saved: ${new Date(sample.paymentDate).toLocaleString()}</p>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-primary" onclick="window.print()">Print</button>
+          <button class="btn btn-secondary" onclick="closeLabelModal()">Close</button>
+        </div>
+      </div>`;
+    modal.style.display = 'flex';
+    window._currentOfflineDraftRef = sample.receiptNo;
+    setTimeout(() => { try { JsBarcode('#receiptBarcode', sample.receiptNo, { format:'CODE128', width:2, height:40, displayValue:false }); } catch(e) {} }, 60);
+  }
+  window.showOfflineReceipt = showOfflineReceipt;
+  window._copyOfflineDraftRef = function() {
+    const ref = window._currentOfflineDraftRef;
+    if (!ref) return;
+    navigator.clipboard?.writeText(ref).then(() => toast('Draft reference copied')).catch(() => toast('Could not copy'));
+  };
+
+  window.closeLabelModal = function () {
+    const modal = document.getElementById('labelModal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  // --------------------------------------------------------------
+  //  DEFAULT DATES, CLOCK, EVENT LISTENERS
+  // --------------------------------------------------------------
+  function setDefaultDates() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (document.getElementById('f-collDate')) document.getElementById('f-collDate').value = today;
+    if (document.getElementById('f-collTime')) document.getElementById('f-collTime').value = new Date().toTimeString().slice(0, 5);
+    const due = new Date(); due.setDate(due.getDate() + 1);
+    if (document.getElementById('f-due')) document.getElementById('f-due').value = due.toISOString().slice(0, 10);
+  }
+
+  function startClock() {
+    function tick() { document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-GB'); }
+    tick(); setInterval(tick, 1000);
+  }
+
+  // Attach event listeners
+  document.getElementById('addTestBtn')?.addEventListener('click', addTest);
+  document.getElementById('registerBtn')?.addEventListener('click', () => (window.registerSample || registerSample)());
+  document.getElementById('clearBtn')?.addEventListener('click', clearForm);
+  document.getElementById('f-unit')?.addEventListener('change', updateTests);
+  document.getElementById('amountPaid')?.addEventListener('input', updateTotal);
+  document.getElementById('f-name')?.addEventListener('input', () => document.getElementById('f-name')?.classList.remove('required-empty'));
+  document.getElementById('f-test')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
+  document.getElementById('f-unit')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
+  document.getElementById('settle-sample-id')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupSampleBalance(); } });
+  document.getElementById('labelModal')?.addEventListener('click', e => { if (e.target === document.getElementById('labelModal')) closeLabelModal(); });
+
+  // UI: online/offline button label
+  function updateOfflineButtonLabel() {
+    const btn = document.getElementById('registerBtn');
+    const label = document.getElementById('registerBtnLabel');
+    if (!btn || !label) return;
+    if (!navigator.onLine) {
+      label.innerHTML = '<i class="fas fa-database"></i> Save Offline Draft';
+      btn.title = 'Offline – sample will be saved locally and synced later';
+    } else {
+      label.innerHTML = '<i class="fas fa-syringe"></i> Register & Print Receipt';
+      btn.title = '';
+    }
+  }
+  window.addEventListener('online', updateOfflineButtonLabel);
+  window.addEventListener('offline', updateOfflineButtonLabel);
+  updateOfflineButtonLabel();
+
+  // Reload rejected samples when connection returns
+  window.addEventListener('online', () => { setTimeout(loadRejectedSamples, 1500); });
+  window.addEventListener('offline', () => {
+    const container = document.getElementById('rejectedPanelBody');
+    if (container) container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text2);"><i class="fas fa-wifi" style="opacity:0.4;"></i> Offline — rejected samples will reload when connection returns.</div>`;
+  });
+
+  // Boot
+  setDefaultDates();
+  startClock();
+  loadTestDefinitions();
+  loadRejectedSamples();
+
+  // Display logged-in user
+  document.getElementById('userDisplay').innerHTML = `<i class="fas fa-user-circle"></i> ${esc(currentSession.name)} (${esc(currentSession.role)})`;
+})();

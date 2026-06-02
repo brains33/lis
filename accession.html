@@ -5,302 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="manifest.json">
 <title>MU'UJIZA LIS – Accession</title>
-<style>
-:root { 
-  --primary: #1F6E43; 
-  --primary-dark: #155a38; 
-  --bg: #eef2f9; 
-  --surface: white; 
-  --text: #1a2c3e; 
-  --text2: #5a7e94; 
-  --text3: #7f9eb0; 
-  --border: #e2edf2; 
-  --red-light: #dc2626; 
-  --yellow-light: #d97706; 
-  --green-glow: #10b981; 
-  --mono: 'DM Mono', monospace;
-  /* Add these for global components */
-  --green: #1F6E43;
-  --green-d: #155a38;
-  --green-l: #e8f4ed;
-  --slate: #1e2a35;
-  --muted: #5a7e94;
-}
-body { background:var(--bg); padding:20px; color:var(--text); }
-.app { max-width:1400px; margin:0 auto; }
-.topbar { display:flex; justify-content:space-between; align-items:center; background:var(--surface); padding:12px 24px; border-radius:28px; margin-bottom:24px; border:1px solid var(--border); }
-.brand-name { font-weight:800; font-size:1.3rem; background:linear-gradient(135deg,#1F4E6E,#2C7A5E); background-clip:text; -webkit-background-clip:text; color:transparent; }
-.topbar-clock { font-family:var(--mono); font-size:0.9rem; background:#f0f4f9; padding:4px 12px; border-radius:40px; }
-.topbar-user { display:flex; align-items:center; gap:12px; }
-.logout-btn { background:none; border:1px solid var(--border); padding:6px 14px; border-radius:40px; cursor:pointer; font-size:0.85rem; transition:0.2s; }
-.logout-btn:hover { border-color:#dc2626; color:#dc2626; }
-.card { background:var(--surface); border-radius:28px; border:1px solid var(--border); margin-bottom:24px; overflow:hidden; }
-.card-header { padding:16px 24px; border-bottom:1px solid var(--border); font-weight:600; display:flex; align-items:center; gap:8px; }
-.card-body { padding:20px 24px; }
-.form-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; }
-.form-group { display:flex; flex-direction:column; gap:6px; }
-.form-label { font-size:0.7rem; font-weight:700; text-transform:uppercase; color:var(--text2); }
-.form-input, .form-select, .form-textarea {
-  padding:10px 14px; border-radius:18px; border:1.5px solid var(--border);
-  background:white; font-size:0.85rem; outline:none; transition:border-color 0.15s;
-}
-.form-input:focus, .form-select:focus, .form-textarea:focus { border-color:var(--primary); }
-.form-input.required-empty { border-color:var(--red-light); }
-.btn { padding:8px 20px; border-radius:40px; border:none; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition:0.2s; }
-.btn-primary { background:var(--primary); color:white; }
-.btn-primary:hover:not(:disabled) { background:var(--primary-dark); }
-.btn-secondary { background:#eef2f7; color:var(--text2); }
-.btn-secondary:hover:not(:disabled) { background:#dce6ef; }
-.btn:disabled { opacity:0.55; cursor:not-allowed; }
-.btn .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,0.35); border-top-color:white; border-radius:50%; animation:spin 0.65s linear infinite; display:none; }
-.btn.loading .spinner { display:inline-block; }
-.btn.loading .btn-label { display:none; }
-@keyframes spin { to { transform:rotate(360deg); } }
-.test-cart { background:#f9fbfd; border-radius:20px; padding:12px; margin-top:12px; min-height:60px; }
-.test-chip { display:inline-flex; align-items:center; gap:6px; background:#e6f0f5; padding:4px 12px; border-radius:30px; margin:4px; font-size:0.75rem; }
-.chip-remove { background:none; border:none; cursor:pointer; font-size:1rem; color:var(--red-light); line-height:1; }
-.chip-remove:hover { color:#9b1c1c; }
-.payment-summary { background:#f0f7f3; border-radius:20px; padding:16px; margin-top:16px; }
-.payment-line { display:flex; justify-content:space-between; margin:8px 0; font-size:0.9rem; }
-.toast-stack { position:fixed; bottom:20px; right:20px; z-index:1000; }
-.toast { background:var(--text); color:white; padding:10px 20px; border-radius:60px; margin-top:8px; font-size:0.85rem; animation:fadeIn 0.2s; }
-.toast.error { background:#dc2626; }
-.toast.warn  { background:#d97706; }
-@keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; } }
-.overlay { position:fixed; top:0;left:0; width:100%;height:100%; background:rgba(0,0,0,0.5); backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; z-index:2000; }
-.modal-sm { background:white; border-radius:32px; max-width:480px; width:90%; padding:24px; text-align:center; max-height:85vh; overflow-y:auto; }
-.no-tests-notice { background:#fff9ec; border:1px solid #fde68a; border-radius:14px; padding:10px 16px; font-size:0.82rem; color:#92400e; margin-bottom:12px; display:none; }
-.pay-badge { display:inline-block; padding:3px 12px; border-radius:40px; font-size:0.75rem; font-weight:700; }
-.pay-paid    { background:#dcfce7; color:#15803d; }
-.pay-partial { background:#fef3c7; color:#92400e; }
-.pay-unpaid  { background:#fee2e2; color:#b91c1c; }
 
-/* ── Payment Lookup Panel ─────────────────────────────────────────── */
-.pay-lookup-card { border: 2px dashed var(--border); background: #fafcff; }
-.pay-lookup-card .card-header { background: linear-gradient(135deg, #f0f7f3, #e8f4ed); color: var(--primary); }
-.lookup-input-row { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
-.lookup-input-row .form-group { flex:1; min-width:160px; }
-.pay-result-box { margin-top:20px; border-radius:20px; overflow:hidden; border:1.5px solid var(--border); display:none; }
-.pay-result-box.visible { display:block; animation:slideDown 0.2s ease; }
-@keyframes slideDown { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
-.pay-result-head { background:#f8fafb; padding:14px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
-.pay-result-patient { font-weight:700; font-size:0.95rem; color:var(--text); }
-.pay-result-id { font-size:0.75rem; color:var(--text2); font-family:var(--mono); }
-.pay-result-body { padding:16px 20px; }
-.pay-test-list { margin-bottom:14px; }
-.pay-test-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border); font-size:0.85rem; }
-.pay-test-row:last-child { border:none; }
-.pay-totals { background:#f0f7f3; border-radius:14px; padding:12px 16px; margin-bottom:14px; }
-.pay-total-line { display:flex; justify-content:space-between; font-size:0.9rem; padding:3px 0; }
-.pay-total-line.grand { font-weight:700; font-size:1rem; padding-top:8px; border-top:1.5px solid #c6e2d4; margin-top:4px; }
-.pay-mode-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-.pay-mode-btn { padding:7px 16px; border-radius:30px; border:1.5px solid var(--border); background:white; cursor:pointer; font-size:0.8rem; font-weight:600; color:var(--text2); transition:0.15s; font-family:'DM Sans',sans-serif; }
-.pay-mode-btn:hover { border-color:var(--primary); color:var(--primary); }
-.pay-mode-btn.active { border-color:var(--primary); background:var(--primary); color:white; }
-.pay-confirm-btn { width:100%; padding:13px; background:var(--primary); color:white; border:none; border-radius:14px; font-size:0.95rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; transition:0.2s; font-family:'DM Sans',sans-serif; }
-.pay-confirm-btn:hover:not(:disabled) { background:var(--primary-dark); }
-.pay-confirm-btn:disabled { opacity:0.6; cursor:not-allowed; }
-.pay-confirm-btn .spinner { width:16px; height:16px; border:2.5px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin 0.65s linear infinite; display:none; }
-.pay-confirm-btn.loading .spinner { display:block; }
-.pay-confirm-btn.loading .btn-label { display:none; }
-.pay-already-paid { background:#dcfce7; border-radius:14px; padding:14px 18px; text-align:center; color:#15803d; font-weight:600; font-size:0.9rem; }
-.pay-amount-note { font-size:0.75rem; color:var(--text2); margin-bottom:10px; }
-.partial-input-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
-.partial-input-row input { padding:8px 12px; border-radius:12px; border:1.5px solid var(--border); font-size:0.9rem; width:160px; outline:none; font-family:'DM Sans',sans-serif; }
-.partial-input-row input:focus { border-color:var(--primary); }
-.partial-input-row label { font-size:0.8rem; color:var(--text2); white-space:nowrap; }
-/* Global notification panel styles */
-.global-notification-panel {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 350px;
-  max-width: calc(100vw - 40px);
-  background: white;
-  border-radius: 20px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-  z-index: 1000;
-  border: 1px solid var(--border);
-  transition: all 0.3s ease;
-}
-
-.notification-header {
-  background: var(--green);
-  color: white;
-  padding: 12px 16px;
-  border-radius: 20px 20px 0 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
-.notification-header i {
-  transition: transform 0.3s;
-}
-
-.notification-header.collapsed i {
-  transform: rotate(180deg);
-}
-
-.notification-content {
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 12px;
-  display: block;
-}
-
-.notification-content.collapsed {
-  display: none;
-}
-
-.notification-message {
-  background: #f8fafb;
-  border-radius: 12px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
-  border-left: 3px solid var(--green);
-  font-size: 0.8rem;
-}
-
-.notification-message.pinned {
-  background: #fff7ed;
-  border-left-color: #f59e0b;
-}
-
-.notification-message .message-text {
-  margin-bottom: 5px;
-  color: var(--slate);
-}
-
-.notification-message .message-meta {
-  font-size: 0.65rem;
-  color: var(--muted);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.send-message-form {
-  display: flex;
-  gap: 8px;
-  padding: 8px;
-  border-top: 1px solid var(--border);
-  background: #f9fafb;
-  border-radius: 0 0 20px 20px;
-}
-
-.send-message-form input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  font-size: 0.8rem;
-  outline: none;
-}
-
-.send-message-form button {
-  background: var(--green);
-  color: white;
-  border: none;
-  border-radius: 20px;
-  padding: 8px 16px;
-  cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.send-message-form button:hover {
-  background: var(--green-d);
-}
-
-.unread-badge {
-  background: #ef4444;
-  color: white;
-  border-radius: 10px;
-  padding: 2px 6px;
-  font-size: 0.7rem;
-  margin-left: 8px;
-}
-
-/* Global sample search */
-.global-sample-search {
-  position: fixed;
-  top: 70px;
-  right: 20px;
-  width: 300px;
-  z-index: 999;
-}
-
-.search-container {
-  background: white;
-  border-radius: 40px;
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 4px 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-}
-
-.search-container input {
-  flex: 1;
-  border: none;
-  padding: 8px 8px 8px 4px;
-  font-size: 0.8rem;
-  outline: none;
-}
-
-.search-container button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--green);
-  padding: 6px;
-}
-
-.search-results-dropdown {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  width: 100%;
-  max-height: 300px;
-  overflow-y: auto;
-  margin-top: 8px;
-  display: none;
-  z-index: 1000;
-}
-
-.search-results-dropdown.show {
-  display: block;
-}
-
-.search-result-item {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
-.search-result-item:hover {
-  background: var(--green-l);
-}
-
-.search-result-item .sample-id {
-  font-weight: 700;
-  color: var(--green);
-}
-
-.search-result-item .sample-patient {
-  color: var(--slate);
-  font-size: 0.75rem;
-}
-</style>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="accession.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -309,13 +16,23 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 </head>
 <body>
 
-<!-- ── Auth guard (provided by auth-guard.js loaded in <head>) ── -->
+
 <script>
   const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
 
-  // checkAuth() and logoutUser() come from auth-guard.js
-  const currentSession = checkAuth(['reception', 'admin', 'supervisor']);
+
+  window.currentSession = checkAuth(['reception', 'admin', 'supervisor']);
+
+
+  if (window.currentSession) {
+    try { localStorage.setItem('lis_session_cache', JSON.stringify(window.currentSession)); } catch(e) {}
+  } else if (!navigator.onLine) {
+    try {
+      const _cached = localStorage.getItem('lis_session_cache');
+      if (_cached) window.currentSession = JSON.parse(_cached);
+    } catch(e) {}
+  }
 
   // Build token-authenticated client — injects x-lis-token on every request
   window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -334,8 +51,15 @@ body { background:var(--bg); padding:20px; color:var(--text); }
     </div>
   </div>
 
+  <!-- ── Section navbar ── -->
+  <nav class="section-nav">
+    <a href="#section-register"><i class="fas fa-user-plus"></i> Register Sample</a>
+    <a href="#section-settle" class="nav-settle"><i class="fas fa-wallet"></i> Settle Outstanding Balance</a>
+    <a href="#section-rejected" class="nav-rejected"><i class="fas fa-ban"></i> Rejected Samples</a>
+  </nav>
+
   <!-- Patient Information -->
-  <div class="card">
+  <div id="section-register" class="card">
     <div class="card-header"><i class="fas fa-user-plus"></i> Patient Information</div>
     <div class="card-body">
       <div class="form-grid">
@@ -500,7 +224,7 @@ body { background:var(--bg); padding:20px; color:var(--text); }
   </div>
 
   <!-- ── Balance Settlement Panel ──────────────────────────────────── -->
-  <div class="card" style="border:2px dashed var(--border); background:#fafcff; margin-bottom:24px;">
+  <div id="section-settle" class="card" style="border:2px dashed var(--border); background:#fafcff; margin-bottom:24px;">
     <div class="card-header" style="background:linear-gradient(135deg,#f0f7f3,#e8f4ed); cursor:pointer;" onclick="toggleSettlePanel()">
       <i class="fas fa-hand-holding-usd" style="color:var(--primary);"></i>
       <span style="color:var(--primary); font-weight:700;">Settle Outstanding Balance</span>
@@ -520,6 +244,34 @@ body { background:var(--bg); padding:20px; color:var(--text); }
       <div id="settleResultBox" style="display:none;"></div>
     </div>
   </div>
+
+  <!-- ── Rejected Samples Panel (Needs Recollection) ──────────────────── -->
+  <div id="section-rejected" class="card rejected-card" style="margin-bottom:24px;">
+    <div class="card-header" style="justify-content:space-between; flex-wrap:wrap; gap:10px;">
+      <span><i class="fas fa-ban"></i> Rejected Samples – Needs Recollection</span>
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="position:relative;">
+          <i class="fas fa-search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#b91c1c; font-size:0.8rem; pointer-events:none;"></i>
+          <input
+            type="text"
+            id="rejectedSearch"
+            placeholder="Search patient, ID, test…"
+            oninput="filterRejectedPanel(this.value)"
+            style="padding:6px 12px 6px 30px; border:1.5px solid #fca5a5; border-radius:20px; font-size:0.82rem; background:#fff8f8; color:#374151; outline:none; width:210px; transition:border-color .2s;"
+            onfocus="this.style.borderColor='#b91c1c'"
+            onblur="this.style.borderColor='#fca5a5'"
+          >
+        </div>
+        <button class="refresh-rej-btn" onclick="loadRejectedSamples()"><i class="fas fa-sync-alt"></i> Refresh</button>
+      </div>
+    </div>
+    <div class="card-body" id="rejectedPanelBody">
+      <div style="text-align:center; padding:20px; color:var(--text2);">
+        <i class="fas fa-spinner fa-pulse"></i> Loading rejected samples...
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Receipt Modal -->
@@ -529,685 +281,15 @@ body { background:var(--bg); padding:20px; color:var(--text); }
 
 <div class="toast-stack" id="toastStack"></div>
 
-<script>
-(function () {
-  // ── Use the token-authenticated client built in the auth block above ──
 
-  // ── Show logged-in user in header ─────────────────────────────────
-  document.getElementById('userDisplay').innerHTML =
-    `<i class="fas fa-user-circle"></i> ${esc(currentSession.name)} (${esc(currentSession.role)})`;
-
-  // ── Clock ─────────────────────────────────────────────────────────
-  function startClock() {
-    function tick() { document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-GB'); }
-    tick(); setInterval(tick, 1000);
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────
-  function esc(str) {
-    if (str === null || str === undefined) return '';
-    return String(str).replace(/[&<>"']/g, m =>
-      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
-  }
-
-  function toast(msg, type = 'success') {
-    let stack = document.getElementById('toastStack');
-    if (!stack) return;
-    let div = document.createElement('div');
-    div.className = `toast ${type}`;
-    let icon = type === 'error' ? 'times-circle' : type === 'warn' ? 'exclamation-triangle' : 'check-circle';
-    div.innerHTML = `<i class="fas fa-${icon}"></i> `;
-    let span = document.createElement('span');
-    span.textContent = msg;
-    div.appendChild(span);
-    stack.appendChild(div);
-    setTimeout(() => { div.style.opacity = '0'; setTimeout(() => div.remove(), 300); }, 3500);
-  }
-
-  // ── Audit log ─────────────────────────────────────────────────────
-  async function addAudit(action, sampleId, details) {
-    try {
-      await db.from('audit_log').insert([{
-        ts: new Date().toISOString(),
-        user_name: currentSession.name || 'Unknown',
-        user_role: currentSession.role || 'Unknown',
-        action,
-        sample_id: sampleId,
-        details: details || ''
-      }]);
-    } catch (err) { console.warn('Audit failed', err); }
-  }
-
-  // ── Test definitions ──────────────────────────────────────────────
-  let testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
-
-  async function loadTestDefinitions() {
-    try {
-      const { data, error } = await db.from('test_definitions').select('*');
-      if (error) throw error;
-      _applyTestDefinitions(data);
-    } catch (err) {
-      console.warn('loadTestDefinitions online failed, trying cache:', err);
-      // Try IDB cache (populated by offline_queue.js pre-fetch)
-      const cached = window._oqCachedTestDefs
-                  || (window._oqGetCachedTestDefinitions ? await window._oqGetCachedTestDefinitions() : null);
-      if (cached) {
-        _applyTestDefinitions(cached);
-        toast('Using cached test definitions (offline)', 'warn');
-      } else {
-        toast('Failed to load test definitions', 'error');
-        document.getElementById('noTestsNotice').style.display = 'block';
-        document.getElementById('addTestBtn').disabled = true;
-      }
-    }
-  }
-
-  // Expose for offline_queue.js to call when it gets cached defs first
-  window._oqRestoreTestDefs = function(data) { _applyTestDefinitions(data); };
-
-  function _applyTestDefinitions(data) {
-    testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
-    data.forEach(td => {
-      if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
-      testDefinitions.units[td.unit_name].push(td.test_name);
-      testDefinitions.testPrices[td.test_name] = td.price_ngn;
-      if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
-    });
-    populateUnits();
-  }
-
-  function getTestPrice(testName) { return testDefinitions.testPrices[testName] || 0; }
-  window.getTestPrice = getTestPrice;   // expose for offline_queue.js
-
-  function populateUnits() {
-    let units = Object.keys(testDefinitions.units);
-    let notice = document.getElementById('noTestsNotice');
-    let addBtn = document.getElementById('addTestBtn');
-    if (!units.length) {
-      if (notice) notice.style.display = 'block';
-      if (addBtn)  addBtn.disabled = true;
-      return;
-    }
-    if (notice) notice.style.display = 'none';
-    if (addBtn)  addBtn.disabled = false;
-    let sel = document.getElementById('f-unit');
-    if (sel) sel.innerHTML = units.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
-    updateTests();
-  }
-
-  function updateTests() {
-    let unit  = document.getElementById('f-unit')?.value;
-    let tests = testDefinitions.units[unit] || [];
-    let sel   = document.getElementById('f-test');
-    if (sel) sel.innerHTML = tests.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
-  }
-
-  // ── Test cart ─────────────────────────────────────────────────────
-  let tempTests = [];
-  window.tempTests = tempTests;   // expose for offline_queue.js
-
-  function renderCart() {
-    let cart = document.getElementById('testCart');
-    if (!cart) return;
-    if (!tempTests.length) {
-      cart.innerHTML = '<span style="color:var(--text3);">No tests added yet.</span>';
-      updateTotal(); return;
-    }
-    cart.innerHTML = tempTests.map((t, i) => `
-      <div class="test-chip">
-        <span>${esc(t.unit_name)}: ${esc(t.test_name)} – <strong>${getTestPrice(t.test_name).toFixed(2)} NGN</strong></span>
-        <button class="chip-remove" data-idx="${i}" title="Remove">×</button>
-      </div>`).join('');
-    cart.querySelectorAll('.chip-remove').forEach(btn => {
-      btn.addEventListener('click', () => { tempTests.splice(parseInt(btn.dataset.idx), 1); renderCart(); });
-    });
-    updateTotal();
-  }
-
-  function updateTotal() {
-    let total   = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
-    let paidRaw = parseFloat(document.getElementById('amountPaid')?.value) || 0;
-    if (paidRaw > total) {
-      paidRaw = total;
-      if (document.getElementById('amountPaid')) document.getElementById('amountPaid').value = total.toFixed(2);
-      toast('Amount paid capped at total', 'warn');
-    }
-    let balance = total - paidRaw;
-    if (document.getElementById('totalAmount')) document.getElementById('totalAmount').textContent = total.toFixed(2);
-    if (document.getElementById('balanceDue'))  document.getElementById('balanceDue').textContent  = balance.toFixed(2);
-    let badge = document.getElementById('payStatusBadge');
-    if (badge) {
-      if (total === 0 || (balance > 0 && paidRaw === 0)) {
-        badge.textContent = 'Unpaid';   badge.className = 'pay-badge pay-unpaid';
-      } else if (balance > 0) {
-        badge.textContent = 'Partial';  badge.className = 'pay-badge pay-partial';
-      } else {
-        badge.textContent = 'Paid';     badge.className = 'pay-badge pay-paid';
-      }
-    }
-  }
-
-  function addTest() {
-    let unit = document.getElementById('f-unit')?.value;
-    let test = document.getElementById('f-test')?.value;
-    if (!unit || !test) { toast('Select a unit and test first', 'warn'); return; }
-    if (tempTests.find(t => t.unit_name === unit && t.test_name === test)) {
-      toast(`"${test}" already in the cart`, 'warn'); return;
-    }
-    let testType = testDefinitions.testTypes[test] || 'simple';
-    tempTests.push({ unit_name: unit, test_name: test, test_type: testType,
-      result: '', result_json: null, tech_name: '', status: 'Collected', sort_order: tempTests.length });
-    renderCart();
-    toast(`${test} added`);
-  }
-
-  // ── Paystack public key — replace with your live key in production ──
-  // Test key format: pk_test_xxxxxxxxxxxxxxxxxxxxxxxx
-  // Live key format: pk_live_xxxxxxxxxxxxxxxxxxxxxxxx
-  const PAYSTACK_PUBLIC_KEY = 'pk_test_8564df5226f404c1952b77183cc611d283be1a0c';
-
-  // ── Show/hide Paystack UI based on payment mode ───────────────────
-  window.handlePaymodeChange = function () {
-    const mode = document.getElementById('f-paymode')?.value;
-    const isPaystack = mode === 'Paystack';
-    document.getElementById('paystackEmailGroup').style.display = isPaystack ? 'block' : 'none';
-    document.getElementById('paystackNotice').style.display     = isPaystack ? 'block' : 'none';
-    document.getElementById('manualPaidGroup').style.display    = isPaystack ? 'none'  : 'block';
-    const lbl = document.getElementById('registerBtnLabel');
-    if (lbl) lbl.innerHTML = isPaystack
-      ? '<i class="fas fa-lock"></i> Register &amp; Pay via Paystack'
-      : '<i class="fas fa-syringe"></i> Register &amp; Print Receipt';
-  };
-
-  // ── Register sample (handles both Cash/manual and Paystack) ───────
-  async function registerSample() {
-    let name = document.getElementById('f-name')?.value.trim();
-    if (document.getElementById('f-name'))
-      document.getElementById('f-name').classList.toggle('required-empty', !name);
-    if (!name)             { toast('Patient name is required', 'error'); document.getElementById('f-name')?.focus(); return; }
-    if (!tempTests.length) { toast('Add at least one test', 'error'); return; }
-
-    const paymode = document.getElementById('f-paymode')?.value || 'Cash';
-    const isPaystack = paymode === 'Paystack';
-
-    let total   = tempTests.reduce((sum, t) => sum + getTestPrice(t.test_name), 0);
-    let paid    = isPaystack ? 0 : Math.min(parseFloat(document.getElementById('amountPaid')?.value) || 0, total);
-    let balance = total - paid;
-    let paystatus = isPaystack ? 'Unpaid' : (balance <= 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid');
-
-    let now      = new Date();
-    let collDate = document.getElementById('f-collDate')?.value || now.toISOString().slice(0, 10);
-    let collTime = document.getElementById('f-collTime')?.value || now.toTimeString().slice(0, 5);
-    let receiptNo = `RCP-${Date.now()}`;
-
-    let btn = document.getElementById('registerBtn');
-    if (btn) { btn.classList.add('loading'); btn.disabled = true; }
-
-    try {
-      // 1. Insert sample (always saved first — Paystack payment follows)
-      const sampleRow = {
-        patient:         name,
-        age:             parseInt(document.getElementById('f-age')?.value) || null,
-        gender:          document.getElementById('f-gender')?.value || 'Male',
-        phone:           document.getElementById('f-phone')?.value.trim() || null,
-        nid:             document.getElementById('f-nid')?.value.trim() || null,
-        clinician:       document.getElementById('f-clinician')?.value.trim() || null,
-        history:         document.getElementById('f-history')?.value.trim() || null,
-        priority:        document.getElementById('f-priority')?.value || 'Routine',
-        sample_type:     document.getElementById('f-stype')?.value || 'Whole Blood (EDTA)',
-        tube:            document.getElementById('f-tube')?.value || 'Purple top (EDTA)',
-        collection_date: collDate,
-        collection_time: collTime,
-        due_date:        document.getElementById('f-due')?.value || null,
-        pay_mode:        paymode,
-        insurance_no:    document.getElementById('f-insurance')?.value.trim() || null,
-        pay_status:      paystatus,
-        total_amount:    total,
-        amount_paid:     paid,
-        balance_due:     balance,
-        receipt_no:      receiptNo,
-        payment_date:    now.toISOString(),
-        status:          'Collected',
-        registered_by:   currentSession.name || 'Reception'
-      };
-
-      const { data: sampleData, error: sampleError } = await db
-        .from('samples').insert(sampleRow).select('id').single();
-      if (sampleError) throw sampleError;
-
-      const sampleId = sampleData.id;
-      receiptNo = `RCP-${sampleId}-${Date.now()}`;
-      await db.from('samples').update({ receipt_no: receiptNo }).eq('id', sampleId);
-
-      // 2. Insert sample_tests
-      const testRows = tempTests.map((t, idx) => ({
-        sample_id:   sampleId,
-        test_name:   t.test_name,
-        unit_name:   t.unit_name,
-        test_type:   t.test_type,
-        result:      '',
-        result_json: null,
-        tech_name:   '',
-        status:      'Collected',
-        sort_order:  idx
-      }));
-      const { error: testError } = await db.from('sample_tests').insert(testRows);
-      if (testError) throw testError;
-
-      // 3. COC events
-      await db.from('coc_events').insert([
-        { sample_id: sampleId, step_index: 0, step_name: 'Registered', done: true,  active: false,
-          actor_name: currentSession.name || 'Reception', occurred_at: now.toISOString() },
-        { sample_id: sampleId, step_index: 1, step_name: 'Collected',  done: false, active: true,
-          actor_name: null, occurred_at: now.toISOString() }
-      ]);
-
-      await addAudit('Sample Registered', sampleId,
-        `${tempTests.length} test(s) | Total: ${total} NGN | Mode: ${paymode} | Status: ${paystatus}`);
-
-      toast(`MU-${sampleId} registered ✓`);
-
-      if (isPaystack && total > 0) {
-        // ── Open Paystack inline popup ─────────────────────────────
-        if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
-
-        const patientEmail = document.getElementById('f-patient-email')?.value.trim()
-          || ('patient' + sampleId + '@muujiza-lab.com'); // fallback — Paystack needs a real TLD
-        const patientPhone = document.getElementById('f-phone')?.value.trim() || '';
-        const paystackRef  = `MU-${sampleId}-${Date.now()}`;
-
-        // Store context so callbacks can reference it
-        window._pendingPaystack = {
-          sampleId, receiptNo: paystackRef, patient: name,
-          priority: sampleRow.priority, tests: [...tempTests],
-          totalAmount: total, paymode
-        };
-
-        // Build Paystack config — no spread operators, no async callback
-        // (PaystackPop.setup rejects async functions and unknown keys)
-        const paystackConfig = {
-          key:      PAYSTACK_PUBLIC_KEY,
-          email:    patientEmail,
-          amount:   Math.round(total * 100),
-          currency: 'NGN',
-          ref:      paystackRef,
-          metadata: {
-            custom_fields: [
-              { display_name: 'Sample ID',    variable_name: 'sample_id',     value: 'MU-' + sampleId },
-              { display_name: 'Patient',       variable_name: 'patient_name',  value: name },
-              { display_name: 'Registered By', variable_name: 'registered_by', value: currentSession.name }
-            ]
-          },
-          callback: function (response) {
-            // Paystack requires a plain (non-async) callback — use .then() inside
-            const ctx = window._pendingPaystack;
-            const payNow = new Date().toISOString();
-            db.from('samples').update({
-              pay_status:   'Paid',
-              amount_paid:  ctx.totalAmount,
-              balance_due:  0,
-              receipt_no:   response.reference,
-              payment_date: payNow,
-              pay_mode:     'Paystack'
-            }).eq('id', ctx.sampleId)
-            .then(function () {
-              return addAudit('Payment Confirmed (Paystack)', ctx.sampleId,
-                'Ref: ' + response.reference + ' | Amount: ' + ctx.totalAmount + ' NGN');
-            })
-            .then(function () {
-              toast('Payment confirmed \u2713 Ref: ' + response.reference);
-              showReceiptModal({
-                id: ctx.sampleId, patient: ctx.patient, priority: ctx.priority,
-                tests: ctx.tests, totalAmount: ctx.totalAmount,
-                amountPaid: ctx.totalAmount, balanceDue: 0,
-                paystatus: 'Paid', paymode: 'Paystack',
-                receiptNo: response.reference,
-                paymentDate: payNow,
-                paystackRef: response.reference
-              });
-              clearForm();
-            })
-            .catch(function (err) {
-              toast('Payment captured but DB update failed: ' + err.message + '. Ref: ' + response.reference, 'error');
-            });
-          },
-          onClose: function () {
-            const ctx = window._pendingPaystack;
-            const sid = ctx ? ctx.sampleId : '?';
-            toast('Payment window closed. Sample MU-' + sid + ' saved as Unpaid. Use "Settle Balance" to complete payment later.', 'warn');
-            clearForm();
-          }
-        };
-
-        const handler = PaystackPop.setup(paystackConfig);
-        handler.openIframe();
-        return; // don't clear form yet — clearForm() called from callback
-
-      } else {
-        // ── Cash / POS / NHIS — show receipt immediately ──────────
-        showReceiptModal({
-          id: sampleId, patient: name, priority: sampleRow.priority, tests: tempTests,
-          totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
-          paymode: sampleRow.pay_mode, receiptNo, paymentDate: now.toISOString()
-        });
-        clearForm();
-      }
-
-    } catch (err) {
-      console.error(err);
-      toast(`Registration failed: ${err.message}`, 'error');
-    } finally {
-      if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
-    }
-  }
-  // Expose immediately — offline_queue.js patches this on its load event.
-  // Must be set before offline_queue.js runs, so the patch can wrap the real function.
-  window.registerSample = registerSample;
-
-  // ── Clear form ────────────────────────────────────────────────────
-  function clearForm() {
-    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance','f-patient-email'].forEach(id => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    if (document.getElementById('f-name'))     document.getElementById('f-name').classList.remove('required-empty');
-    if (document.getElementById('f-age'))      document.getElementById('f-age').value = '';
-    if (document.getElementById('f-gender'))   document.getElementById('f-gender').value = 'Male';
-    if (document.getElementById('f-priority')) document.getElementById('f-priority').value = 'Routine';
-    if (document.getElementById('f-stype'))    document.getElementById('f-stype').value = 'Whole Blood (EDTA)';
-    if (document.getElementById('f-tube'))     document.getElementById('f-tube').value = 'Purple top (EDTA)';
-    if (document.getElementById('f-paymode'))  document.getElementById('f-paymode').value = 'Cash';
-    handlePaymodeChange();
-    setDefaultDates();
-    tempTests = [];
-    window.tempTests = tempTests;
-    renderCart();
-    if (document.getElementById('amountPaid')) document.getElementById('amountPaid').value = '0';
-    updateTotal();
-  }
-  window.clearForm = clearForm;       // expose for offline_queue.js
-  // window.registerSample already set right after function definition above
-
-  // ── Balance Settlement Panel ──────────────────────────────────────
-  window.toggleSettlePanel = function () {
-    const body     = document.getElementById('settlePanelBody');
-    const chevron  = document.getElementById('settlePanelChevron');
-    const isHidden = body.style.display === 'none';
-    body.style.display    = isHidden ? 'block' : 'none';
-    chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
-  };
-
-  window.lookupSampleBalance = async function () {
-    const raw = document.getElementById('settle-sample-id')?.value.trim();
-    if (!raw) { toast('Enter a Sample ID', 'warn'); return; }
-    // Accept "MU-42", "mu-42", or just "42"
-    const numericId = parseInt(raw.replace(/[^0-9]/g, ''));
-    if (!numericId) { toast('Invalid Sample ID format', 'error'); return; }
-
-    const box = document.getElementById('settleResultBox');
-    box.style.display = 'block';
-    box.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text2);"><i class="fas fa-spinner fa-spin"></i> Looking up MU-${numericId}…</div>`;
-
-    try {
-      const { data, error } = await db.from('samples')
-        .select('id,patient,total_amount,amount_paid,balance_due,pay_status,pay_mode,phone')
-        .eq('id', numericId).single();
-
-      if (error || !data) {
-        box.innerHTML = `<div style="padding:14px;background:#fee2e2;border-radius:14px;color:#b91c1c;font-size:0.85rem;">
-          <i class="fas fa-times-circle"></i> Sample MU-${numericId} not found.</div>`;
-        return;
-      }
-
-      if (data.pay_status === 'Paid') {
-        box.innerHTML = `<div style="padding:14px;background:#dcfce7;border-radius:14px;color:#15803d;font-size:0.9rem;font-weight:600;">
-          <i class="fas fa-check-circle"></i> MU-${numericId} — ${esc(data.patient)} — is already <strong>Fully Paid</strong>. No balance outstanding.</div>`;
-        return;
-      }
-
-      const balance = parseFloat(data.balance_due) || 0;
-      const total   = parseFloat(data.total_amount) || 0;
-      const alreadyPaid = parseFloat(data.amount_paid) || 0;
-
-      box.innerHTML = `
-        <div style="border:1.5px solid var(--border);border-radius:18px;overflow:hidden;">
-          <div style="padding:14px 18px;background:#f8fafb;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-            <div>
-              <div style="font-weight:700;font-size:0.95rem;">MU-${numericId} — ${esc(data.patient)}</div>
-              <div style="font-size:0.75rem;color:var(--text2);">Status: <span class="pay-badge ${data.pay_status==='Partial'?'pay-partial':'pay-unpaid'}">${esc(data.pay_status)}</span></div>
-            </div>
-          </div>
-          <div style="padding:16px 18px;">
-            <div style="background:#f0f7f3;border-radius:12px;padding:12px 14px;margin-bottom:14px;">
-              <div style="display:flex;justify-content:space-between;font-size:0.85rem;padding:2px 0;"><span>Invoice Total</span><strong>${total.toFixed(2)} NGN</strong></div>
-              <div style="display:flex;justify-content:space-between;font-size:0.85rem;padding:2px 0;"><span>Already Paid</span><strong>${alreadyPaid.toFixed(2)} NGN</strong></div>
-              <div style="display:flex;justify-content:space-between;font-size:1rem;padding:6px 0 0;border-top:1.5px solid #c6e2d4;margin-top:4px;font-weight:700;color:var(--primary);"><span>Balance Due</span><span>${balance.toFixed(2)} NGN</span></div>
-            </div>
-            <div style="font-size:0.8rem;color:var(--text2);margin-bottom:10px;">How would you like to settle this?</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="settleModeRow">
-              <button class="pay-mode-settle-btn active" data-mode="Cash" onclick="setSettleMode(this,'Cash')">💵 Cash</button>
-              <button class="pay-mode-settle-btn" data-mode="POS" onclick="setSettleMode(this,'POS')">🏧 POS</button>
-              <button class="pay-mode-settle-btn" data-mode="Paystack" onclick="setSettleMode(this,'Paystack')">💳 Paystack</button>
-              <button class="pay-mode-settle-btn" data-mode="NHIS" onclick="setSettleMode(this,'NHIS')">🏥 NHIS</button>
-            </div>
-            <button id="settleConfirmBtn"
-              style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:14px;font-size:0.92rem;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;"
-              onclick="confirmSettlement(${numericId},${balance},${total},'${esc(data.patient)}','${esc(data.phone||'')}')">
-              <i class="fas fa-check-circle"></i> Confirm Payment of ${balance.toFixed(2)} NGN
-            </button>
-          </div>
-        </div>`;
-
-      // Inject settle mode button styles once
-      if (!document.getElementById('settleModeStyle')) {
-        const s = document.createElement('style');
-        s.id = 'settleModeStyle';
-        s.textContent = `.pay-mode-settle-btn{padding:7px 14px;border-radius:30px;border:1.5px solid var(--border);background:white;cursor:pointer;font-size:0.8rem;font-weight:600;color:var(--text2);transition:0.15s;font-family:'DM Sans',sans-serif;} .pay-mode-settle-btn:hover{border-color:var(--primary);color:var(--primary);} .pay-mode-settle-btn.active{border-color:var(--primary);background:var(--primary);color:white;}`;
-        document.head.appendChild(s);
-      }
-
-    } catch (err) {
-      box.innerHTML = `<div style="padding:14px;background:#fee2e2;border-radius:14px;color:#b91c1c;font-size:0.85rem;">Error: ${esc(err.message)}</div>`;
-    }
-  };
-
-  // Track chosen settle mode
-  let _settleMode = 'Cash';
-  window.setSettleMode = function (btn, mode) {
-    _settleMode = mode;
-    document.querySelectorAll('.pay-mode-settle-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-  };
-
-  window.confirmSettlement = async function (sampleId, balance, total, patient, phone) {
-    if (_settleMode === 'Paystack') {
-      // Open Paystack for the balance amount
-      const paystackRef = `MU-${sampleId}-BAL-${Date.now()}`;
-      const email = 'patient' + sampleId + '@muujiza-lab.com';
-
-      window._pendingSettle = { sampleId, balance, total, patient };
-
-      const handler = PaystackPop.setup({
-        key:      PAYSTACK_PUBLIC_KEY,
-        email:    email,
-        amount:   Math.round(balance * 100),
-        currency: 'NGN',
-        ref:      paystackRef,
-        metadata: {
-          custom_fields: [
-            { display_name: 'Sample ID',   variable_name: 'sample_id',   value: 'MU-' + sampleId },
-            { display_name: 'Patient',      variable_name: 'patient_name', value: patient },
-            { display_name: 'Payment Type', variable_name: 'type',         value: 'Balance Settlement' }
-          ]
-        },
-        callback: function (response) {
-          // Plain function — no async; chain with .then()
-          markSettlementPaid(sampleId, balance, total, patient, 'Paystack', response.reference);
-        },
-        onClose: function () {
-          toast('Paystack window closed. Balance still outstanding.', 'warn');
-        }
-      });
-      handler.openIframe();
-      return;
-    }
-
-    // Cash / POS / NHIS — mark paid immediately
-    markSettlementPaid(sampleId, balance, total, patient, _settleMode, 'MANUAL-' + Date.now());
-  };
-
-  function markSettlementPaid(sampleId, balance, total, patient, mode, ref) {
-    const btn = document.getElementById('settleConfirmBtn');
-    if (btn) btn.disabled = true;
-    const now = new Date().toISOString();
-    db.from('samples').update({
-      pay_status:   'Paid',
-      amount_paid:  total,
-      balance_due:  0,
-      pay_mode:     mode,
-      receipt_no:   ref,
-      payment_date: now
-    }).eq('id', sampleId)
-    .then(function () {
-      return addAudit('Balance Settled', sampleId,
-        'Mode: ' + mode + ' | Ref: ' + ref + ' | Balance: ' + balance + ' NGN | Patient: ' + patient);
-    })
-    .then(function () {
-      document.getElementById('settle-sample-id').value = '';
-      document.getElementById('settleResultBox').style.display = 'none';
-      document.getElementById('settleResultBox').innerHTML = '';
-      toast('\u2713 MU-' + sampleId + ' balance settled \u2014 marked as Paid');
-    })
-    .catch(function (err) {
-      toast('Settlement update failed: ' + err.message, 'error');
-      if (btn) btn.disabled = false;
-    });
-  }
-
-  // ── Receipt modal ─────────────────────────────────────────────────
-  function showReceiptModal(sample) {
-    let modal   = document.getElementById('labelModal');
-    let content = document.getElementById('labelContent');
-    if (!modal || !content) return;
-
-    let testRows = (sample.tests || []).map(t => {
-      let tname = t.test_name || t.test || '';
-      return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee;">
-        <span>${esc(tname)}</span>
-        <span>${getTestPrice(tname).toFixed(2)} NGN</span>
-      </div>`;
-    }).join('');
-
-    let payClass = sample.paystatus === 'Paid' ? 'pay-paid'
-                 : sample.paystatus === 'Partial' ? 'pay-partial' : 'pay-unpaid';
-
-    const paystackRefLine = sample.paystackRef
-      ? `<p style="margin-bottom:2px;"><strong>Paystack Ref:</strong> <span style="font-family:monospace;font-size:0.8rem;color:#15803d;">${esc(sample.paystackRef)}</span></p>`
-      : '';
-    const paidBanner = sample.paystatus === 'Paid'
-      ? `<div style="background:#dcfce7;border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;color:#15803d;font-weight:700;font-size:0.9rem;">
-           <i class="fas fa-check-circle" style="font-size:1.1rem;"></i> Payment Confirmed
-         </div>` : '';
-
-    content.innerHTML = `
-      <div style="text-align:left;">
-        <canvas id="receiptBarcode" style="display:block;margin:0 auto 12px;"></canvas>
-        <h3 style="color:#1F6E43;margin-bottom:4px;">MU'UJIZA DIAGNOSTICS</h3>
-        <p style="font-size:0.78rem;color:#5a7e94;margin-bottom:12px;">Laboratory Information System</p>
-        ${paidBanner}
-        <p style="margin-bottom:2px;"><strong>Receipt No:</strong> ${esc(sample.receiptNo)}</p>
-        <p style="margin-bottom:2px;"><strong>Sample ID:</strong> MU-${sample.id}</p>
-        ${paystackRefLine}
-        <p style="margin-bottom:2px;"><strong>Patient:</strong> ${esc(sample.patient)}</p>
-        <p style="margin-bottom:12px;"><strong>Priority:</strong> ${esc(sample.priority)}</p>
-        <div style="margin-bottom:12px;">${testRows}</div>
-        <div style="background:#f0f7f3;border-radius:12px;padding:10px;margin-bottom:12px;">
-          <div style="display:flex;justify-content:space-between;"><span>Total</span><strong>${sample.totalAmount.toFixed(2)} NGN</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>Paid</span><strong>${sample.amountPaid.toFixed(2)} NGN</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>Balance</span><strong>${sample.balanceDue.toFixed(2)} NGN</strong></div>
-          <div style="margin-top:6px;">Status: <span class="pay-badge ${payClass}">${esc(sample.paystatus)}</span></div>
-        </div>
-        <p style="font-size:0.75rem;color:#5a7e94;margin-bottom:16px;">
-          ${esc(sample.paymode)} &nbsp;|&nbsp; ${new Date(sample.paymentDate).toLocaleString()}
-        </p>
-        <div style="display:flex;gap:10px;">
-          <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
-          <button class="btn btn-secondary" onclick="closeLabelModal()">Close</button>
-        </div>
-      </div>`;
-
-    modal.style.display = 'flex';
-    setTimeout(() => {
-      try {
-        JsBarcode('#receiptBarcode', sample.receiptNo, { format:'CODE128', width:2, height:40, displayValue:false });
-      } catch(e) {}
-    }, 60);
-  }
-
-  window.closeLabelModal = function () {
-    const modal = document.getElementById('labelModal');
-    if (modal) modal.style.display = 'none';
-  };
-
-  // ── Default dates ─────────────────────────────────────────────────
-  function setDefaultDates() {
-    let today = new Date().toISOString().slice(0, 10);
-    if (document.getElementById('f-collDate')) document.getElementById('f-collDate').value = today;
-    if (document.getElementById('f-collTime')) document.getElementById('f-collTime').value = new Date().toTimeString().slice(0, 5);
-    let due = new Date(); due.setDate(due.getDate() + 1);
-    if (document.getElementById('f-due')) document.getElementById('f-due').value = due.toISOString().slice(0, 10);
-  }
-
-  // ── Event listeners ───────────────────────────────────────────────
-  document.getElementById('addTestBtn')?.addEventListener('click', addTest);
-  // Always call through window.registerSample so offline_queue.js can patch it.
-  // If the patch hasn't loaded yet (e.g. script error), fall back to the local function.
-  document.getElementById('registerBtn')?.addEventListener('click', () =>
-    (window.registerSample || registerSample)()
-  );
-  document.getElementById('clearBtn')?.addEventListener('click', clearForm);
-  document.getElementById('f-unit')?.addEventListener('change', updateTests);
-  document.getElementById('amountPaid')?.addEventListener('input', updateTotal);
-  document.getElementById('f-name')?.addEventListener('input', () =>
-    document.getElementById('f-name')?.classList.remove('required-empty'));
-  document.getElementById('f-test')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
-  document.getElementById('f-unit')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
-  document.getElementById('settle-sample-id')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupSampleBalance(); } });
-  document.getElementById('labelModal')?.addEventListener('click', e => {
-    if (e.target === document.getElementById('labelModal')) closeLabelModal();
-  });
-
-  // ── Boot ──────────────────────────────────────────────────────────
-  setDefaultDates();
-  startClock();
-  loadTestDefinitions();
-
-  // ── Offline-mode register button label ────────────────────────────
-  function _updateRegisterBtnOfflineState() {
-    const btn   = document.getElementById('registerBtn');
-    const label = document.getElementById('registerBtnLabel');
-    if (!btn || !label) return;
-    if (!navigator.onLine) {
-      label.innerHTML = '<i class="fas fa-database"></i> Save Offline Draft';
-      btn.title = 'Internet is offline — sample will be saved locally and synced when reconnected';
-    } else {
-      label.innerHTML = '<i class="fas fa-syringe"></i> Register &amp; Print Receipt';
-      btn.title = '';
-    }
-  }
-  window.addEventListener('online',  _updateRegisterBtnOfflineState);
-  window.addEventListener('offline', _updateRegisterBtnOfflineState);
-  _updateRegisterBtnOfflineState();
-
-})();
-
-</script>
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 </script>
-<script src="offline_queue.js"></script>  <!-- before auth-guard.js -->
-<script src="auth-guard.js"></script>
+
+<script src="offline_queue.js"></script>
+<script src="accession.js"></script>
 <script src="global.js"></script>
 </body>
 </html>
