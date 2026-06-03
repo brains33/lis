@@ -604,7 +604,7 @@ function buildParamTable(testName, data, testType, age, gender) {
               <td>${range.low}–${range.high}</td>
            </tr>
         </tbody>
-      </table>`;
+      </tr>`;
   }
 
   // Culture & Sensitivity (general)
@@ -674,7 +674,7 @@ function buildParamTable(testName, data, testType, age, gender) {
         <tr><th>Organism</th><th colspan="3" style="font-style:italic; font-weight:400;">${esc(data.organism || 'No growth / Not specified')}</th></tr>
         ${sensRows ? '<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>' : ''}
       </thead>
-      <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>'}</tbody>
+      <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></td>'}</tbody>
     </table>`;
     return html;
   }
@@ -699,7 +699,7 @@ function buildParamTable(testName, data, testType, age, gender) {
         <td style="font-style:italic; font-weight:500; width:45%;">${r.organism}</td>
         <td style="text-align:center; width:27.5%; font-weight:${oFlag ? '700' : '400'}; color:${oColour};">${oDisplay}</td>
         <td style="text-align:center; width:27.5%; font-weight:${hFlag ? '700' : '400'}; color:${hColour};">${hDisplay}</td>
-       </tr>`;
+       </td>`;
     }
     return `
       <table class="param-table" style="width:100%; table-layout:fixed; border-collapse:collapse;">
@@ -726,7 +726,7 @@ function buildParamTable(testName, data, testType, age, gender) {
     for (let probe of ['probeA_ct','probeB_ct','probeC_ct','probeD_ct','probeE_ct']) {
       if (data[probe] !== undefined) rows += `<tr><td>${probe.replace('_ct',' Probe Ct')}</td><td colspan="3">${esc(data[probe])}</td></tr>`;
     }
-    return `<table class="param-table"><tbody>${rows}</tbody></table>`;
+    return `<table class="param-table"><tbody>${rows}</tbody><td>`;
   }
 
   // Serology
@@ -736,6 +736,37 @@ function buildParamTable(testName, data, testType, age, gender) {
       if (data[p.key] !== undefined) rows += `<tr><td>${esc(p.name)}</td><td colspan="3">${esc(data[p.key])}</td></tr>`;
     }
     return `<table class="param-table"><tbody>${rows}</tbody></table>`;
+  }
+
+  // ===== NEW: Simple Numeric (with stored reference range) =====
+  if (testType === 'simple_numeric') {
+    let val = typeof data === 'string' ? data : (data.result !== undefined ? data.result : '');
+    let range = testDefinitions.refRanges?.[testName];
+    if (range) {
+      let num = parseFloat(val);
+      let flag = !isNaN(num) ? (num > range.high ? '↑' : num < range.low ? '↓' : '') : '';
+      let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
+      return `
+        <table class="param-table">
+          <thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead>
+          <tbody>
+            <tr>
+              <td style="font-weight:500;">${esc(testName)}</td>
+              <td class="${cls}">${val} ${flag}</td>
+              <td>${esc(range.unit)}</td>
+              <td>${range.low}–${range.high}</td>
+            </tr>
+          </tbody>
+        </table>`;
+    } else {
+      return `<table class="param-table"><tbody><tr><td style="font-weight:500;">${esc(testName)}</td><td colspan="3">${val}</td></tr></tbody></table>`;
+    }
+  }
+
+  // ===== NEW: Simple Select – just show the selected value =====
+  if (testType === 'simple_select') {
+    let val = typeof data === 'string' ? data : (data.result !== undefined ? data.result : '');
+    return `<table class="param-table"><tbody><tr><td style="font-weight:500;">${esc(testName)}</td><td colspan="3">${val}</td></tr></tbody></tr>`;
   }
 
   // Standard numeric panels
@@ -786,7 +817,6 @@ function buildParamTable(testName, data, testType, age, gender) {
   }
   return `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
-
 // ========== PDF GENERATION — native jsPDF (no html2canvas, clean page breaks) ==========
 async function generatePDF(id) {
   let s = (typeof allSamples !== 'undefined' ? allSamples : samples || []).find(x => x.id === id);

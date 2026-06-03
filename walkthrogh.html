@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA LIS — System Walkthrough</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green:    #1f6e43;
+    --green-d:  #155234;
+    --green-l:  #e8f4ed;
+    --green-m:  #c6e8d4;
+    --amber:    #d97706;
+    --amber-l:  #fef3c7;
+    --blue:     #1d4ed8;
+    --blue-l:   #eff6ff;
+    --red:      #dc2626;
+    --red-l:    #fee2e2;
+    --purple:   #7e22ce;
+    --purple-l: #f3e8ff;
+    --slate:    #2e4a5e;
+    --muted:    #607d8f;
+    --border:   #dce8ee;
+    --bg:       #f4f8fb;
+    --white:    #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Sora', sans-serif;
+    background: var(--bg);
+    color: var(--slate);
+    line-height: 1.7;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    background: linear-gradient(135deg, var(--green-d) 0%, var(--green) 60%, #2d9d5e 100%);
+    color: white;
+    padding: 60px 32px 48px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  .hero-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 40px;
+    padding: 4px 16px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .hero h1 span { opacity: 0.7; font-weight: 300; }
+  .hero-sub {
+    font-size: 1rem;
+    opacity: 0.85;
+    max-width: 520px;
+    margin: 0 auto 24px;
+    font-weight: 300;
+  }
+  .hero-pills {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  }
+  .hero-pill {
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 40px;
+    padding: 5px 14px;
+    font-size: 0.76rem;
+    font-weight: 600;
+  }
+
+  /* ── LAYOUT ── */
+  .container { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+
+  /* ── UNIQUE VALUE BOX ── */
+  .value-box {
+    background: linear-gradient(135deg, #fff9ec, #fef3c7);
+    border: 2px solid var(--amber);
+    border-radius: 20px;
+    padding: 24px 28px;
+    margin: 32px 0;
+    position: relative;
+  }
+  .value-box::before {
+    content: '📌';
+    font-size: 1.4rem;
+    position: absolute;
+    top: -14px; left: 20px;
+    background: var(--amber-l);
+    padding: 2px 6px;
+    border-radius: 8px;
+  }
+  .value-box h3 {
+    color: var(--amber);
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 8px;
+  }
+  .value-box p {
+    font-size: 0.95rem;
+    color: #78350f;
+    font-weight: 500;
+    line-height: 1.6;
+  }
+
+  /* ── SECTION ── */
+  .section { margin: 40px 0; }
+  .section-title {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.8px;
+    color: var(--muted);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── ROLE CARDS ── */
+  .role-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+  .role-card {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 20px;
+    transition: 0.2s;
+  }
+  .role-card:hover { border-color: var(--green-m); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(31,110,67,0.08); }
+  .role-card-head {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+  }
+  .role-icon {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; flex-shrink: 0;
+  }
+  .role-card h3 { font-size: 0.92rem; font-weight: 700; }
+  .role-tag {
+    display: inline-block;
+    font-size: 0.62rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 2px 8px; border-radius: 20px;
+    margin-top: 3px;
+  }
+  .role-list { list-style: none; }
+  .role-list li {
+    font-size: 0.82rem; color: var(--muted);
+    padding: 5px 0;
+    border-bottom: 1px solid #f0f5f8;
+    display: flex; align-items: flex-start; gap: 8px;
+  }
+  .role-list li:last-child { border-bottom: none; }
+  .role-list li::before { content: '→'; color: var(--green); font-weight: 700; flex-shrink: 0; }
+
+  /* role colours */
+  .rc-reception  .role-icon { background: #e0f2fe; }
+  .rc-tech       .role-icon { background: var(--green-l); }
+  .rc-supervisor .role-icon { background: var(--amber-l); }
+  .rc-admin      .role-icon { background: var(--purple-l); }
+  .rc-patient    .role-icon { background: #f1f5f9; }
+
+  .rt-reception  { background: #e0f2fe; color: #0369a1; }
+  .rt-tech       { background: var(--green-l); color: var(--green-d); }
+  .rt-supervisor { background: var(--amber-l); color: #92400e; }
+  .rt-admin      { background: var(--purple-l); color: var(--purple); }
+  .rt-patient    { background: #f1f5f9; color: #475569; }
+
+  /* ── WORKFLOW STEPS ── */
+  .workflow { position: relative; }
+  .workflow-step {
+    display: flex; gap: 16px; margin-bottom: 24px; position: relative;
+  }
+  .workflow-step::before {
+    content: '';
+    position: absolute;
+    left: 19px; top: 44px;
+    width: 2px; height: calc(100% + 0px);
+    background: var(--border);
+  }
+  .workflow-step:last-child::before { display: none; }
+  .step-num {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--green); color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 800; flex-shrink: 0;
+    position: relative; z-index: 1;
+  }
+  .step-body {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 18px;
+    flex: 1;
+  }
+  .step-body h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 4px; }
+  .step-body p  { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+  .step-who {
+    display: inline-block;
+    font-size: 0.65rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 2px 8px; border-radius: 20px;
+    margin-bottom: 6px;
+  }
+
+  /* ── FEATURE PILLS ── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .feature-item {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    font-size: 0.82rem;
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .feature-item .fi-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+  .feature-item strong { display: block; font-weight: 700; font-size: 0.82rem; color: var(--slate); }
+  .feature-item span { color: var(--muted); font-size: 0.77rem; }
+
+  /* ── TECH STACK ── */
+  .stack-row {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px;
+  }
+  .stack-chip {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: 40px;
+    padding: 6px 16px;
+    font-size: 0.78rem; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* ── OFFLINE BOX ── */
+  .offline-box {
+    background: linear-gradient(135deg, #eff6ff, #dbeafe);
+    border: 1.5px solid #bfdbfe;
+    border-radius: 20px;
+    padding: 22px 24px;
+  }
+  .offline-box h4 { color: var(--blue); font-size: 0.88rem; font-weight: 700; margin-bottom: 8px; }
+  .offline-box p  { font-size: 0.82rem; color: #1e3a8a; line-height: 1.6; }
+
+  /* ── FOOTER ── */
+  .footer {
+    background: var(--green-d);
+    color: rgba(255,255,255,0.7);
+    text-align: center;
+    padding: 28px 20px;
+    font-size: 0.78rem;
+    margin-top: 60px;
+  }
+  .footer strong { color: white; }
+
+  /* ── MONO ── */
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  hr.divider { border: none; border-top: 1.5px solid var(--border); margin: 36px 0; }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-badge">System Walkthrough</div>
+  <h1>MU'UJIZA <span>LIS</span></h1>
+  <p class="hero-sub">A centralized Laboratory Information System built for small-to-medium diagnostic labs — unifying all units on a single platform.</p>
+  <div class="hero-pills">
+    <span class="hero-pill">⚗️ Multi-Unit</span>
+    <span class="hero-pill">💳 Integrated Payments</span>
+    <span class="hero-pill">📶 Offline-First</span>
+    <span class="hero-pill">🔐 Role-Based Access</span>
+    <span class="hero-pill">📄 Single Result Sheet</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- UNIQUE VALUE -->
+  <div class="value-box">
+    <h3>What Makes This Different</h3>
+    <p>
+      Most lab systems are department-isolated — Haematology has their register, Microbiology has theirs, Chemical Pathology has theirs.
+      A patient with 3 tests visits 3 counters and collects 3 separate papers.<br><br>
+      <strong>MU'UJIZA merges all units into one sample record.</strong> Every department enters their results into the same sample.
+      The patient collects <em>one result sheet</em> from <em>one counter</em> — regardless of how many units processed their sample.
+    </p>
+  </div>
+
+  <!-- ROLES -->
+  <div class="section">
+    <div class="section-title">Staff Roles & Access</div>
+    <div class="role-grid">
+
+      <div class="role-card rc-reception">
+        <div class="role-card-head">
+          <div class="role-icon">🧾</div>
+          <div>
+            <h3>Reception</h3>
+            <span class="role-tag rt-reception">Accession</span>
+          </div>
+        </div>
+        <ul class="role-list">
+          <li>Register new samples with patient details</li>
+          <li>Add multiple tests across different units</li>
+          <li>Accept cash or online payment via Paystack</li>
+          <li>Record half-payment, track outstanding balance</li>
+          <li>Print receipt at registration</li>
+          <li>Settle balance during result collection</li>
+        </ul>
+      </div>
+
+      <div class="role-card rc-tech">
+        <div class="role-card-head">
+          <div class="role-icon">🔬</div>
+          <div>
+            <h3>Technologist</h3>
+            <span class="role-tag rt-tech">Result Entry</span>
+          </div>
+        </div>
+        <ul class="role-list">
+          <li>View only samples assigned to their unit</li>
+          <li>Reject samples with documented reason</li>
+          <li>Enter test results with reference range flags</li>
+          <li>Mark individual tests as Ready</li>
+          <li>Auto-send to verification when all tests done</li>
+          <li>Receive returned samples with supervisor query</li>
+        </ul>
+      </div>
+
+      <div class="role-card rc-supervisor">
+        <div class="role-card-head">
+          <div class="role-icon">🏥</div>
+          <div>
+            <h3>Supervisor / HOD</h3>
+            <span class="role-tag rt-supervisor">Verify & Release</span>
+          </div>
+        </div>
+        <ul class="role-list">
+          <li>Review all entered results before release</li>
+          <li>View payment status before authorising</li>
+          <li>Add comments to results</li>
+          <li>Return result to technologist with query</li>
+          <li>Authorise and release for printing</li>
+          <li>Manage test catalogue and prices</li>
+          <li>Receive real-time financial reports from reception</li>
+          <li>Delete samples with full audit trail</li>
+        </ul>
+      </div>
+
+      <div class="role-card rc-admin">
+        <div class="role-card-head">
+          <div class="role-icon">🛡️</div>
+          <div>
+            <h3>Admin</h3>
+            <span class="role-tag rt-admin">System Control</span>
+          </div>
+        </div>
+        <ul class="role-list">
+          <li>Register and manage all staff accounts</li>
+          <li>Assign roles and activate/deactivate users</li>
+          <li>Full audit log — every action timestamped</li>
+          <li>Filter audit by user, role, or action type</li>
+          <li>Cannot be impersonated — strict RLS enforced</li>
+        </ul>
+      </div>
+
+      <div class="role-card rc-patient">
+        <div class="role-card-head">
+          <div class="role-icon">📋</div>
+          <div>
+            <h3>Patient Portal</h3>
+            <span class="role-tag rt-patient">Collection Counter</span>
+          </div>
+        </div>
+        <ul class="role-list">
+          <li>Staff-managed counter (not patient self-service)</li>
+          <li>Search by Sample ID, name, or phone</li>
+          <li>View released results only</li>
+          <li>Print consolidated result sheet</li>
+          <li>All units on one page</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- WORKFLOW -->
+  <div class="section">
+    <div class="section-title">Sample Journey — End to End</div>
+    <div class="workflow">
+
+      <div class="workflow-step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <span class="step-who rt-reception" style="background:#e0f2fe;color:#0369a1;">Reception</span>
+          <h4>Sample Registration</h4>
+          <p>Patient arrives. Reception enters demographics, selects tests from across all lab units, and processes payment (cash or Paystack online). Half-payment accepted — balance tracked. Receipt printed immediately. Sample gets a unique <span class="mono">MU-####</span> ID.</p>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <span class="step-who rt-tech" style="background:#e8f4ed;color:#155234;">Technologist</span>
+          <h4>Sample Assessment</h4>
+          <p>Technologist opens the sample in Result Entry. If the sample is unsuitable (haemolysed, wrong container, insufficient volume), they reject it with a documented reason — status changes to <strong>Rejected</strong> and is visible immediately on Track Sample. Otherwise, processing begins.</p>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <span class="step-who rt-tech" style="background:#e8f4ed;color:#155234;">Technologist</span>
+          <h4>Result Entry</h4>
+          <p>Each technologist enters results for their assigned unit only. The system auto-flags abnormal values against age- and gender-matched reference ranges. When all tests in the unit are marked <strong>Ready</strong>, the sample automatically moves to verification queue. Multiple units can work simultaneously on the same sample.</p>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <span class="step-who rt-supervisor" style="background:#fef3c7;color:#92400e;">Supervisor / HOD</span>
+          <h4>Verification & Release</h4>
+          <p>Supervisor reviews all results, checks payment status, and may add a clinical comment. If a result needs correction, it is returned to the technologist with a query — this is audited. Once satisfied, the supervisor authorises and releases the result for collection.</p>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <span class="step-who rt-patient" style="background:#f1f5f9;color:#475569;">Patient Portal</span>
+          <h4>Result Collection & Printing</h4>
+          <p>Counter staff search the sample by ID, name, or phone. Released results appear — all units consolidated on one page. Staff print a single result sheet covering every test ordered regardless of which department processed it. Outstanding balance can be settled here before printing.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- PAYMENT -->
+  <div class="section">
+    <div class="section-title">Financial Workflow</div>
+    <div class="feature-grid">
+      <div class="feature-item">
+        <span class="fi-icon">💵</span>
+        <div><strong>Cash Payment</strong><span>Recorded at registration with receipt</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">📱</span>
+        <div><strong>Paystack Online</strong><span>Card/transfer, auto-status update on success</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">⏳</span>
+        <div><strong>Half Payment</strong><span>Partial amount at registration, balance at collection</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">📊</span>
+        <div><strong>Real-Time Reports</strong><span>HOD sees all transactions as they happen</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">🔒</span>
+        <div><strong>Pay-gate on Release</strong><span>Supervisor sees payment status before authorising</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">🧾</span>
+        <div><strong>Receipt Number</strong><span>Auto-generated on every registration</span></div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- OFFLINE -->
+  <div class="section">
+    <div class="section-title">Offline Resilience</div>
+    <div class="offline-box">
+      <h4>📶 Works Without Internet — With One Important Rule</h4>
+      <p>
+        <strong>Login requires an active connection</strong> — this ensures only registered staff access the system and all cached data is fresh and synced on entry.<br><br>
+        Once logged in, all result entry, sample viewing, and draft saving works completely offline. Any changes made offline are queued in an encrypted local outbox (IndexedDB) and automatically synced to the server the moment connectivity returns — in the exact order they were made.<br><br>
+        A live status banner shows staff whether they are online, offline, or syncing pending changes. No data is ever lost.
+      </p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- AUDIT -->
+  <div class="section">
+    <div class="section-title">Audit & Accountability</div>
+    <div class="feature-grid">
+      <div class="feature-item">
+        <span class="fi-icon">🕐</span>
+        <div><strong>Every Action Timestamped</strong><span>Who did what, when, on which sample</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">🔄</span>
+        <div><strong>Return-to-Tech Logged</strong><span>Query reason recorded permanently</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">🚫</span>
+        <div><strong>Rejection Documented</strong><span>Reason stored, visible on tracking</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">🔗</span>
+        <div><strong>Chain of Custody</strong><span>Every stage from register to release tracked</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">🗑️</span>
+        <div><strong>Deletion Audited</strong><span>Supervisor-only delete, permanently logged</span></div>
+      </div>
+      <div class="feature-item">
+        <span class="fi-icon">🔍</span>
+        <div><strong>Searchable Trail</strong><span>Filter by user, role, action, or sample ID</span></div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- TECH STACK -->
+  <div class="section">
+    <div class="section-title">Technical Architecture</div>
+    <div class="stack-row">
+      <div class="stack-chip">🌐 GitHub Pages — Hosting</div>
+      <div class="stack-chip">🗄️ Supabase — Database & Auth</div>
+      <div class="stack-chip">🔐 Custom RLS Token Policies</div>
+      <div class="stack-chip">💳 Paystack — Online Payments</div>
+      <div class="stack-chip">📦 IndexedDB — Offline Queue</div>
+      <div class="stack-chip">⚙️ Service Worker — Cache Shell</div>
+      <div class="stack-chip">📄 Client-side PDF Generation</div>
+    </div>
+    <p style="font-size:0.8rem; color:var(--muted); margin-top:14px;">
+      Zero server infrastructure. All logic runs in the browser against a secured Supabase backend with row-level security enforced on every table via signed role tokens. No data is exposed without a valid authenticated session.
+    </p>
+  </div>
+
+</div>
+
+
+</body>
+</html>

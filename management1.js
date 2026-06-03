@@ -92,7 +92,8 @@ async function loadTestDefinitions() {
   try {
     const { data, error } = await db.from('test_definitions').select('*');
     if (error) throw error;
-    testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+    // Include refRanges and selectOptions in the global object
+    testDefinitions = { units: {}, testPrices: {}, testTypes: {}, refRanges: {}, selectOptions: {} };
     data.forEach(td => {
       if (td.test_name === '__unit_placeholder__') {
         if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
@@ -102,6 +103,19 @@ async function loadTestDefinitions() {
       testDefinitions.units[td.unit_name].push(td.test_name);
       testDefinitions.testPrices[td.test_name] = td.price_ngn;
       if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
+      
+      // Load reference range for simple_numeric
+      if (td.test_type === 'simple_numeric' && td.ref_low !== null && td.ref_high !== null) {
+        testDefinitions.refRanges[td.test_name] = {
+          low: td.ref_low,
+          high: td.ref_high,
+          unit: td.ref_unit || ''
+        };
+      }
+      // Load select options for simple_select
+      if (td.test_type === 'simple_select' && td.select_options && td.select_options.length) {
+        testDefinitions.selectOptions[td.test_name] = td.select_options;
+      }
     });
     console.log('Test definitions loaded');
   } catch (err) {
@@ -109,7 +123,6 @@ async function loadTestDefinitions() {
     toast('Failed to load test definitions', 'error');
   }
 }
-
 // ========== LOAD SAMPLES ==========
 async function loadSamples() {
   try {
@@ -272,8 +285,20 @@ async function renderUnitsList() {
       <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:8px; margin-bottom:12px;">
         ${tests.filter(t => t !== '__unit_placeholder__').map(test => {
           let testId = test.replace(/[^a-z0-9]/gi, '_');
+          // Show stored range or options if they exist
+          let extraInfo = '';
+          if (testDefinitions.refRanges && testDefinitions.refRanges[test]) {
+            const r = testDefinitions.refRanges[test];
+            extraInfo = `<span style="font-size:0.7rem; color:var(--green); display:block;">📊 ${r.low}–${r.high} ${r.unit}</span>`;
+          } else if (testDefinitions.selectOptions && testDefinitions.selectOptions[test]) {
+            const opts = testDefinitions.selectOptions[test].join(', ');
+            extraInfo = `<span style="font-size:0.7rem; color:var(--green); display:block;">📋 ${opts.substring(0, 40)}${opts.length > 40 ? '…' : ''}</span>`;
+          }
           return `<div style="display:flex; align-items:center; gap:6px; justify-content:space-between; background:#f9f4e8; border-radius:10px; padding:8px 10px;">
-            <span style="font-size:0.85rem;">${esc(test)}</span>
+            <div style="flex:1;">
+              <span style="font-size:0.85rem;">${esc(test)}</span>
+              ${extraInfo}
+            </div>
             <div style="display:flex;gap:4px;align-items:center;">
               <input type="number" step="0.01" style="width:90px; padding:4px 8px; border-radius:8px; border:1px solid var(--border); font-size:0.8rem;" id="price_${testId}" value="${testDefinitions.testPrices[test] || 0}">
               <button class="btn btn-secondary btn-sm" style="padding:3px 8px;" onclick="updateTestPrice('${esc(test)}', document.getElementById('price_${testId}').value)">Save</button>
@@ -282,18 +307,18 @@ async function renderUnitsList() {
           </div>`;
         }).join('')}
       </div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
         <input type="text" id="newTest_${unitId}" placeholder="New test name" class="form-input" style="flex:2; min-width:160px;">
         <select id="testType_${unitId}" class="filter-select" style="flex:1; min-width:140px;">
           <option value="simple">Simple Text</option>
+          <option value="simple_numeric">Simple Numeric (single value)</option>
+          <option value="simple_select">Simple Select (dropdown)</option>
           <option value="complex_cbc">Complex (CBC)</option>
           <option value="complex_widal">Complex (Widal)</option>
           <option value="complex_lft">Complex (LFT)</option>
           <option value="complex_rft">Complex (RFT)</option>
           <option value="complex_thyroid">Complex (Thyroid)</option>
           <option value="complex_lipid">Complex (Lipid Profile)</option>
-          <option value="simple_numeric">Simple Numeric (single value)</option>
-<option value="simple_select">Simple Select (dropdown)</option>
           <option value="complex_coag">Complex (Coagulation)</option>
           <option value="complex_culture">Culture & Sensitivity</option>
           <option value="complex_urine_mcs">Urine MCS (Micro + Culture + Sensitivity)</option>
@@ -316,11 +341,46 @@ async function renderUnitsList() {
           <option value="complex_rbs">Complex (RBS)</option>
           <option value="complex_fbs">Complex (FBS)</option>
         </select>
-        <button class="btn btn-primary btn-sm" onclick="addTestToUnit('${esc(unit)}', document.getElementById('newTest_${unitId}').value, document.getElementById('testType_${unitId}').value)">Add Test</button>
+        <!-- Range fields (visible for simple_numeric) -->
+        <div id="rangeFields_${unitId}" style="display:none; gap:6px; align-items:center;">
+          <input type="number" step="any" id="refLow_${unitId}" placeholder="Low" style="width:70px;" class="form-input">
+          <span>–</span>
+          <input type="number" step="any" id="refHigh_${unitId}" placeholder="High" style="width:70px;" class="form-input">
+          <input type="text" id="refUnit_${unitId}" placeholder="Unit (e.g. mg/dL)" style="width:100px;" class="form-input">
+        </div>
+        <!-- Options field (visible for simple_select) -->
+        <div id="optionsFields_${unitId}" style="display:none;">
+          <input type="text" id="selectOptions_${unitId}" placeholder="Options (comma separated)" style="width:200px;" class="form-input">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addTestToUnit('${esc(unit)}', 
+          document.getElementById('newTest_${unitId}').value,
+          document.getElementById('testType_${unitId}').value,
+          document.getElementById('refLow_${unitId}')?.value,
+          document.getElementById('refHigh_${unitId}')?.value,
+          document.getElementById('refUnit_${unitId}')?.value,
+          document.getElementById('selectOptions_${unitId}')?.value
+        )">Add Test</button>
       </div>
     </div>`;
   }
   container.innerHTML = html;
+
+  // Attach event listeners to show/hide range/options fields
+  for (let [unit, tests] of Object.entries(testDefinitions.units)) {
+    let unitId = unit.replace(/[^a-z0-9]/gi, '_');
+    let typeSelect = document.getElementById(`testType_${unitId}`);
+    let rangeDiv = document.getElementById(`rangeFields_${unitId}`);
+    let optionsDiv = document.getElementById(`optionsFields_${unitId}`);
+    if (typeSelect && rangeDiv && optionsDiv) {
+      function toggleFields() {
+        let val = typeSelect.value;
+        rangeDiv.style.display = (val === 'simple_numeric') ? 'inline-flex' : 'none';
+        optionsDiv.style.display = (val === 'simple_select') ? 'inline-block' : 'none';
+      }
+      typeSelect.addEventListener('change', toggleFields);
+      toggleFields();
+    }
+  }
 }
 async function addUnit() {
   let unitName = document.getElementById('newUnitName')?.value.trim();
@@ -362,7 +422,7 @@ async function deleteUnit(unit) {
   } catch(err) { toast("Delete failed: " + err.message, "error"); }
 }
 
-async function addTestToUnit(unit, testName, testType) {
+async function addTestToUnit(unit, testName, testType, refLow, refHigh, refUnit, selectOptionsRaw) {
   testName = (testName || '').trim();
   if (!testName) { toast('Test name required', 'error'); return; }
 
@@ -380,37 +440,64 @@ async function addTestToUnit(unit, testName, testType) {
     return;
   }
 
-  const { error } = await db.from('test_definitions').insert([{
+  let selectOptions = null;
+  if (testType === 'simple_select' && selectOptionsRaw) {
+    selectOptions = selectOptionsRaw.split(',').map(s => s.trim()).filter(s => s);
+    if (!selectOptions.length) { toast('Please enter at least one option', 'error'); return; }
+  }
+
+  const insertData = {
     unit_name: unit,
     test_name: testName,
     test_type: testType,
-    price_ngn: 0
-  }]);
+    price_ngn: 0,
+    ref_low: (testType === 'simple_numeric' && refLow) ? parseFloat(refLow) : null,
+    ref_high: (testType === 'simple_numeric' && refHigh) ? parseFloat(refHigh) : null,
+    ref_unit: (testType === 'simple_numeric' && refUnit) ? refUnit : null,
+    select_options: selectOptions
+  };
 
+  const { error } = await db.from('test_definitions').insert(insertData);
   if (error) {
     if (error.code === '23505') {
-      toast(`"${testName}" already exists in another unit. Use a unique name (e.g. "Urinalysis (Micro)" vs "Urinalysis (Chem)").`, 'error');
+      toast(`"${testName}" already exists in another unit. Use a unique name.`, 'error');
     } else {
       toast('Failed to add test: ' + error.message, 'error');
     }
     return;
   }
 
-  // Update local cache — no DB re-fetch needed
+  // Update local cache
   if (!testDefinitions.units[unit]) testDefinitions.units[unit] = [];
   testDefinitions.units[unit].push(testName);
   testDefinitions.testPrices[testName] = 0;
   if (testType !== 'simple') testDefinitions.testTypes[testName] = testType;
+  if (testType === 'simple_numeric' && refLow && refHigh) {
+    if (!testDefinitions.refRanges) testDefinitions.refRanges = {};
+    testDefinitions.refRanges[testName] = { low: parseFloat(refLow), high: parseFloat(refHigh), unit: refUnit || '' };
+  }
+  if (testType === 'simple_select' && selectOptions) {
+    if (!testDefinitions.selectOptions) testDefinitions.selectOptions = {};
+    testDefinitions.selectOptions[testName] = selectOptions;
+  }
 
   renderUnitsList();
 
+  // Clear input fields
   const unitId = unit.replace(/[^a-z0-9]/gi, '_');
   const inputEl = document.getElementById('newTest_' + unitId);
   if (inputEl) inputEl.value = '';
+  const rangeLow = document.getElementById('refLow_' + unitId);
+  if (rangeLow) rangeLow.value = '';
+  const rangeHigh = document.getElementById('refHigh_' + unitId);
+  if (rangeHigh) rangeHigh.value = '';
+  const rangeUnit = document.getElementById('refUnit_' + unitId);
+  if (rangeUnit) rangeUnit.value = '';
+  const selectOpts = document.getElementById('selectOptions_' + unitId);
+  if (selectOpts) selectOpts.value = '';
 
   toast(`Test "${testName}" added to ${unit}`);
 }
-
 async function deleteTest(unit, test) {
   if (!confirm(`Delete test "${test}"?`)) return;
   try {
