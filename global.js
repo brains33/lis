@@ -51,13 +51,28 @@
         announcementAudio = new Audio('LIS.mp3');
         announcementAudio.preload = 'auto';
         announcementAudio.load();
-        // No autoplay tricks needed — sound is triggered by the send button click (a real user gesture)
+
+        // Workaround for autoplay policies: enable audio after first user click
+        document.body.addEventListener('click', function enableAudioOnce() {
+            if (announcementAudio) {
+                announcementAudio.play().catch(() => {});
+            }
+            document.body.removeEventListener('click', enableAudioOnce);
+        }, { once: true });
     }
 
     function playAnnouncementSound() {
-        if (!announcementAudio) return;
+        if (!announcementAudio || !audioEnabled) return;
         announcementAudio.currentTime = 0;
-        announcementAudio.play().catch(err => console.warn('Audio play failed:', err));
+        announcementAudio.play().catch(err => {
+            console.warn('Audio play blocked (autoplay policy):', err);
+            // Show a small hint that sound is blocked
+            const toast = document.createElement('div');
+            toast.textContent = '🔔 New announcement! Click anywhere to enable sound.';
+            toast.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001;';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        });
     }
 
     // ========== EXISTING FUNCTIONS (with sound added to realtime) ==========
@@ -155,9 +170,6 @@
 
             if (error) throw error;
             input.value = '';
-
-            // Play sound — this runs inside a click handler so browser allows it
-            playAnnouncementSound();
             
             // Show temporary confirmation
             const toast = document.createElement('div');
