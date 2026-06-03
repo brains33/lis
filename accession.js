@@ -213,10 +213,15 @@
 
     // --- OFFLINE: enqueue ---
     if (!navigator.onLine) {
-      if (typeof window._oqEnqueueSample === 'function') {
+      // Poll briefly in case offline_queue.js is still initialising (race condition)
+      let _oqReady = typeof window._oqEnqueueSample === 'function';
+      if (!_oqReady) {
+        await new Promise(r => setTimeout(r, 600));
+        _oqReady = typeof window._oqEnqueueSample === 'function';
+      }
+      if (_oqReady) {
         window._oqEnqueueSample(sampleRow, [...tempTests], currentSession.name, paystatus, isPaystack);
         toast('Saved offline. Will sync when internet returns.', 'warn');
-        // Show offline receipt with draft reference
         showOfflineReceipt({
           patient: name, priority: sampleRow.priority, tests: tempTests,
           totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
@@ -224,7 +229,21 @@
         });
         clearForm();
       } else {
-        toast('Offline queue not available – cannot save', 'error');
+        // offline_queue.js not loaded on this page — do a direct IndexedDB save
+        // so data is never lost even without the queue script
+        try {
+          await _accessionDirectOfflineSave(sampleRow, [...tempTests], currentSession.name, paystatus);
+          toast('Saved offline. Will sync when internet returns.', 'warn');
+          showOfflineReceipt({
+            patient: name, priority: sampleRow.priority, tests: tempTests,
+            totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
+            paymode: paymode, receiptNo: sampleRow.receipt_no, paymentDate: now.toISOString()
+          });
+          clearForm();
+        } catch(e) {
+          toast('Offline save failed — please check storage permissions', 'error');
+          console.error('[AC] offline fallback save failed', e);
+        }
       }
       if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
       return;
@@ -232,8 +251,38 @@
 
     // --- ONLINE: normal Supabase transaction ---
     try {
+      // Guard: ensure we have an authenticated client before trying to insert.
+      // If the client is missing or the session has expired, the insert will fail
+      // with an RLS error. Fall back to offline draft in that case.
+      if (!db) throw new Error('No authenticated Supabase client — session may have expired. Please reload.');
+
       const { data: sampleData, error: sampleError } = await db.from('samples').insert(sampleRow).select('id').single();
-      if (sampleError) throw sampleError;
+      if (sampleError) {
+        // RLS / auth errors: save as offline draft rather than losing the data
+        const isAuthError = sampleError.code === '42501' ||
+          (sampleError.message || '').toLowerCase().includes('row-level security') ||
+          (sampleError.message || '').toLowerCase().includes('violates') ||
+          (sampleError.message || '').toLowerCase().includes('jwt') ||
+          (sampleError.message || '').toLowerCase().includes('unauthorized');
+        if (isAuthError) {
+          console.warn('[AC] RLS/auth error on insert — saving as offline draft:', sampleError);
+          if (typeof window._oqEnqueueSample === 'function') {
+            window._oqEnqueueSample(sampleRow, [...tempTests], currentSession.name, paystatus, false);
+            toast('Session error — sample saved as offline draft and will sync automatically.', 'warn');
+            showOfflineReceipt({
+              patient: name, priority: sampleRow.priority, tests: tempTests,
+              totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
+              paymode: paymode, receiptNo: sampleRow.receipt_no, paymentDate: now.toISOString()
+            });
+            clearForm();
+          } else {
+            toast('Registration failed (auth error): ' + sampleError.message, 'error');
+          }
+          if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+          return;
+        }
+        throw sampleError;
+      }
 
       const sampleId = sampleData.id;
       const finalReceipt = `RCP-${sampleId}-${Date.now()}`;
@@ -527,7 +576,7 @@
       const sampleIds = [...new Set(rejectedTests.map(t => t.sample_id))];
       const { data: samplesData, error: sampleErr } = await db
         .from('samples')
-        .select('id, patient, age, gender, phone, collection_date, status')
+        .select('id, patient, age, gender, phone, collection_date, status, receipt_no')
         .in('id', sampleIds);
 
       if (sampleErr) throw sampleErr;
@@ -585,11 +634,13 @@
     let html = '';
     for (let group of rejectedGroups) {
       const s = group.sample;
+      const rcpNo = s.receipt_no || '';
       html += `
-        <div class="rejected-item">
+        <div class="rejected-item" data-receipt="${esc(rcpNo.toLowerCase())}">
           <div class="rejected-header">
             <div>
               <span style="font-family:monospace; font-weight:700; color:var(--primary);">MU-${s.id}</span>
+              ${rcpNo ? `<span style="font-family:monospace; font-size:0.65rem; color:#1d4ed8; background:#eff6ff; border:1px solid #bfdbfe; border-radius:5px; padding:1px 6px; margin-left:8px; vertical-align:middle;" title="Receipt / RCP — searchable"><i class="fas fa-receipt" style="margin-right:2px;font-size:0.58rem;"></i>${esc(rcpNo)}</span>` : ''}
               <span style="font-weight:600; margin-left:10px;">${esc(s.patient || '—')}</span>
               <span style="color:var(--text2); font-size:0.82rem; margin-left:8px;">${s.age ?? '?'}y ${esc(s.gender || '')}</span>
             </div>
@@ -626,7 +677,9 @@
     let visibleCount = 0;
 
     items.forEach(item => {
-      const match = !term || item.textContent.toLowerCase().includes(term);
+      // Also check data-receipt attribute set during render for RCP number search
+      const receipt = (item.dataset.receipt || '').toLowerCase();
+      const match = !term || item.textContent.toLowerCase().includes(term) || receipt.includes(term);
       item.style.display = match ? '' : 'none';
       if (match) visibleCount++;
     });
@@ -668,26 +721,42 @@
 
     // Online path
     try {
-      // Update only rejected tests → 'Processing', clear rejection_reason
-      const { error: updateTestErr } = await db
+      // Fetch ALL tests for this sample first so we can handle every status correctly,
+      // regardless of whether the old result_entry stored 'Rejected' on sample_tests or not.
+      const { data: allTests, error: fetchErr } = await db
         .from('sample_tests')
-        .update({ status: 'Processing', rejection_reason: null })
-        .eq('sample_id', sampleId)
-        .eq('status', 'Rejected');
-      if (updateTestErr) throw updateTestErr;
+        .select('id, status')
+        .eq('sample_id', sampleId);
+      if (fetchErr) throw fetchErr;
 
-      // Set sample status back to 'Processing'
+      // Reset only Rejected tests — clear their rejection fields and result so re-entry is clean.
+      // We deliberately do NOT touch tests that are already Ready/Verifying/Released —
+      // those are done and must keep their results and status.
+      for (const t of (allTests || [])) {
+        if (t.status === 'Rejected') {
+          await db.from('sample_tests')
+            .update({ status: 'Processing', rejection_reason: null, result: '', tech_name: '' })
+            .eq('id', t.id);
+        }
+      }
+
+      // Always reset the sample itself back to Processing so it re-appears in result entry.
       await db.from('samples').update({ status: 'Processing' }).eq('id', sampleId);
 
-      // Check if any tests are already 'Ready' (previously done)
-      const { data: allTests } = await db
-        .from('sample_tests')
-        .select('status')
-        .eq('sample_id', sampleId);
+      const hasDoneTests = allTests && allTests.some(t => t.status === 'Ready' || t.status === 'Verifying');
 
-      const hasReadyTests = allTests && allTests.some(t => t.status === 'Ready');
+      // Restore any Verifying tests back to Ready so result entry auto-sends once the
+      // resolved test is re-entered.
+      for (const t of (allTests || [])) {
+        if (t.status === 'Verifying') {
+          await db.from('sample_tests')
+            .update({ status: 'Ready' })
+            .eq('id', t.id);
+        }
+      }
 
-      if (hasReadyTests) {
+      if (hasDoneTests) {
+        // Sample had some tests already done — send back to Result Entry (step 4)
         await db.from('coc_events')
           .update({ done: false, active: true, actor_name: currentSession.name, occurred_at: new Date().toISOString() })
           .eq('sample_id', sampleId)
@@ -697,6 +766,7 @@
           .eq('sample_id', sampleId)
           .gte('step_index', 5);
       } else {
+        // No tests were done yet — push back to Processing (step 3)
         await db.from('coc_events')
           .update({ done: false, active: true, actor_name: currentSession.name, occurred_at: new Date().toISOString() })
           .eq('sample_id', sampleId)
@@ -708,7 +778,7 @@
       }
 
       await addAudit('Rejection Resolved', sampleId,
-        `Resolved by reception — rejected tests set to Processing${hasReadyTests ? '; previously Done tests preserved' : ''}`);
+        `Resolved by reception — rejected tests set to Processing${hasDoneTests ? '; previously Done tests preserved as Ready' : ''}`);
       toast(`✓ MU-${sampleId} resolved — now available for result entry`);
 
       await loadRejectedSamples(); // refresh from DB
@@ -882,4 +952,69 @@
 
   // Display logged-in user
   document.getElementById('userDisplay').innerHTML = `<i class="fas fa-user-circle"></i> ${esc(currentSession.name)} (${esc(currentSession.role)})`;
+  // ─── Direct offline save (fallback when offline_queue.js not yet loaded) ────
+  // Writes to the same IndexedDB stores that offline_queue.js uses, so data
+  // syncs normally once the queue script initialises on result_entry or on reload.
+  async function _accessionDirectOfflineSave(sampleRow, testRows, registeredBy, paystatus) {
+    const DB_NAME    = 'muujiza_offline';
+    const DB_VERSION = 8;
+    const idb = await new Promise((res, rej) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => {
+        const d = e.target.result;
+        const stores = {
+          'outbox':          { keyPath: 'id', autoIncrement: true },
+          'samples_cache':   { keyPath: 'id' },
+          'meta':            { keyPath: 'key' },
+          'test_definitions':{ keyPath: 'id', autoIncrement: true },
+          'rejected_groups': { keyPath: 'key' },
+          'pending_samples': { keyPath: 'offline_ref' }
+        };
+        for (const [name, opts] of Object.entries(stores)) {
+          if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, opts);
+        }
+      };
+      req.onsuccess = e => res(e.target.result);
+      req.onerror   = e => rej(e.target.error);
+    });
+
+    const put = (store, val) => new Promise((res, rej) => {
+      const tx = idb.transaction(store, 'readwrite');
+      const req = tx.objectStore(store).put(val);
+      req.onsuccess = () => res(req.result);
+      req.onerror   = () => rej(req.error);
+    });
+
+    const offlineRef = sampleRow.receipt_no;
+    const now = new Date().toISOString();
+
+    // pending_samples — same format as _oqAddPendingSample in offline_queue.js
+    await put('pending_samples', { offline_ref: offlineRef, sample: sampleRow, tests: testRows, queued_at: now });
+
+    // samples_cache — so result_entry shows it immediately offline
+    await put('samples_cache', {
+      id: `OFFLINE-${offlineRef}`,
+      patient: sampleRow.patient, age: sampleRow.age, gender: sampleRow.gender,
+      priority: sampleRow.priority, status: sampleRow.status,
+      tests: testRows.map(t => ({ ...t, sample_id: null, id: null, result: '', tech_name: '', status: 'Collected' })),
+      offline_ref: offlineRef, pay_status: paystatus, pay_mode: sampleRow.pay_mode,
+      total_amount: sampleRow.total_amount, amount_paid: sampleRow.amount_paid,
+      balance_due: sampleRow.balance_due, collection_date: sampleRow.collection_date,
+      collection_time: sampleRow.collection_time, registered_by: registeredBy
+    });
+
+    // outbox — replay when offline_queue.js next flushes (same payload format)
+    await put('outbox', {
+      type: 'registerSample',
+      payload: {
+        sampleRow: JSON.parse(JSON.stringify(sampleRow)),
+        testRows:  JSON.parse(JSON.stringify(testRows)),
+        registeredBy, paystatus, isPaystack: false, offlineRef
+      },
+      queued_at: now, attempts: 0
+    });
+
+    console.log('[AC] direct offline save OK —', offlineRef);
+  }
+
 })();

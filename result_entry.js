@@ -1,4 +1,3 @@
-
 // ========== SUPABASE CLIENT ==========
 const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
@@ -7,10 +6,11 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const currentSession = checkAuth(['technologist', 'admin', 'supervisor']);
 const currentUser    = currentSession;
 
-// Build token-authenticated client — injects x-lis-token on every request
+// Build token‑authenticated client once – page reloads on login/refresh, so always fresh
 window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const db = window._supabaseClient;
 window.db = db; // expose for offline_queue.js
+
 // ========== HELPERS ==========
 function esc(str) {
   if (str === null || str === undefined) return '';
@@ -38,7 +38,7 @@ function startClock() {
   tick(); setInterval(tick, 1000);
 }
 
-// ========== AUDIT (FIXED: use 'db') ==========
+// ========== AUDIT ==========
 async function addAudit(action, sampleId, details) {
   try {
     await db.from('audit_log').insert([{
@@ -67,7 +67,6 @@ async function loadCOCEvents(sampleId) {
     data.forEach(e => { cocMap[e.step_index] = { done: e.done, active: e.active }; });
     return cocMap;
   } catch(err) {
-    // Offline: return a sensible default so the modal still opens
     console.warn('[RE] loadCOCEvents offline, using default map');
     return { 0:{done:true,active:false}, 1:{done:true,active:false},
              2:{done:true,active:false}, 3:{done:false,active:true} };
@@ -82,7 +81,6 @@ async function updateCOCEvent(sampleId, stepIndex, done, active) {
       .match({ sample_id: sampleId, step_index: stepIndex });
     if (error) throw error;
   } catch(err) {
-    // Queue for sync when back online
     if (typeof _oqEnqueue === 'function') {
       const actorName = currentUser?.name || 'Tech';
       await _oqEnqueue('updateCOCEvent', { sampleId, stepIndex, done, active, actorName });
@@ -93,36 +91,52 @@ async function updateCOCEvent(sampleId, stepIndex, done, active) {
   }
 }
 
-// ========== LOAD TEST DEFINITIONS ==========
-let testDefinitions = { testTypes: {} };
+// ========== LOAD TEST DEFINITIONS (with ref ranges & select options) ==========
+let testDefinitions = { testTypes: {}, refRanges: {}, selectOptions: {} };
 async function loadTestDefinitions() {
   try {
     const { data, error } = await db.from('test_definitions').select('*');
     if (error) throw error;
-    testDefinitions.testTypes = {};
+    testDefinitions = { testTypes: {}, refRanges: {}, selectOptions: {} };
     data.forEach(td => {
       if (td.test_type !== 'simple') {
         testDefinitions.testTypes[td.test_name] = td.test_type;
       }
+      // Store reference range for simple_numeric
+      if (td.test_type === 'simple_numeric' && td.ref_low !== null && td.ref_high !== null) {
+        testDefinitions.refRanges[td.test_name] = {
+          low: td.ref_low, high: td.ref_high, unit: td.ref_unit || ''
+        };
+      }
+      // Store options for simple_select
+      if (td.test_type === 'simple_select' && td.select_options && td.select_options.length) {
+        testDefinitions.selectOptions[td.test_name] = td.select_options;
+      }
     });
-    // Cache raw data for offline use (offline_queue.js reads this)
     if (typeof _oqCacheTestDefinitions === 'function') {
       _oqCacheTestDefinitions(data).catch(() => {});
     }
   } catch (err) {
     console.error(err);
-    // Offline fallback — try to restore from IDB cache
     if (typeof _oqGetCachedTestDefinitions === 'function') {
       try {
         const cached = await _oqGetCachedTestDefinitions();
         if (cached && cached.length) {
-          testDefinitions.testTypes = {};
+          testDefinitions = { testTypes: {}, refRanges: {}, selectOptions: {} };
           cached.forEach(td => {
             if (td.test_type && td.test_type !== 'simple')
               testDefinitions.testTypes[td.test_name] = td.test_type;
+            if (td.test_type === 'simple_numeric' && td.ref_low !== null && td.ref_high !== null) {
+              testDefinitions.refRanges[td.test_name] = {
+                low: td.ref_low, high: td.ref_high, unit: td.ref_unit || ''
+              };
+            }
+            if (td.test_type === 'simple_select' && td.select_options && td.select_options.length) {
+              testDefinitions.selectOptions[td.test_name] = td.select_options;
+            }
           });
           console.log('[RE] loadTestDefinitions: restored from offline cache');
-          return; // silent success
+          return;
         }
       } catch(e) {}
     }
@@ -130,7 +144,7 @@ async function loadTestDefinitions() {
   }
 }
 
-// ========== LOAD SAMPLES ==========
+// ========== LOAD SAMPLES (clean version, like the check file) ==========
 let samples = [];
 let currentSample = null;
 
@@ -143,8 +157,12 @@ async function loadSamples() {
       .order('id', { ascending: false })
       .limit(200);
     if (error) throw error;
-    samples = data.map(s => ({
+
+    const safeData = Array.isArray(data) ? data : [];
+    let serverSamples = safeData.map(s => ({
       ...s,
+      online_ref: `REF-${s.id}`,
+      former_offline_ref: s.former_offline_ref || null,
       tests: s.sample_tests || [],
       stype: s.sample_type,
       due: s.due_date,
@@ -154,17 +172,32 @@ async function loadSamples() {
       collDate: s.collection_date,
       collTime: s.collection_time
     }));
-    // Warm the offline cache every successful load
-    if (typeof _oqMergeSampleList === 'function') _oqMergeSampleList(samples).catch(() => {});
+
+    // Merge any pending offline samples — wait up to 1s for offline_queue.js to init
+    let merged = serverSamples;
+    if (typeof window._oqMergePendingSamples !== 'function') {
+      await new Promise(r => setTimeout(r, 800));
+    }
+    if (typeof window._oqMergePendingSamples === 'function') {
+      merged = await window._oqMergePendingSamples(serverSamples);
+    }
+    samples = merged;
+
+    // Cache for offline use
+    if (typeof _oqCacheSampleList === 'function') {
+      await _oqCacheSampleList(samples);
+    }
   } catch (err) {
-    console.warn('[RE] loadSamples failed — attempting offline cache:', err);
-    // Fall back to IndexedDB cache (offline_queue.js must be loaded first)
+    console.warn('[RE] loadSamples failed – attempting offline cache:', err);
     if (typeof _oqGetCachedSamples === 'function') {
       try {
-        const cached = await _oqGetCachedSamples();
+        let cached = await _oqGetCachedSamples();
+        if (typeof window._oqMergePendingSamples === 'function') {
+          cached = await window._oqMergePendingSamples(cached);
+        }
         samples = cached.filter(s => s.status === 'Processing' || s.status === 'Collected');
         if (samples.length) {
-          toast('Offline — showing cached samples', 'warn');
+          toast('Offline – showing cached & pending samples', 'warn');
           return;
         }
       } catch(e) {}
@@ -175,8 +208,10 @@ async function loadSamples() {
 }
 
 async function saveSample(sample) {
-  // Always update local cache first so offline edits survive
   if (typeof _oqCacheSample === 'function') _oqCacheSample(sample).catch(() => {});
+
+  // Offline draft — no DB record exists yet, just keep in local cache
+  if (typeof sample.id === 'string' && sample.id.startsWith('OFFLINE-')) return;
 
   try {
     const { error: sampleError } = await db
@@ -190,61 +225,74 @@ async function saveSample(sample) {
     if (sampleError) throw sampleError;
 
     for (const test of sample.tests) {
-      const { error: testError } = await db
-        .from('sample_tests')
-        .update({
-          result: test.result,
-          tech_name: test.tech,
-          status: test.status
-        })
-        .eq('id', test.id);
-      if (testError) throw testError;
+      if (test.id) {
+        // Happy path — real DB id known
+        const { error: testError } = await db
+          .from('sample_tests')
+          .update({ result: test.result, tech_name: test.tech,
+                    status: test.status, rejection_reason: test.rejection_reason || null })
+          .eq('id', test.id);
+        if (testError) throw testError;
+      } else if (test.test_name) {
+        // Fallback — sample synced but this test row's id not yet in cache;
+        // match by sample_id + test_name (safe because test names are unique per sample)
+        const { error: testError } = await db
+          .from('sample_tests')
+          .update({ result: test.result, tech_name: test.tech,
+                    status: test.status, rejection_reason: test.rejection_reason || null })
+          .eq('sample_id', sample.id)
+          .eq('test_name', test.test_name);
+        if (testError) throw testError;
+      }
     }
   } catch(err) {
-    // Queue for sync when back online
     if (typeof _oqEnqueue === 'function') {
       await _oqEnqueue('saveSample', { sample: JSON.parse(JSON.stringify(sample)) });
       console.warn('[RE] saveSample queued offline:', err);
     } else {
-      throw err; // No offline queue — let caller handle
+      throw err;
     }
   }
 }
 
-function getTestType(testName) {
-  // 1. Exact match from DB first
-  if (testDefinitions.testTypes[testName]) return testDefinitions.testTypes[testName];
+// Expose for offline_queue.js
+window.saveSample = saveSample;
+window.addAudit = addAudit;
+window.updateCOCEvent = updateCOCEvent;
+window.loadSamples = loadSamples;
+window.renderProcessingSamples = renderProcessingSamples;
 
-  // 2. Normalise fallback — covers name mismatches between accession & test_definitions
+// ========== TEST TYPE DETECTION ==========
+function getTestType(testName) {
+  if (testDefinitions.testTypes[testName]) return testDefinitions.testTypes[testName];
   const n = testName.toLowerCase().trim();
-  if (/liver\s*function|lft\b/.test(n))                         return 'complex_lft';
-  if (/renal\s*function|kidney\s*function|rft\b/.test(n))       return 'complex_rft';
+  if (/liver\s*function|lft\b/.test(n)) return 'complex_lft';
+  if (/renal\s*function|kidney\s*function|rft\b/.test(n)) return 'complex_rft';
   if (/full\s*blood\s*count|complete\s*blood|cbc\b|fbc\b/.test(n)) return 'complex_cbc';
-  if (/thyroid|tsh|thyroid\s*function/.test(n))                 return 'complex_thyroid';
-  if (/lipid\s*profile|cholesterol/.test(n))                    return 'complex_lipid';
+  if (/thyroid|tsh|thyroid\s*function/.test(n)) return 'complex_thyroid';
+  if (/lipid\s*profile|cholesterol/.test(n)) return 'complex_lipid';
   if (/coagul|prothrombin|clotting\s*profile|pt\/inr|coag\b/.test(n)) return 'complex_coag';
-  if (/widal/.test(n))                                          return 'complex_widal';
+  if (/widal/.test(n)) return 'complex_widal';
   if (/urine\s*mcs|urine\s*m\/c\/s|urine\s*culture|urinalysis\s*mcs/.test(n)) return 'complex_urine_mcs';
-  if (/stool\s*mcs|stool\s*m\/c\/s|stool\s*culture/.test(n))   return 'complex_stool_mcs';
+  if (/stool\s*mcs|stool\s*m\/c\/s|stool\s*culture/.test(n)) return 'complex_stool_mcs';
   if (/urinalysis|urine\s*r\/e|u\/a\b|routine\s*urine/.test(n)) return 'complex_urinalysis';
   if (/culture|sensitivity|c\/s\b|cs\b/.test(n) && /stool|faec/.test(n)) return 'complex_stool_cs';
-  if (/culture|sensitivity|c\/s\b|cs\b/.test(n))                return 'complex_culture';
-  if (/malaria|rdt|thick.*film|blood.*film/.test(n))            return 'complex_malaria';
-  if (/genexpert|xpert|tb.*pcr|mtb/.test(n))                   return 'complex_tb_genexpert';
-  if (/serology|hbsag|hepatitis/.test(n))                      return 'complex_serology';
-  if (/iron\s*studies|iron\s*profile|serum\s*iron/.test(n))    return 'complex_iron';
-  if (/bone\s*profile|calcium\s*profile/.test(n))              return 'complex_bone';
-  if (/cardiac|troponin|ckmb/.test(n))                         return 'complex_cardiac';
-  if (/ogtt|glucose\s*tolerance/.test(n))                      return 'complex_ogtt';
-  if (/csf|cerebrospinal/.test(n))                             return 'complex_csf';
-  if (/blood\s*gas|abg\b/.test(n))                             return 'complex_abg';
-  if (/semen\s*analysis|seminal/.test(n))                      return 'complex_semen';
-  if (/packed\s*cell|pcv\b|haematocrit/.test(n))               return 'complex_pcv';
-  if (/haemoglobin|hemoglobin|\bhb\b/.test(n))                 return 'complex_hb';
-  if (/esr\b|sedimentation/.test(n))                           return 'complex_esr';
-  if (/random\s*blood\s*sugar|rbs\b/.test(n))                  return 'complex_rbs';
-  if (/fasting\s*blood\s*sugar|fbs\b/.test(n))                 return 'complex_fbs';
-
+  if (/culture|sensitivity|c\/s\b|cs\b/.test(n)) return 'complex_culture';
+  if (/malaria|rdt|thick.*film|blood.*film/.test(n)) return 'complex_malaria';
+  if (/genexpert|xpert|tb.*pcr|mtb/.test(n)) return 'complex_tb_genexpert';
+  if (/serology|hbsag|hepatitis/.test(n)) return 'complex_serology';
+  if (/iron\s*studies|iron\s*profile|serum\s*iron/.test(n)) return 'complex_iron';
+  if (/bone\s*profile|calcium\s*profile/.test(n)) return 'complex_bone';
+  if (/cardiac|troponin|ckmb/.test(n)) return 'complex_cardiac';
+  if (/ogtt|glucose\s*tolerance/.test(n)) return 'complex_ogtt';
+  if (/csf|cerebrospinal/.test(n)) return 'complex_csf';
+  if (/blood\s*gas|abg\b/.test(n)) return 'complex_abg';
+  if (/semen\s*analysis|seminal/.test(n)) return 'complex_semen';
+  if (/packed\s*cell|pcv\b|haematocrit/.test(n)) return 'complex_pcv';
+  if (/haemoglobin|hemoglobin|\bhb\b/.test(n)) return 'complex_hb';
+  if (/esr\b|sedimentation/.test(n)) return 'complex_esr';
+  if (/random\s*blood\s*sugar|rbs\b/.test(n)) return 'complex_rbs';
+  if (/fasting\s*blood\s*sugar|fbs\b/.test(n)) return 'complex_fbs';
   return 'simple';
 }
 
@@ -437,20 +485,12 @@ const SEROLOGY_PARAMS = [
 ];
 
 // ========== MCS MICROSCOPY PARAMS ==========
-// Used by complex_urine_mcs and complex_stool_mcs
-// Microscopy section is shown FIRST, then organism + C&S below it.
-
 const URINE_MICRO_PARAMS = [
-  // ── PHYSICAL ──────────────────────────────────────────────────────────
   {key:'colour',      name:'Colour',             unit:'', section:'Physical', type:'select',
    options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown','Amber','Orange']},
   {key:'appearance',  name:'Appearance',         unit:'', section:'Physical', type:'select',
    options:['Clear','Slightly Turbid','Turbid','Cloudy','Bloody','Frothy']},
   {key:'volume',      name:'Volume',             unit:'mL', section:'Physical', type:'number', low:0, high:3000, step:10},
-
-  
-
-  // ── MICROSCOPY ────────────────────────────────────────────────────────
   {key:'wbc_micro',   name:'WBC (Pus Cells)',   unit:'/HPF', section:'Microscopy', type:'select',
    options:['None seen','1–5','6–10','11–20','21–50','>50','Too numerous to count (TNTC)']},
   {key:'rbc_micro',   name:'RBC',               unit:'/HPF', section:'Microscopy', type:'select',
@@ -470,8 +510,7 @@ const URINE_MICRO_PARAMS = [
   {key:'yeast',       name:'Yeast Cells',       unit:'',     section:'Microscopy', type:'select',
    options:['None seen','Few','Moderate','Many']},
   {key:'parasite',    name:'Parasite / Ova',    unit:'',     section:'Microscopy', type:'select',
-   options:['None seen','Trichomonas vaginalis',
-            'Schistosoma haematobium ova','Other — see comments']},
+   options:['None seen','Trichomonas vaginalis','Schistosoma haematobium ova','Other — see comments']},
   {key:'mucus',       name:'Mucus Threads',     unit:'',     section:'Microscopy', type:'select',
    options:['None seen','Few','Moderate','Many']},
   {key:'sperm',       name:'Spermatozoa',       unit:'',     section:'Microscopy', type:'select',
@@ -480,12 +519,10 @@ const URINE_MICRO_PARAMS = [
 ];
 
 const STOOL_MICRO_PARAMS = [
-  // Macroscopy
   {key:'consistency',  name:'Consistency',          unit:'', section:'Macroscopy', type:'select', options:['Formed','Soft','Watery','Loose','Bloody','Mucoid','Fatty']},
   {key:'colour_stool', name:'Colour',               unit:'', section:'Macroscopy', type:'select', options:['Brown','Yellow','Green','Black (Tarry)','Red (Bloody)','Grey/Clay','Pale/Fatty']},
   {key:'blood_stool',  name:'Blood (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['Absent','Present']},
   {key:'mucus_stool',  name:'Mucus (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['Absent','Present']},
-  // Microscopy
   {key:'wbc_stool',    name:'WBC (Pus Cells)',      unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','>20']},
   {key:'rbc_stool',    name:'RBC',                  unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','>20']},
   {key:'fat_globules', name:'Fat Globules',         unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
@@ -514,13 +551,15 @@ async function renderProcessingSamples() {
 
   if (search) ready = ready.filter(s =>
     s.id.toString().includes(search) ||
+    (s.online_ref && s.online_ref.toLowerCase().includes(search)) ||
     (s.patient || '').toLowerCase().includes(search) ||
-    (s.offline_ref  || '').toLowerCase().includes(search) ||
-    (s.receipt_no   || '').toLowerCase().includes(search)
+    (s.offline_ref || '').toLowerCase().includes(search) ||
+    (s.former_offline_ref || '').toLowerCase().includes(search) ||
+    (s.receipt_no || '').toLowerCase().includes(search)
   );
   if (priority !== 'all') ready = ready.filter(s => s.priority === priority);
 
-  const priOrder = { STAT:0, Urgent:1, Routine:2 };
+  const priOrder = { STAT: 0, Urgent: 1, Routine: 2 };
   ready.sort((a, b) => (priOrder[a.priority] ?? 2) - (priOrder[b.priority] ?? 2) || b.id - a.id);
 
   let badge = document.getElementById('sampleCountBadge');
@@ -528,8 +567,9 @@ async function renderProcessingSamples() {
 
   let tbody = document.getElementById('samplesTable');
   if (!tbody) return;
+
   if (!ready.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-microscope" style="font-size:2rem;opacity:0.3;display:block;margin-bottom:12px;"></i>No samples ready for result entry. Register new samples in Accession.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">No samples ready for result entry.</div></td></tr>`;
     return;
   }
 
@@ -537,28 +577,41 @@ async function renderProcessingSamples() {
     let priCls = s.priority === 'STAT' ? 'badge-stat' : s.priority === 'Urgent' ? 'badge-urgent' : 'badge-routine';
     let staCls = s.status === 'Collected' ? 'badge-collected' : 'badge-processing';
     const readyCount = s.tests.filter(t => t.status === 'Ready').length;
+    const rejectedCount = s.tests.filter(t => t.status === 'Rejected').length;
     const totalTests = s.tests.length;
-    const allReady = totalTests > 0 && readyCount === totalTests;
+    const actionableTests = totalTests - rejectedCount;
+    const allReady = actionableTests > 0 && readyCount === actionableTests;
     let progressNote = '';
-    if (totalTests > 1 && readyCount > 0 && !allReady) {
-      progressNote = ` <small style="color:var(--yellow-light);">(${readyCount}/${totalTests} ready)</small>`;
+    if (rejectedCount > 0 && readyCount < actionableTests) {
+      progressNote = ` <small style="color:#b91c1c;">(${rejectedCount} rejected · ${readyCount}/${actionableTests} ready)</small>`;
+    } else if (rejectedCount > 0 && allReady) {
+      progressNote = ` <small style="color:var(--green-glow);">✓ Ready <span style="color:#b91c1c;">(${rejectedCount} rejected)</span></small>`;
+    } else if (totalTests > 1 && readyCount > 0 && !allReady) {
+      progressNote = ` <small style="color:var(--yellow-light);">(${readyCount}/${actionableTests} ready)</small>`;
     } else if (allReady && totalTests > 1) {
       progressNote = ` <small style="color:var(--green-glow);">✓ All ready</small>`;
     } else if (s.tests.some(t => t.result && t.result.trim())) {
       progressNote = ` <small style="color:var(--yellow-light);">(draft)</small>`;
     }
     const testList = s.tests.map(t => {
-      const icon = t.status === 'Ready' ? '✅' : t.result && t.result.trim() ? '📝' : '⏳';
+      const icon = t.status === 'Ready' ? '✅' : t.status === 'Rejected' ? '🚫' : t.result && t.result.trim() ? '📝' : '⏳';
       return `${icon} ${esc(t.test_name)}`;
     }).join('<br>');
-    return `<tr>
-      <td style="font-family:monospace; font-weight:600;">MU-${s.id}${s.offline_ref ? `<br><span style="font-family:monospace;font-size:0.65rem;color:var(--amber);background:var(--amber-l);border:1px solid #fde68a;padding:1px 6px;border-radius:6px;display:inline-block;margin-top:3px;" title="Offline draft ref">${esc(s.offline_ref)}</span>` : ''}</td>
-      <td><strong>${esc(s.patient)}</strong><br><small style="color:var(--text2);">${s.age ?? '?'}y ${esc(s.gender)}</small></td>
-      <td><small>${testList}</small>${progressNote}</td>
-      <td><span class="badge ${priCls}">${esc(s.priority)}</span></td>
-      <td><span class="badge ${staCls}">${esc(s.status)}</span></td>
-      <td><button class="btn btn-primary btn-sm" onclick="openResultModal(${s.id})"><i class="fas fa-edit"></i> Enter Results</button></td>
-    </tr>`;
+
+    return `
+      <tr>
+        <td style="font-family:monospace; font-weight:600;">
+          MU-${s.id}<br>
+          <span style="font-size:0.7rem; color:var(--primary);">${esc(s.online_ref)}</span>
+          ${s.offline_ref ? `<br><span style="font-size:0.65rem;color:var(--amber);background:var(--amber-l);border:1px solid #fde68a;padding:1px 6px;border-radius:6px;display:inline-block;margin-top:3px;" title="Offline draft — pending sync">${esc(s.offline_ref)}</span>` : ''}
+          ${s.former_offline_ref ? `<br><span style="font-size:0.65rem;color:#059669;background:#ecfdf5;border:1px solid #6ee7b7;padding:1px 6px;border-radius:6px;display:inline-block;margin-top:3px;" title="Registered offline — synced. Real ID: MU-${s.id}">✓ ${esc(s.former_offline_ref)}</span>` : ''}
+        </td>
+        <td><strong>${esc(s.patient)}</strong><br><small style="color:var(--text2);">${s.age ?? '?'}y ${esc(s.gender)}</small></td>
+        <td><small>${testList}</small>${progressNote}</td>
+        <td><span class="badge ${priCls}">${esc(s.priority)}</span></td>
+        <td><span class="badge ${staCls}">${esc(s.status)}</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="openResultModal('${s.id}')"><i class="fas fa-edit"></i> Enter Results</button></td>
+      </tr>`;
   }).join('');
 }
 
@@ -590,7 +643,7 @@ window.removeSensitivityRow = function(containerId, btn) {
 // ========== OPEN MODAL (full panel generation) ==========
 async function openResultModal(id) {
   await loadSamples();
-  let sample = samples.find(s => s.id === id);
+  let sample = samples.find(s => String(s.id) === String(id));
   if (!sample) { toast('Sample not found', 'error'); return; }
 
   let cocEvents = await loadCOCEvents(sample.id);
@@ -615,9 +668,25 @@ async function openResultModal(id) {
   const testForms = document.getElementById('testForms');
   const cocTimeline = document.getElementById('cocTimeline');
 
-  if (modalTitle) modalTitle.innerHTML = `Results — MU-${currentSample.id} | ${esc(currentSample.patient)}`;
+  if (modalTitle) {
+    // Always show a status pill
+    const statusPill = currentSample.offline_ref
+      ? ` <span style="font-size:0.65rem;font-weight:600;color:var(--amber);background:var(--amber-l);border:1px solid #fde68a;padding:2px 8px;border-radius:20px;vertical-align:middle;" title="Registered offline — pending sync to server">OFFLINE DRAFT</span>`
+      : (currentSample.former_offline_ref
+          ? ` <span style="font-size:0.65rem;font-weight:600;color:#059669;background:#ecfdf5;border:1px solid #6ee7b7;padding:2px 8px;border-radius:20px;vertical-align:middle;" title="Was registered offline — now synced">✓ SYNCED</span>`
+          : '');
+    modalTitle.innerHTML = `Results — MU-${currentSample.id} | ${esc(currentSample.patient)}${statusPill}`;
+  }
   if (modalSubtitle) modalSubtitle.textContent = `${currentSample.age ?? '?'}y ${currentSample.gender} | ${currentSample.sample_type ?? ''} | Collected: ${currentSample.collection_date ?? ''} | ${currentSample.collection_time ?? ''}`;
-  if (sampleInfo) sampleInfo.innerHTML = `<strong>Clinician:</strong> ${esc(currentSample.clinician || '—')} &nbsp;|&nbsp; <strong>History:</strong> ${esc(currentSample.history || '—')} &nbsp;|&nbsp; <strong>Priority:</strong> ${esc(currentSample.priority)}`;
+  if (sampleInfo) {
+    // Always show offline ref if present (either still-offline or already synced).
+    // Technologist can cross-reference the receipt slip with the offline ref.
+    const offlineRef = currentSample.offline_ref || currentSample.former_offline_ref;
+    const offlineRefHtml = offlineRef
+      ? ` &nbsp;|&nbsp; <strong>Offline Ref:</strong> <span style="font-family:monospace;font-size:0.82rem;color:#059669;background:#f0fdf4;border:1px solid #bbf7d0;padding:1px 7px;border-radius:6px;" title="Original offline receipt reference">${esc(offlineRef)}</span>`
+      : '';
+    sampleInfo.innerHTML = `<strong>Clinician:</strong> ${esc(currentSample.clinician || '—')} &nbsp;|&nbsp; <strong>History:</strong> ${esc(currentSample.history || '—')} &nbsp;|&nbsp; <strong>Priority:</strong> ${esc(currentSample.priority)}${offlineRefHtml}`;
+  }
 
   let formsHtml = '';
   currentSample.tests.forEach((test, idx) => {
@@ -660,7 +729,7 @@ async function openResultModal(id) {
                 <th style="padding:10px 14px; text-align:left; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; color:#1F6E43; border-right:1px solid #cde5d8;">Organism</th>
                 <th style="padding:10px 14px; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; color:#1F6E43; border-right:1px solid #cde5d8;">O Antigen (TO)</th>
                 <th style="padding:10px 14px; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; color:#1F6E43;">H Antigen (TH)</th>
-              </tr>
+              <tr>
             </thead>
             <tbody>
               ${widalOrganisms.map((org, ri) => `
@@ -953,7 +1022,6 @@ async function openResultModal(id) {
         });
         formsHtml += `</div>`;
       });
-      // Culture section
       let organism = data.organism || '';
       let sensitivities = data.sensitivities || [];
       let containerId = `umcs_sens_${idx}`;
@@ -1001,7 +1069,6 @@ async function openResultModal(id) {
         });
         formsHtml += `</div>`;
       });
-      // Culture section
       let organism = data.organism || '';
       let sensitivities = data.sensitivities || [];
       let containerId = `smcs_sens_${idx}`;
@@ -1042,54 +1109,93 @@ async function openResultModal(id) {
         <input type="number" step="0.1" min="${range.low}" max="${range.high}" id="${key}_${idx}" value="${val}" class="${flagCls}">
       </div>`;
     }
+    else if (testType === 'simple_numeric') {
+      let val = test.result || '';
+      let range = testDefinitions.refRanges[test.test_name];
+      let label = 'Result (numeric)';
+      if (range) {
+        label = `Result (numeric) – Ref: ${range.low}–${range.high} ${range.unit}`;
+      }
+      formsHtml += `<div class="param-item">
+        <label>${label}</label>
+        <input type="number" step="any" id="textResult_${idx}" value="${esc(val)}" class="form-input">
+      </div>`;
+    }
+    else if (testType === 'simple_select') {
+      let options = testDefinitions.selectOptions[test.test_name] || ['Negative', 'Positive', 'Non‑reactive', 'Reactive', 'Not detected', 'Detected'];
+      let val = test.result || '';
+      formsHtml += `<div class="param-item">
+        <label>Result</label>
+        <select id="textResult_${idx}">
+          ${options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+        </select>
+      </div>`;
+    }
     else {
       formsHtml += `<textarea id="textResult_${idx}" class="form-textarea" placeholder="Enter result…">${esc(test.result || '')}</textarea>`;
     }
-    // ── Per-test "Done" toggle button ──────────────────────
+
     const isAlreadyReady = test.status === 'Ready';
+    const isRejected = test.status === 'Rejected';
     const isOtherTechReady = isAlreadyReady && test.tech && test.tech !== (currentUser?.name || '');
     formsHtml += `</div>`; // close .test-block-body
-    formsHtml += `
-      <div class="test-done-row" id="doneRow_${idx}">
-        ${isOtherTechReady
-          ? `<div class="test-done-locked"><i class="fas fa-check-circle"></i> Entered by ${esc(test.tech)}</div>`
-          : `<button
-              type="button"
-              class="test-done-btn ${isAlreadyReady ? 'is-done' : ''}"
-              id="doneBtn_${idx}"
-              onclick="toggleTestDone(${idx})"
-            >
-              <i class="fas ${isAlreadyReady ? 'fa-check-circle' : 'fa-circle'}"></i>
-              <span>${isAlreadyReady ? 'Done ✓' : 'Mark as Done'}</span>
-            </button>`
-        }
-      </div>`;
+
+    if (isRejected) {
+      formsHtml += `
+        <div class="test-done-row" id="doneRow_${idx}" style="background:#fff0f0; border:1.5px solid #fca5a5; border-radius:10px; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <div style="color:#b91c1c; font-weight:700; font-size:0.85rem;">
+            <i class="fas fa-ban"></i> Test Rejected
+            ${test.rejection_reason ? `<span style="font-weight:400; margin-left:8px; font-size:0.78rem;">— ${esc(test.rejection_reason)}</span>` : ''}
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="resolveTestRejection(${idx})" style="font-size:0.75rem;">
+            <i class="fas fa-undo"></i> Resolve & Re-enter
+          </button>
+        </div>`;
+    } else {
+      formsHtml += `
+        <div class="test-done-row" id="doneRow_${idx}" style="display:flex; align-items:center; gap:8px;">
+          ${isOtherTechReady
+            ? `<div class="test-done-locked"><i class="fas fa-check-circle"></i> Entered by ${esc(test.tech)}</div>`
+            : `<button
+                type="button"
+                class="test-done-btn ${isAlreadyReady ? 'is-done' : ''}"
+                id="doneBtn_${idx}"
+                onclick="toggleTestDone(${idx})"
+              >
+                <i class="fas ${isAlreadyReady ? 'fa-check-circle' : 'fa-circle'}"></i>
+                <span>${isAlreadyReady ? 'Done ✓' : 'Mark as Done'}</span>
+              </button>`
+          }
+          <button type="button" class="btn btn-sm" style="background:#fff0f0; color:#b91c1c; border:1.5px solid #fca5a5; font-size:0.75rem; padding:6px 12px; border-radius:8px;" onclick="openTestRejectModal(${idx})">
+            <i class="fas fa-ban"></i> Reject Test
+          </button>
+        </div>`;
+    }
     formsHtml += `</div>`; // close .test-block
   });
   if (testForms) testForms.innerHTML = formsHtml;
 
-  // ── Auto-save on input (debounced 2 s) ─────────────────
+  // Auto‑save debouncers — 800 ms so results persist before Done/Reject toggles
   let _autoSaveTimer = null;
-  testForms.addEventListener('input', () => {
+  function _triggerAutoSave() {
     clearTimeout(_autoSaveTimer);
     _autoSaveTimer = setTimeout(async () => {
       if (!currentSample) return;
       collectResultsFromForms();
-      try {
-        await saveSample(currentSample);
-        showAutoSaveIndicator();
-      } catch(e) { /* silent */ }
-    }, 2000);
-  });
-  // Also fire on select change (select doesn't bubble 'input' in all browsers)
-  testForms.addEventListener('change', () => {
+      try { await saveSample(currentSample); showAutoSaveIndicator(); } catch(e) { /* silent */ }
+    }, 800);
+  }
+  testForms.addEventListener('input', _triggerAutoSave);
+  testForms.addEventListener('change', _triggerAutoSave);
+
+  // Expose a flush helper so confirmTestReject / toggleTestDone can force-save
+  // any pending typed results before changing test state.
+  window._flushAutoSave = async function() {
     clearTimeout(_autoSaveTimer);
-    _autoSaveTimer = setTimeout(async () => {
-      if (!currentSample) return;
-      collectResultsFromForms();
-      try { await saveSample(currentSample); showAutoSaveIndicator(); } catch(e) {}
-    }, 1500);
-  });
+    if (!currentSample) return;
+    collectResultsFromForms();
+    try { await saveSample(currentSample); showAutoSaveIndicator(); } catch(e) {}
+  };
 
   let cocHtml = COC_STEPS.map((step, i) => {
     let stepData = currentSample.coc[i] || { done: false, active: false };
@@ -1100,12 +1206,10 @@ async function openResultModal(id) {
   if (cocTimeline) cocTimeline.innerHTML = cocHtml;
 
   document.getElementById('resultModal').style.display = 'flex';
-
-  // Show live progress bar immediately so any tech can see what's already done
   renderReadinessBar();
 
-  // If all tests are already marked Ready (re-opened sample), surface the Send button
-  const allAlreadyReady = currentSample.tests.length > 0 && currentSample.tests.every(t => t.status === 'Ready');
+  const actionableOnOpen = currentSample.tests.filter(t => t.status !== 'Rejected');
+  const allAlreadyReady = actionableOnOpen.length > 0 && actionableOnOpen.every(t => t.status === 'Ready');
   const sendBtn = document.getElementById('sendVerifyBtn');
   if (sendBtn) sendBtn.style.display = allAlreadyReady ? 'inline-flex' : 'none';
 }
@@ -1128,11 +1232,9 @@ window.toggleTestDone = async function(idx) {
   const btn  = document.getElementById(`doneBtn_${idx}`);
   const techName = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
 
-  // If already done by this tech — allow un-marking
   const isDone = test.status === 'Ready' && (test.tech === techName || test.tech === 'Unknown Tech');
 
   if (isDone) {
-    // Un-mark
     test.status = 'Processing';
     btn.classList.remove('is-done');
     btn.innerHTML = `<i class="fas fa-circle"></i><span>Mark as Done</span>`;
@@ -1146,7 +1248,6 @@ window.toggleTestDone = async function(idx) {
     return;
   }
 
-  // Collect + validate this test's result
   collectSingleTestResult(idx);
   const result = test.result;
   const isEmpty = !result || result.trim() === '' || result === '{}';
@@ -1155,7 +1256,6 @@ window.toggleTestDone = async function(idx) {
     return;
   }
 
-  // Mark done
   test.tech   = techName;
   test.status = 'Ready';
   btn.classList.add('is-done');
@@ -1175,35 +1275,37 @@ window.toggleTestDone = async function(idx) {
 
   renderReadinessBar();
 
-  // Check if ALL tests belonging to this tech are now Done
   const techName2 = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
-  const myTests   = currentSample.tests.filter(t =>
-    !t.tech || t.tech === techName2 || t.tech === 'Unknown Tech'
+  if (!test.done_by) test.done_by = techName2;
+  if (!test.done_at) test.done_at = new Date().toISOString();
+
+  const actionableTests = currentSample.tests.filter(t => t.status !== 'Rejected');
+  const allActionableDone = actionableTests.length > 0 && actionableTests.every(t => t.status === 'Ready');
+
+  if (allActionableDone) {
+    const rejectedTests = currentSample.tests.filter(t => t.status === 'Rejected');
+    const rejNote = rejectedTests.length
+      ? ` (${rejectedTests.length} rejected test${rejectedTests.length > 1 ? 's' : ''} excluded)`
+      : '';
+    toast(`All actionable tests done — sending for verification…${rejNote}`, 'info');
+    await addAudit('Tests Marked Ready', currentSample.id,
+      `${techName2} toggled Done on ${test.test_name} — all actionable tests Ready, auto-sending${rejNote}`);
+    setTimeout(() => sendToVerify(), 600);
+    return;
+  }
+
+  const myTests = currentSample.tests.filter(t =>
+    t.status !== 'Rejected' &&
+    (!t.tech || t.tech === techName2 || t.tech === 'Unknown Tech')
   );
   const allMyDone = myTests.length > 0 && myTests.every(t => t.status === 'Ready');
 
-  if (allMyDone) {
-    // Stamp done_by / done_at on any test that doesn't have it yet
-    for (const t of myTests) {
-      if (!t.done_by) t.done_by = techName2;
-      if (!t.done_at) t.done_at = new Date().toISOString();
-    }
-
-    const allSampleDone = currentSample.tests.every(t => t.status === 'Ready');
-
-    if (allSampleDone) {
-      // Every tech is done — auto mark ready AND send to verify
-      toast('All tests done — sending for verification…', 'info');
-      await addAudit('Tests Marked Ready', currentSample.id,
-        `${techName2} marked ready via done toggle: ${myTests.map(t => t.test_name).join(', ')}`);
-      setTimeout(() => sendToVerify(), 600);
-    } else {
-      // This tech finished their share — mark ready, wait for others
-      toast('Your tests marked ready ✓ — waiting for other technologists', 'info');
-      await addAudit('Tests Marked Ready', currentSample.id,
-        `${techName2} marked ready via done toggle: ${myTests.map(t => t.test_name).join(', ')}`);
-      renderReadinessBar();
-    }
+  if (allMyDone && myTests.length < actionableTests.length) {
+    const pendingTests = actionableTests.filter(t => t.status !== 'Ready');
+    toast(`Your tests marked ready ✓ — waiting for: ${pendingTests.map(t => t.test_name).join(', ')}`, 'info');
+    await addAudit('Tests Marked Ready', currentSample.id,
+      `${techName2} completed their tests: ${myTests.map(t => t.test_name).join(', ')}`);
+    renderReadinessBar();
   }
 };
 
@@ -1321,11 +1423,14 @@ function collectSingleTestResult(idx) {
     let data = {};
     if (inp && inp.value !== '') data[key] = parseFloat(inp.value);
     test.result = JSON.stringify(data);
-  } else {
+  } else if (testType === 'simple_numeric' || testType === 'simple_select') {
     let ta = document.getElementById(`textResult_${idx}`);
     if (ta) test.result = ta.value;
   }
-  // Only stamp tech if this test is not already marked Ready by someone else
+  else {
+    let ta = document.getElementById(`textResult_${idx}`);
+    if (ta) test.result = ta.value;
+  }
   if (test.status !== 'Ready') {
     test.tech = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
   }
@@ -1343,10 +1448,7 @@ function collectResultsFromForms() {
     } else if (testType === 'complex_widal') {
       const widalKeys = ['o','h','ao','ah','bo','bh','co','ch'];
       let data = {};
-      widalKeys.forEach(k => {
-        let val = document.getElementById(`widal_${idx}_${k}`)?.value;
-        data[k] = (val && val !== '—') ? parseInt(val) : '—';
-      });
+      widalKeys.forEach(k => { let val = document.getElementById(`widal_${idx}_${k}`)?.value; data[k] = (val && val !== '—') ? parseInt(val) : '—'; });
       test.result = JSON.stringify(data);
     } else if (testType === 'complex_lft') {
       let data = {};
@@ -1373,25 +1475,18 @@ function collectResultsFromForms() {
       let sensitivities = [];
       let container = document.getElementById(`sens_${idx}`);
       if (container) {
-        let rows = container.querySelectorAll('div[data-ab-row]');
-        rows.forEach(row => {
+        container.querySelectorAll('div[data-ab-row]').forEach(row => {
           let nameInput = row.querySelector('input[type="text"]');
           let select = row.querySelector('select');
           if (nameInput && select && nameInput.value.trim()) {
-            sensitivities.push({
-              antibiotic: nameInput.value.trim(),
-              result: select.value
-            });
+            sensitivities.push({ antibiotic: nameInput.value.trim(), result: select.value });
           }
         });
       }
       test.result = JSON.stringify({ organism, sensitivities });
     } else if (testType === 'complex_urine_mcs') {
       let data = {};
-      URINE_MICRO_PARAMS.forEach(p => {
-        let inp = document.getElementById(`umcs_${idx}_${p.key}`);
-        if (inp) data[p.key] = p.type === 'number' ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
-      });
+      URINE_MICRO_PARAMS.forEach(p => { let inp = document.getElementById(`umcs_${idx}_${p.key}`); if (inp) data[p.key] = p.type === 'number' ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value; });
       data.organism = document.getElementById(`umcs_${idx}_organism`)?.value || '';
       let sensitivities = [];
       let container = document.getElementById(`umcs_sens_${idx}`);
@@ -1408,10 +1503,7 @@ function collectResultsFromForms() {
       test.result = JSON.stringify(data);
     } else if (testType === 'complex_stool_mcs') {
       let data = {};
-      STOOL_MICRO_PARAMS.forEach(p => {
-        let inp = document.getElementById(`smcs_${idx}_${p.key}`);
-        if (inp) data[p.key] = inp.value;
-      });
+      STOOL_MICRO_PARAMS.forEach(p => { let inp = document.getElementById(`smcs_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
       data.organism = document.getElementById(`smcs_${idx}_organism`)?.value || '';
       let sensitivities = [];
       let container = document.getElementById(`smcs_sens_${idx}`);
@@ -1481,8 +1573,6 @@ function collectResultsFromForms() {
       let ta = document.getElementById(`textResult_${idx}`);
       if (ta) test.result = ta.value;
     }
-    // Only stamp tech/status if this test is NOT already marked Ready by someone else.
-    // Preserves the original entrant when multiple techs share a sample.
     if (test.status !== 'Ready') {
       test.tech   = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
       test.status = 'Processing';
@@ -1494,7 +1584,6 @@ function collectResultsFromForms() {
 async function saveDraft() {
   if (!currentSample) return;
   collectResultsFromForms();
-  // Ensure tech name is stamped on all tests even on draft save
   const techName = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
   for (let test of currentSample.tests) {
     if (!test.tech || test.tech === 'Unknown') test.tech = techName;
@@ -1510,9 +1599,9 @@ async function markMyTestsReady() {
 
   const techName = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
 
-  // Only work on tests that are NOT already marked Ready by another technologist
   const myTests = currentSample.tests.filter(t =>
     t.status !== 'Ready' &&
+    t.status !== 'Rejected' &&
     (!t.tech || t.tech === techName || t.tech === 'Unknown Tech')
   );
 
@@ -1521,7 +1610,11 @@ async function markMyTestsReady() {
     return;
   }
 
-  const incomplete = myTests.filter(t => !t.result || t.result.trim() === '' || t.result === '{}');
+  // Only check completeness for non-rejected actionable tests
+  const incomplete = myTests.filter(t =>
+    t.status !== 'Rejected' &&
+    (!t.result || t.result.trim() === '' || t.result === '{}')
+  );
   if (incomplete.length) {
     toast(`Please complete: ${incomplete.map(t => t.test_name).join(', ')}`, 'error');
     return;
@@ -1530,7 +1623,7 @@ async function markMyTestsReady() {
   for (let test of myTests) {
     test.tech    = techName;
     test.done_by = techName;
-    test.done_at = test.done_at || new Date().toISOString(); // keep original if already set
+    test.done_at = test.done_at || new Date().toISOString();
     test.status  = 'Ready';
   }
 
@@ -1538,18 +1631,16 @@ async function markMyTestsReady() {
   await addAudit('Tests Marked Ready', currentSample.id, `${techName} marked ready: ${myTests.map(t => t.test_name).join(', ')}`);
   toast(`Your tests marked ready ✓`);
 
-  await loadSamples();
-  const fresh = samples.find(s => s.id === currentSample.id);
-  // Offline: fresh may not be in filtered list — keep currentSample as-is
-  if (fresh) currentSample.tests = fresh.tests;
+  // Check in-memory state first (already up to date from the loop above)
+  const actionableTests = currentSample.tests.filter(t => t.status !== 'Rejected');
+  const allReady = actionableTests.every(t => t.status === 'Ready') && actionableTests.length > 0;
 
-  const allReady = currentSample.tests.every(t => t.status === 'Ready');
   if (allReady) {
     await sendToVerify();
   } else {
     renderReadinessBar();
-    const remaining = currentSample.tests.filter(t => t.status !== 'Ready').map(t => t.test_name);
-    toast(`Waiting for: ${remaining.join(', ')}`, 'warn');
+    const remaining = currentSample.tests.filter(t => t.status !== 'Ready' && t.status !== 'Rejected').map(t => t.test_name);
+    if (remaining.length) toast(`Waiting for: ${remaining.join(', ')}`, 'warn');
   }
 }
 
@@ -1559,14 +1650,18 @@ function renderReadinessBar() {
 
   const total = currentSample.tests.length;
   const ready = currentSample.tests.filter(t => t.status === 'Ready').length;
+  const rejected = currentSample.tests.filter(t => t.status === 'Rejected').length;
+  const actionable = total - rejected;
 
-  if (total <= 1) { bar.style.display = 'none'; return; }
+  if (total <= 1 && rejected === 0) { bar.style.display = 'none'; return; }
 
-  const pct = Math.round((ready / total) * 100);
+  const pct = actionable > 0 ? Math.round((ready / actionable) * 100) : 100;
   const items = currentSample.tests.map(t => {
-    const icon = t.status === 'Ready' ? '✅' : '⏳';
+    const icon = t.status === 'Ready' ? '✅' : t.status === 'Rejected' ? '🚫' : '⏳';
     const techLabel = t.tech && t.tech !== 'Unknown Tech' ? ` <span style="color:var(--muted)">(${esc(t.tech)})</span>` : '';
-    return `<span style="margin-right:12px;">${icon} ${esc(t.test_name)}${techLabel}</span>`;
+    const rejLabel = t.status === 'Rejected' && t.rejection_reason
+      ? ` <span style="color:#b91c1c;font-size:0.7rem;">— ${esc(t.rejection_reason)}</span>` : '';
+    return `<span style="margin-right:12px;">${icon} ${esc(t.test_name)}${techLabel}${rejLabel}</span>`;
   }).join('');
 
   bar.style.display = 'block';
@@ -1574,7 +1669,7 @@ function renderReadinessBar() {
     <div style="background:#f0f4f9; border-radius:12px; padding:10px 14px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
         <strong style="color:var(--primary);"><i class="fas fa-tasks"></i> Unit Progress</strong>
-        <span style="font-weight:600;">${ready}/${total} tests ready</span>
+        <span style="font-weight:600;">${ready}/${actionable} actionable tests ready${rejected ? ` · ${rejected} rejected` : ''}</span>
       </div>
       <div style="background:#dde4ee; border-radius:40px; height:6px; margin-bottom:8px;">
         <div style="background:var(--primary); width:${pct}%; height:100%; border-radius:40px;"></div>
@@ -1582,23 +1677,68 @@ function renderReadinessBar() {
       <div style="display:flex; flex-wrap:wrap; gap:4px;">${items}</div>
     </div>`;
 
-  // Keep Send button visible only when everything is ready
   const sendBtn = document.getElementById('sendVerifyBtn');
-  if (sendBtn) sendBtn.style.display = (ready === total) ? 'inline-flex' : 'none';
+  if (sendBtn) {
+    const allActionableDone = actionable > 0 && ready === actionable;
+    sendBtn.style.display = allActionableDone ? 'inline-flex' : 'none';
+  }
 }
 
 async function sendToVerify() {
   if (!currentSample) return;
+
   const techName = currentUser?.name || currentUser?.username || currentUser?.id || 'Unknown Tech';
+
+  const actionableTests = currentSample.tests.filter(t => t.status !== 'Rejected');
+  const allActionableDone = actionableTests.length > 0 && actionableTests.every(t => t.status === 'Ready');
+
+  if (!allActionableDone) {
+    toast('Complete all non-rejected tests before sending to verification', 'error');
+    return;
+  }
+
+  const rejectedTests = currentSample.tests.filter(t => t.status === 'Rejected');
+  const rejectedNote = rejectedTests.length
+    ? ` (${rejectedTests.length} test(s) rejected: ${rejectedTests.map(t => t.test_name).join(', ')})`
+    : '';
+
   currentSample.status = 'Verifying';
   for (let test of currentSample.tests) {
-    test.status = 'Verifying';
+    if (test.status !== 'Rejected') test.status = 'Verifying';
   }
+
+  // Both online and offline samples go through the same path below.
+  // saveSample / updateCOCEvent / addAudit are all patched by offline_queue.js
+  // to queue automatically when offline or when sample id is still OFFLINE-.
   await saveSample(currentSample);
-  await updateCOCEvent(currentSample.id, 4, true, false);
-  await updateCOCEvent(currentSample.id, 5, false, true);
-  await addAudit('Sent to Verify', currentSample.id, `All units complete — sent by ${techName}`);
-  toast(`MU-${currentSample.id} sent to verification ✓`);
+
+  // Update COC: mark Result Entry done, Verification active.
+  // Try update first; if 0 rows affected (step doesn't exist), insert it.
+  const now = new Date().toISOString();
+  const actor = techName;
+  const sid = currentSample.id;
+
+  async function _cocEnsureStep(stepIndex, stepName, done, active, actorName) {
+    const { data, error } = await db.from('coc_events')
+      .update({ done, active, actor_name: actorName, occurred_at: now })
+      .match({ sample_id: sid, step_index: stepIndex })
+      .select('id');
+    if (error || !data || data.length === 0) {
+      // Row missing — insert it
+      await db.from('coc_events')
+        .insert({ sample_id: sid, step_index: stepIndex, step_name: stepName,
+                  done, active, actor_name: actorName, occurred_at: now })
+        .catch(() => {}); // ignore if duplicate race
+    }
+  }
+
+  // Mark all prior steps done (they should already be, but ensure they exist)
+  await _cocEnsureStep(3, 'Processing',   true,  false, actor).catch(() => {});
+  await _cocEnsureStep(4, 'Result Entry', true,  false, actor).catch(() => {});
+  await _cocEnsureStep(5, 'Verification', false, true,  null ).catch(() => {});
+
+  await addAudit('Sent to Verify', currentSample.id, `Actionable tests complete — sent by ${techName}${rejectedNote}`);
+  toast(`MU-${currentSample.id} sent to verification ✓${rejectedNote ? ' — with rejected test(s)' : ''}`);
   closeModal();
   await renderProcessingSamples();
 }
@@ -1622,7 +1762,7 @@ async function generatePDF(id) {
       try {
         let data = JSON.parse(t.result);
         rows += generatePDFRows(t.test_name, data, testType, s.age, s.gender);
-      } catch(e) { rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result)}</td></tr>`; }
+      } catch(e) { rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result)}</td></td>`; }
     } else {
       rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result || '—')}</td></tr>`;
     }
@@ -1670,12 +1810,12 @@ function generatePDFRows(testName, data, testType, age, gender) {
       </tr>`;
     }
     return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold; padding:7px;">Widal Agglutination Test</td></tr>
-            <tr><td colspan="4" style="padding:4px;">
+              <tr><td colspan="4" style="padding:4px;">
               <table style="width:100%; border-collapse:collapse; font-size:11px;">
                 <thead><tr style="background:#e8f4ed;"><th style="padding:5px; text-align:left;">Organism</th><th style="padding:5px;">O Antigen (TO)</th><th style="padding:5px;">H Antigen (TH)</th><th></th></tr></thead>
                 <tbody>${tableRows}</tbody>
               </table>
-            </td></tr>`;
+              </td></tr>`;
   }
   if (testType === 'complex_culture' || testType === 'complex_stool_cs') {
     let organism = data.organism || 'Not specified';
@@ -1776,9 +1916,9 @@ function generatePDFRows(testName, data, testType, age, gender) {
       else if (num < range.low) flag = '↓';
     }
     return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>
-            <tr><td>Value</td><td>${val} ${flag}</td><td>${esc(range.unit)}</td><td>${range.low}–${range.high}</td></tr>`;
+              <tr><td style="padding:5px;">Value</td><td>${val} ${flag}</td>
+              <td style="padding:5px;">${esc(range.unit)}</td><td style="padding:5px;">${range.low}–${range.high}</td></tr>`;
   }
-  // Standard panels
   let params = [];
   if (testType === 'complex_cbc') params = CBC_PARAMS;
   else if (testType === 'complex_lft') params = LFT_PARAMS_FULL;
@@ -1804,7 +1944,7 @@ function generatePDFRows(testName, data, testType, age, gender) {
       if (p.low !== null && n < p.low) flag = '↓';
     }
     let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : (p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—');
-    return `<tr><td style="padding:5px;">${esc(p.name)}</td><td style="padding:5px;${flag?'font-weight:bold;':''}">${val} ${flag}</td><td style="padding:5px;">${esc(p.unit)}</td><td style="padding:5px;">${esc(ref)}</td></tr>`;
+    return `<tr><td style="padding:5px;">${esc(p.name)}</td><td style="padding:5px;${flag?'font-weight:bold;':''}">${val} ${flag}</td><td style="padding:5px;">${esc(p.unit)}</td><td style="padding:5px;">${esc(ref)}</td></td>`;
   }).join('');
   return header + rows;
 }
@@ -1839,28 +1979,51 @@ window.confirmReject = async function() {
   const btn = document.querySelector('#rejectModal button[onclick="confirmReject()"]');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rejecting…'; }
 
+  // Detect offline sample (id is null or starts with 'OFFLINE-')
+  const isOfflineSample = !currentSample.id ||
+    (typeof currentSample.id === 'string' && currentSample.id.startsWith('OFFLINE-'));
+
   try {
-    // Update status + rejection reason in DB
-    const { error } = await db
-      .from('samples')
-      .update({ status: 'Rejected', rejection_reason: reason })
-      .eq('id', currentSample.id);
-    if (error) throw error;
+    if (isOfflineSample) {
+      // Queue the whole-sample rejection — the sample hasn't synced to DB yet,
+      // so we cannot pass the OFFLINE-xxx string as a DB integer id.
+      if (typeof _oqEnqueue === 'function') {
+        await _oqEnqueue('rejectSample', {
+          sampleId: currentSample.id,
+          reason,
+          userName: currentUser?.name || 'Technologist',
+          userRole: currentUser?.role || 'technologist'
+        });
+      }
+      // Update local state so the UI reflects the rejection immediately
+      currentSample.status = 'Rejected';
+      currentSample.rejection_reason = reason;
+      if (typeof _oqCacheSample === 'function') _oqCacheSample(currentSample).catch(() => {});
+    } else {
+      const { error } = await db
+        .from('samples')
+        .update({ status: 'Rejected', rejection_reason: reason })
+        .eq('id', currentSample.id);
+      if (error) throw error;
 
-    // Log to sample_timeline (best-effort)
-    try {
-      await db.from('sample_timeline').insert([{
-        sample_id: currentSample.id,
-        event_type: 'Sample Rejected',
-        event_description: reason,
-        performed_by: currentUser?.name || 'Technologist',
-        performed_role: currentUser?.role || 'technologist',
-        created_at: new Date().toISOString()
-      }]);
-    } catch(e) { console.warn('[RE] timeline insert failed', e); }
+      // Also mark all tests as Rejected so they appear in the accession rejection panel
+      await db.from('sample_tests')
+        .update({ status: 'Rejected', rejection_reason: reason })
+        .eq('sample_id', currentSample.id);
 
-    // Audit log
-    await addAudit('Sample Rejected', currentSample.id, reason);
+      try {
+        await db.from('sample_timeline').insert([{
+          sample_id: currentSample.id,
+          event_type: 'Sample Rejected',
+          event_description: reason,
+          performed_by: currentUser?.name || 'Technologist',
+          performed_role: currentUser?.role || 'technologist',
+          created_at: new Date().toISOString()
+        }]);
+      } catch(e) { console.warn('[RE] timeline insert failed', e); }
+
+      await addAudit('Sample Rejected', currentSample.id, reason);
+    }
 
     toast(`MU-${currentSample.id} rejected — ${reason}`, 'warn');
     window.closeRejectModal();
@@ -1871,6 +2034,293 @@ window.confirmReject = async function() {
     console.error('[RE] rejectSample error', err);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-ban"></i> Confirm Rejection'; }
+  }
+};
+
+// ========== PER-TEST REJECT / RESOLVE ==========
+const TEST_REJECT_REASONS = [
+  'Sample clotted',
+  'Haemolysed sample',
+  'Insufficient volume',
+  'Wrong container / tube',
+  'Sample leaked / contaminated',
+  'Unlabelled sample',
+  'Sample too old / delayed',
+  'Other (see note)'
+];
+
+window.openTestRejectModal = function(idx) {
+  if (!currentSample) return;
+  const test = currentSample.tests[idx];
+  if (!test) return;
+
+  let existing = document.getElementById('testRejectModal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'testRejectModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:20px;max-width:420px;width:94%;padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+        <h3 style="font-size:1rem;color:#b91c1c;"><i class="fas fa-ban"></i> Reject Test</h3>
+        <button onclick="document.getElementById('testRejectModal').remove()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:#6b7280;">✕</button>
+      </div>
+      <p style="font-size:0.82rem;color:#374151;margin-bottom:14px;">
+        Rejecting: <strong>${esc(test.test_name)}</strong> on sample <strong>MU-${currentSample.id}</strong><br>
+        <span style="color:#6b7280;">Other tests on this sample will continue normally.</span>
+      </p>
+      <label style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;display:block;margin-bottom:8px;">Rejection Reason</label>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+        ${TEST_REJECT_REASONS.map(r => `
+          <button type="button" class="test-reject-reason-btn" onclick="selectTestRejectReason(this, '${esc(r)}')"
+            style="text-align:left;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;background:#f9fafb;cursor:pointer;font-size:0.82rem;transition:all .15s;">
+            ${esc(r)}
+          </button>`).join('')}
+      </div>
+      <input type="text" id="testRejectCustomReason" placeholder="Or type a custom reason…"
+        style="width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:0.85rem;margin-bottom:14px;outline:none;"
+        oninput="document.querySelectorAll('.test-reject-reason-btn').forEach(b=>b.style.background='#f9fafb')">
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button onclick="document.getElementById('testRejectModal').remove()" style="padding:9px 18px;border:1.5px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer;font-size:0.85rem;">Cancel</button>
+        <button onclick="confirmTestReject(${idx})" style="padding:9px 18px;border:none;border-radius:10px;background:#b91c1c;color:#fff;font-weight:700;cursor:pointer;font-size:0.85rem;">
+          <i class="fas fa-ban"></i> Confirm Rejection
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+window.selectTestRejectReason = function(btn, reason) {
+  document.querySelectorAll('.test-reject-reason-btn').forEach(b => {
+    b.style.background = '#f9fafb'; b.style.borderColor = '#e5e7eb'; b.style.color = '#374151';
+  });
+  btn.style.background = '#fff0f0'; btn.style.borderColor = '#fca5a5'; btn.style.color = '#b91c1c';
+  const customInput = document.getElementById('testRejectCustomReason');
+  if (customInput) customInput.value = reason;
+};
+
+window.confirmTestReject = async function(idx) {
+  if (!currentSample) return;
+  const test = currentSample.tests[idx];
+  if (!test) return;
+
+  const input = document.getElementById('testRejectCustomReason');
+  const reason = (input?.value || '').trim();
+  if (!reason) {
+    if (input) { input.style.borderColor = '#dc2626'; input.focus(); }
+    toast('Please enter or select a rejection reason', 'error');
+    return;
+  }
+
+  // Flush any pending auto-save so all other tests' typed results are persisted
+  // before we change this test's state (prevents overwriting on next save).
+  if (typeof window._flushAutoSave === 'function') await window._flushAutoSave();
+
+  test.status = 'Rejected';
+  test.rejection_reason = reason;
+
+  // Detect offline sample: id is null or starts with 'OFFLINE-'
+  const isOfflineSample = !test.id || (typeof currentSample.id === 'string' && currentSample.id.startsWith('OFFLINE-'));
+
+  try {
+    if (isOfflineSample) {
+      // Queue the rejection — test.id is null so we can't hit the DB yet
+      if (typeof _oqEnqueue === 'function') {
+        await _oqEnqueue('rejectTest', {
+          sampleId: currentSample.id,
+          testName: test.test_name,
+          reason,
+          userName: currentUser?.name || 'Technologist',
+          userRole: currentUser?.role || 'technologist'
+        });
+      }
+      // Update the local cache so UI reflects the rejection immediately
+      if (typeof _oqCacheSample === 'function') _oqCacheSample(currentSample).catch(() => {});
+    } else {
+      const { error } = await db.from('sample_tests')
+        .update({ status: 'Rejected', rejection_reason: reason })
+        .eq('id', test.id);
+      if (error) throw error;
+
+      Promise.resolve(db.from('sample_timeline').insert([{
+        sample_id: currentSample.id,
+        event_type: 'Test Rejected',
+        event_description: `${test.test_name}: ${reason}`,
+        performed_by: currentUser?.name || 'Technologist',
+        performed_role: currentUser?.role || 'technologist',
+        created_at: new Date().toISOString()
+      }])).catch(() => {});
+    }
+
+    // Always persist the full sample state immediately after rejection —
+    // this ensures the cache reflects the rejection so that when the modal
+    // re-opens (or after resolve) the test statuses are correct.
+    collectResultsFromForms();
+    if (typeof _oqCacheSample === 'function') _oqCacheSample(currentSample).catch(() => {});
+
+    await addAudit('Test Rejected', currentSample.id, `${test.test_name} rejected: ${reason}`);
+    toast(`${test.test_name} rejected — ${reason}`, 'warn');
+    document.getElementById('testRejectModal')?.remove();
+
+    const doneRow = document.getElementById(`doneRow_${idx}`);
+    if (doneRow) {
+      doneRow.style.cssText = 'background:#fff0f0;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;';
+      doneRow.innerHTML = `
+        <div style="color:#b91c1c;font-weight:700;font-size:0.85rem;">
+          <i class="fas fa-ban"></i> Test Rejected
+          <span style="font-weight:400;margin-left:8px;font-size:0.78rem;">— ${esc(reason)}</span>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="resolveTestRejection(${idx})" style="font-size:0.75rem;">
+          <i class="fas fa-undo"></i> Resolve & Re-enter
+        </button>`;
+    }
+
+    renderReadinessBar();
+
+    const actionable = currentSample.tests.filter(t => t.status !== 'Rejected');
+    const allDone = actionable.length > 0 && actionable.every(t => t.status === 'Ready');
+    const sendBtn = document.getElementById('sendVerifyBtn');
+    if (sendBtn) sendBtn.style.display = allDone ? 'inline-flex' : 'none';
+
+  } catch(err) {
+    toast('Rejection failed: ' + (err.message || err), 'error');
+  }
+};
+
+window.resolveTestRejection = async function(idx) {
+  if (!currentSample) return;
+  const test = currentSample.tests[idx];
+  if (!test) return;
+
+  if (!confirm(`Resolve rejection for "${test.test_name}"?\nThis will allow result entry again. Make sure a new sample has been collected.`)) return;
+
+  test.status = 'Processing';
+  test.rejection_reason = null;
+  test.result = '';
+
+  // If the sample was already sent to Verifying (because other tests were done),
+  // pull it back to Processing so it reappears in result entry.
+  const wasVerifying = currentSample.status === 'Verifying';
+  if (wasVerifying) {
+    currentSample.status = 'Processing';
+    // Restore Verifying tests back to Ready so they keep their done status
+    for (const t of currentSample.tests) {
+      if (t.status === 'Verifying') t.status = 'Ready';
+    }
+  }
+
+  const isOfflineSample = !test.id || (typeof currentSample.id === 'string' && currentSample.id.startsWith('OFFLINE-'));
+
+  try {
+    if (isOfflineSample) {
+      if (typeof _oqEnqueue === 'function') {
+        await _oqEnqueue('resolveTestRejection', {
+          sampleId: currentSample.id,
+          testName: test.test_name,
+          userName: currentUser?.name || 'Technologist',
+          userRole: currentUser?.role || 'technologist'
+        });
+      }
+      if (typeof _oqCacheSample === 'function') _oqCacheSample(currentSample).catch(() => {});
+    } else {
+      // Clear the rejected test — wipe result/tech so re-entry is clean and
+      // refresh won't bounce the status back to Rejected.
+      const { error } = await db.from('sample_tests')
+        .update({ status: 'Processing', rejection_reason: null, result: '', tech_name: '' })
+        .eq('id', test.id);
+      if (error) throw error;
+
+      // If we pulled back from Verifying, restore the other tests to Ready in DB
+      // and reset sample status + COC step
+      if (wasVerifying) {
+        for (const t of currentSample.tests) {
+          if (t.status === 'Ready' && t.id) {
+            await db.from('sample_tests')
+              .update({ status: 'Ready' })
+              .eq('id', t.id);
+          }
+        }
+        await db.from('samples')
+          .update({ status: 'Processing' })
+          .eq('id', currentSample.id);
+        // Reset COC: Result Entry step active, Verification step cleared
+        await db.from('coc_events')
+          .update({ done: false, active: true })
+          .match({ sample_id: currentSample.id, step_index: 4 });
+        await db.from('coc_events')
+          .update({ done: false, active: false })
+          .match({ sample_id: currentSample.id, step_index: 5 });
+      } else {
+        // Even if not from Verifying, persist the sample row update (status stays Processing)
+        // so DB is consistent and a page refresh doesn't show stale state.
+        await db.from('samples')
+          .update({ status: 'Processing' })
+          .eq('id', currentSample.id);
+      }
+    }
+
+    await addAudit('Test Rejection Resolved', currentSample.id, `${test.test_name} — rejection cleared`);
+    toast(`${test.test_name} restored for result entry ✓`);
+
+    const doneRow = document.getElementById(`doneRow_${idx}`);
+    if (doneRow) {
+      doneRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
+      doneRow.innerHTML = `
+        <button
+          type="button"
+          class="test-done-btn"
+          id="doneBtn_${idx}"
+          onclick="toggleTestDone(${idx})"
+        >
+          <i class="fas fa-circle"></i>
+          <span>Mark as Done</span>
+        </button>
+        <button type="button" class="btn btn-sm" style="background:#fff0f0; color:#b91c1c; border:1.5px solid #fca5a5; font-size:0.75rem; padding:6px 12px; border-radius:8px;" onclick="openTestRejectModal(${idx})">
+          <i class="fas fa-ban"></i> Reject Test
+        </button>`;
+    }
+
+    // Only re-enable and clear inputs for the resolved (previously rejected) test.
+    // Do NOT touch other tests' inputs, results, or Done button states.
+    const testBlock = document.getElementById(`testBlock_${idx}`);
+    if (testBlock) {
+      testBlock.querySelectorAll('input, textarea, select').forEach(el => {
+        el.disabled = false;
+        el.style.opacity = '';
+        el.style.pointerEvents = '';
+      });
+      // Clear only this test's result fields (needs re-collection from new sample)
+      testBlock.querySelectorAll('input[type="number"], input[type="text"], textarea').forEach(el => {
+        el.value = '';
+        el.classList.remove('flag-inp-high', 'flag-inp-low');
+      });
+      testBlock.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
+    }
+
+    // Restore Done ✓ button state for any tests that are already Ready
+    currentSample.tests.forEach((t, i) => {
+      if (i === idx) return; // skip the just-resolved test
+      const btn = document.getElementById(`doneBtn_${i}`);
+      if (!btn) return;
+      if (t.status === 'Ready') {
+        btn.classList.add('is-done');
+        btn.innerHTML = `<i class="fas fa-check-circle"></i><span>Done ✓</span>`;
+      }
+    });
+
+    renderReadinessBar();
+
+    const actionable = currentSample.tests.filter(t => t.status !== 'Rejected');
+    const alreadyReadyCount = actionable.filter(t => t.status === 'Ready').length;
+    const totalActionable = actionable.length;
+    if (alreadyReadyCount === totalActionable - 1) {
+      toast(`Enter result for ${test.test_name} and mark Done to auto-send`, 'info');
+    }
+
+  } catch(err) {
+    test.status = 'Rejected';
+    toast('Resolve failed: ' + (err.message || err), 'error');
   }
 };
 
@@ -1892,17 +2342,40 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key === 'Enter') sendToVerify();
 });
 
-// ========== INIT ==========
+// ========== INIT (simple, reliable) ==========
 (async function init() {
+  if (!currentUser) {
+    window.location.href = 'index.html';
+    return;
+  }
+
   await loadTestDefinitions();
   await renderProcessingSamples();
   startClock();
-  document.getElementById('userDisplay').innerHTML = `<i class="fas fa-user-circle"></i> ${esc(currentUser.name)} (${esc(currentUser.role)})`;
-  document.getElementById('logoutBtn').addEventListener('click', logoutUser);
+
+  const userName = currentUser?.name || currentUser?.username || currentUser?.email || currentUser?.id || 'Technologist';
+  const userDisplay = document.getElementById('userDisplay');
+  if (userDisplay) {
+    userDisplay.innerHTML = `<i class="fas fa-user-circle"></i> ${esc(userName)} (${esc(currentUser?.role || 'user')})`;
+  }
+
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      if (typeof window.logoutUser === 'function') {
+        await window.logoutUser();
+      } else if (typeof logoutUser === 'function') {
+        await logoutUser();
+      } else {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = 'index.html';
+      }
+    });
+  }
 })();
 
 setInterval(async () => {
-  // Skip auto-refresh when offline — cached data is already shown
   if (!navigator.onLine) return;
   if (!currentSample && document.getElementById('resultModal')?.style.display !== 'flex') {
     await renderProcessingSamples();

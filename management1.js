@@ -1,0 +1,1358 @@
+// ========== SUPABASE CLIENT ==========
+const SUPABASE_URL      = 'https://npdopywxemtwzvpummsn.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
+
+// ========== SESSION AUTH (checkAuth / logoutUser provided by auth-guard.js) ==========
+const currentSession = checkAuth(['supervisor', 'admin']);
+const currentUser = currentSession; // rest of page uses currentUser
+
+// Build token-authenticated client — injects x-lis-token on every request
+window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const db = window._supabaseClient;
+
+// ========== GLOBALS ==========
+let samples = [];
+let qcHistory = [];
+let currentVerifySample = null;
+let testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+
+// ========== HELPERS ==========
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, m =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+}
+function toast(msg, type = 'success') {
+  let stack = document.getElementById('toastStack');
+  if (!stack) return;
+  let div = document.createElement('div');
+  div.className = `toast ${type}`;
+  let icon = type === 'error' ? 'times-circle' : type === 'warn' ? 'exclamation-triangle' : 'check-circle';
+  div.innerHTML = `<i class="fas fa-${icon}"></i> `;
+  let span = document.createElement('span');
+  span.textContent = msg;
+  div.appendChild(span);
+  stack.appendChild(div);
+  setTimeout(() => { div.style.opacity = '0'; setTimeout(() => div.remove(), 300); }, 3500);
+}
+function payBadge(paystatus) {
+  let cls = paystatus === 'Paid' ? 'badge-paid' : paystatus === 'Partial' ? 'badge-partial' : 'badge-unpaid';
+  return `<span class="badge ${cls}">${esc(paystatus)}</span>`;
+}
+async function addAudit(action, sampleId, details) {
+  try {
+    await db.from('audit_log').insert([{
+      ts: new Date().toISOString(),
+      user_name: currentUser?.name || 'Unknown',
+      user_role: currentUser?.role || 'Unknown',
+      action: action,
+      sample_id: sampleId,
+      details: details || ''
+    }]);
+  } catch (err) { console.warn('Audit failed', err); }
+}
+
+// ========== DYNAMIC REFERENCE RANGE HELPER ==========
+function getReferenceRange(testName, age, gender) {
+  const patientAge = (age && !isNaN(age)) ? parseInt(age) : 30;
+  const isMale = (gender === 'Male');
+  const isFemale = (gender === 'Female');
+
+  switch (testName) {
+    case 'PCV':
+    case 'Packed Cell Volume':
+    case 'Hematocrit':
+    case 'HCT':
+      if (isMale) return { low: 40, high: 54, unit: '%' };
+      if (isFemale) return { low: 36, high: 46, unit: '%' };
+      return { low: 36, high: 46, unit: '%' };
+    case 'Hb':
+    case 'Hemoglobin':
+      if (isMale) return { low: 13.5, high: 17.5, unit: 'g/dL' };
+      if (isFemale) return { low: 12.0, high: 15.5, unit: 'g/dL' };
+      return { low: 12.0, high: 15.5, unit: 'g/dL' };
+    case 'ESR':
+    case 'Erythrocyte Sedimentation Rate':
+      if (isMale) return { low: 0, high: 10, unit: 'mm/hr' };
+      if (isFemale) return { low: 0, high: 20, unit: 'mm/hr' };
+      return { low: 0, high: 15, unit: 'mm/hr' };
+    case 'RBS':
+    case 'Random Blood Sugar':
+      return { low: 70, high: 140, unit: 'mg/dL' };
+    case 'FBS':
+    case 'Fasting Blood Sugar':
+      return { low: 70, high: 100, unit: 'mg/dL' };
+    default:
+      return null;
+  }
+}
+
+// ========== LOAD TEST DEFINITIONS ==========
+async function loadTestDefinitions() {
+  try {
+    const { data, error } = await db.from('test_definitions').select('*');
+    if (error) throw error;
+    testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+    data.forEach(td => {
+      if (td.test_name === '__unit_placeholder__') {
+        if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
+        return;
+      }
+      if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
+      testDefinitions.units[td.unit_name].push(td.test_name);
+      testDefinitions.testPrices[td.test_name] = td.price_ngn;
+      if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
+    });
+    console.log('Test definitions loaded');
+  } catch (err) {
+    console.error(err);
+    toast('Failed to load test definitions', 'error');
+  }
+}
+
+// ========== LOAD SAMPLES ==========
+async function loadSamples() {
+  try {
+    const { data, error } = await db
+      .from('samples')
+      .select('*, sample_tests(id,test_name,status,result,result_data,price_ngn,tech_name,done_by,done_at)')
+      .order('id', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    samples = data.map(s => ({
+      ...s,
+      tests: s.sample_tests || [],
+      stype: s.sample_type,
+      due: s.due_date,
+      paystatus: s.pay_status,
+      paymode: s.pay_mode,
+      insurance: s.insurance_no,
+      collDate: s.collection_date,
+      collTime: s.collection_time,
+      totalAmount: s.total_amount,
+      amountPaid: s.amount_paid,
+      balanceDue: s.balance_due,
+      releasedAt: s.released_at
+    }));
+  } catch (err) {
+    console.error(err);
+    toast('Failed to load samples', 'error');
+    samples = [];
+  }
+}
+async function saveSample(sample) {
+  const { error } = await db
+    .from('samples')
+    .update({
+      patient: sample.patient,
+      age: sample.age,
+      gender: sample.gender,
+      phone: sample.phone,
+      nid: sample.nid,
+      clinician: sample.clinician,
+      history: sample.history,
+      priority: sample.priority,
+      sample_type: sample.stype,
+      tube: sample.tube,
+      collection_date: sample.collDate,
+      collection_time: sample.collTime,
+      due_date: sample.due,
+      pay_mode: sample.paymode,
+      pay_status: sample.paystatus,
+      insurance_no: sample.insurance,
+      status: sample.status,
+      total_amount: sample.totalAmount,
+      amount_paid: sample.amountPaid,
+      balance_due: sample.balanceDue,
+      receipt_no: sample.receiptNo,
+      payment_date: sample.paymentDate,
+      released_at: sample.releasedAt,
+      supervisor_comment: sample.supervisorComment
+    })
+    .eq('id', sample.id);
+  if (error) throw error;
+}
+async function deleteSampleFromServer(id) {
+  await db.from('sample_tests').delete().eq('sample_id', id);
+  const { error } = await db.from('samples').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ========== QC ==========
+async function loadQC() {
+  try {
+    const { data, error } = await db.from('qc_runs').select('*').order('run_at', { ascending: false });
+    if (error) throw error;
+    qcHistory = data.map(q => ({ ts: q.run_at, results: q.results }));
+  } catch (err) { qcHistory = []; }
+}
+async function saveQC(qcData) {
+  const { error } = await db.from('qc_runs').insert([{
+    run_at: new Date().toISOString(),
+    run_by: currentUser?.name || 'Unknown',
+    all_pass: qcData.results.every(r => r.pass),
+    results: qcData.results
+  }]);
+  if (error) throw error;
+}
+async function runQC() {
+  const controls = [
+    { name:'CBC Control L1', target:{wbc:6.0, hb:12.0, plt:200}, tolerance:0.1 },
+    { name:'CBC Control L2', target:{wbc:10.0, hb:15.0, plt:350}, tolerance:0.1 },
+    { name:'Chemistry Control', target:{glucose:5.5, creatinine:88}, tolerance:0.1 }
+  ];
+  let results = controls.map(c => {
+    let pass = true, details = [];
+    for (let [param, target] of Object.entries(c.target)) {
+      let measured = +(target * (1 + (Math.random() - 0.5) * c.tolerance * 2)).toFixed(2);
+      let pct = Math.abs((measured - target) / target * 100);
+      let ok = pct < 10;
+      if (!ok) pass = false;
+      details.push({ param, target, measured, pct: pct.toFixed(1), ok });
+    }
+    return { name: c.name, pass, details };
+  });
+  await saveQC({ results });
+  await addAudit('QC Run', null, `${results.filter(r => !r.pass).length} control(s) failed.`);
+  await loadQC();
+  renderQC();
+}
+async function renderQC() {
+  await loadQC();
+  let latest = qcHistory[0];
+  const qcBody = document.getElementById('qcBody');
+  const qcLog = document.getElementById('qcLog');
+  if (!qcBody || !qcLog) return;
+  if (!latest) {
+    qcBody.innerHTML = '<p style="color:var(--text2);">Click "Run QC" to begin.</p>';
+    qcLog.innerHTML = '<p style="color:var(--text2);">No QC runs yet.</p>';
+    return;
+  }
+  let html = `<p style="color:var(--text2); margin-bottom:12px;">Run at ${new Date(latest.ts).toLocaleString()}</p>`;
+  latest.results.forEach(res => {
+    html += `<div style="margin-bottom:16px;">
+      <strong>${esc(res.name)}</strong> <span class="${res.pass ? 'qc-pass' : 'qc-fail'}">${res.pass ? '✓ PASS' : '✗ FAIL'}</span>
+      <div class="qc-grid">${res.details.map(d =>
+        `<div class="qc-card">
+          <div style="font-size:0.75rem;color:var(--text2);">${esc(d.param)}</div>
+          <div style="font-size:1.3rem;font-weight:700;" class="${d.ok ? 'qc-pass' : 'qc-fail'}">${d.measured}</div>
+          <div style="font-size:0.78rem;">Target: ${d.target}</div>
+          <div style="font-size:0.78rem;">CV: ${d.pct}%</div>
+        </div>`).join('')}
+      </div></div>`;
+  });
+  qcBody.innerHTML = html;
+  let logHtml = qcHistory.slice(0, 10).map(r => {
+    let allPass = r.results.every(x => x.pass);
+    return `<div style="padding:6px 0; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center;">
+      <span style="font-family:monospace; font-size:0.78rem;">${new Date(r.ts).toLocaleString()}</span>
+      <span class="${allPass ? 'qc-pass' : 'qc-fail'}">${allPass ? '✓ All Pass' : '✗ Failures'}</span>
+      <small style="color:var(--text2);">${r.results.map(x => `${esc(x.name)}: ${x.pass ? '✓' : '✗'}`).join(' | ')}</small>
+    </div>`;
+  }).join('');
+  qcLog.innerHTML = logHtml || '<p style="color:var(--text2);">No runs logged.</p>';
+}
+
+// ========== ADMIN (Test Definitions) ==========
+async function renderUnitsList() {
+  let container = document.getElementById('unitsList');
+  if (!container) return;
+  if (!Object.keys(testDefinitions.units).length) {
+    container.innerHTML = '<p style="color:var(--text2);">No units yet. Add one above.</p>';
+    return;
+  }
+  let html = '';
+  for (let [unit, tests] of Object.entries(testDefinitions.units)) {
+    let unitId = unit.replace(/[^a-z0-9]/gi, '_');
+    html += `<div style="margin-bottom:20px; border:1.5px solid #ffe4b5; border-radius:20px; padding:16px; background:#fffdf7;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <strong>${esc(unit)}</strong>
+        <button class="btn btn-danger btn-sm" onclick="deleteUnit('${esc(unit)}')">Delete Unit</button>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:8px; margin-bottom:12px;">
+        ${tests.filter(t => t !== '__unit_placeholder__').map(test => {
+          let testId = test.replace(/[^a-z0-9]/gi, '_');
+          return `<div style="display:flex; align-items:center; gap:6px; justify-content:space-between; background:#f9f4e8; border-radius:10px; padding:8px 10px;">
+            <span style="font-size:0.85rem;">${esc(test)}</span>
+            <div style="display:flex;gap:4px;align-items:center;">
+              <input type="number" step="0.01" style="width:90px; padding:4px 8px; border-radius:8px; border:1px solid var(--border); font-size:0.8rem;" id="price_${testId}" value="${testDefinitions.testPrices[test] || 0}">
+              <button class="btn btn-secondary btn-sm" style="padding:3px 8px;" onclick="updateTestPrice('${esc(test)}', document.getElementById('price_${testId}').value)">Save</button>
+              <button class="btn btn-danger btn-sm" style="padding:3px 8px;" onclick="deleteTest('${esc(unit)}', '${esc(test)}')">×</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" id="newTest_${unitId}" placeholder="New test name" class="form-input" style="flex:2; min-width:160px;">
+        <select id="testType_${unitId}" class="filter-select" style="flex:1; min-width:140px;">
+          <option value="simple">Simple Text</option>
+          <option value="complex_cbc">Complex (CBC)</option>
+          <option value="complex_widal">Complex (Widal)</option>
+          <option value="complex_lft">Complex (LFT)</option>
+          <option value="complex_rft">Complex (RFT)</option>
+          <option value="complex_thyroid">Complex (Thyroid)</option>
+          <option value="complex_lipid">Complex (Lipid Profile)</option>
+          <option value="simple_numeric">Simple Numeric (single value)</option>
+<option value="simple_select">Simple Select (dropdown)</option>
+          <option value="complex_coag">Complex (Coagulation)</option>
+          <option value="complex_culture">Culture & Sensitivity</option>
+          <option value="complex_urine_mcs">Urine MCS (Micro + Culture + Sensitivity)</option>
+          <option value="complex_stool_mcs">Stool MCS (Macro + Micro + Culture + Sensitivity)</option>
+          <option value="complex_urinalysis">Complex (Urinalysis)</option>
+          <option value="complex_iron">Complex (Iron Profile)</option>
+          <option value="complex_bone">Complex (Bone Profile)</option>
+          <option value="complex_cardiac">Complex (Cardiac Markers)</option>
+          <option value="complex_ogtt">Complex (OGTT)</option>
+          <option value="complex_malaria">Complex (Malaria Microscopy)</option>
+          <option value="complex_tb_genexpert">Complex (TB GeneXpert)</option>
+          <option value="complex_stool_cs">Stool Culture & Sensitivity</option>
+          <option value="complex_csf">Complex (CSF Analysis)</option>
+          <option value="complex_abg">Complex (ABG)</option>
+          <option value="complex_semen">Complex (Semen Analysis)</option>
+          <option value="complex_serology">Complex (Serology Panel)</option>
+          <option value="complex_pcv">Complex (PCV) – gender based</option>
+          <option value="complex_hb">Complex (Hb) – gender based</option>
+          <option value="complex_esr">Complex (ESR) – gender based</option>
+          <option value="complex_rbs">Complex (RBS)</option>
+          <option value="complex_fbs">Complex (FBS)</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="addTestToUnit('${esc(unit)}', document.getElementById('newTest_${unitId}').value, document.getElementById('testType_${unitId}').value)">Add Test</button>
+      </div>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+async function addUnit() {
+  let unitName = document.getElementById('newUnitName')?.value.trim();
+  if (!unitName) { toast('Unit name required', 'error'); return; }
+  if (testDefinitions.units[unitName]) { toast('Unit already exists', 'error'); return; }
+
+  const { error } = await db.from('test_definitions').insert([{
+    unit_name: unitName,
+    test_name: '__unit_placeholder__',
+    test_type: 'simple',
+    price_ngn: 0
+  }]);
+  if (error) { toast('Failed to create unit: ' + error.message, 'error'); return; }
+
+  // Update local cache — no DB re-fetch needed
+  testDefinitions.units[unitName] = [];
+  renderUnitsList();
+  const input = document.getElementById('newUnitName');
+  if (input) input.value = '';
+  toast(`Unit "${unitName}" added`);
+}
+
+async function deleteUnit(unit) {
+  if (!confirm(`Delete unit "${unit}" and all its tests?`)) return;
+  try {
+    const { error } = await db.from('test_definitions').delete().eq('unit_name', unit);
+    if (error) throw error;
+
+    // Update local cache — remove unit and clean up price/type maps
+    const tests = testDefinitions.units[unit] || [];
+    tests.forEach(t => {
+      delete testDefinitions.testPrices[t];
+      delete testDefinitions.testTypes[t];
+    });
+    delete testDefinitions.units[unit];
+
+    renderUnitsList();
+    toast(`Unit "${unit}" deleted`, 'warn');
+  } catch(err) { toast("Delete failed: " + err.message, "error"); }
+}
+
+async function addTestToUnit(unit, testName, testType) {
+  testName = (testName || '').trim();
+  if (!testName) { toast('Test name required', 'error'); return; }
+
+  // Check local cache first — same unit
+  if ((testDefinitions.units[unit] || []).includes(testName)) {
+    toast('Test already exists in this unit', 'error'); return;
+  }
+
+  // Check all other units — DB has a global unique constraint on test_name
+  const existingUnit = Object.entries(testDefinitions.units).find(
+    ([u, tests]) => u !== unit && tests.includes(testName)
+  );
+  if (existingUnit) {
+    toast(`"${testName}" already exists in unit "${existingUnit[0]}". Test names must be unique across all units.`, 'error');
+    return;
+  }
+
+  const { error } = await db.from('test_definitions').insert([{
+    unit_name: unit,
+    test_name: testName,
+    test_type: testType,
+    price_ngn: 0
+  }]);
+
+  if (error) {
+    if (error.code === '23505') {
+      toast(`"${testName}" already exists in another unit. Use a unique name (e.g. "Urinalysis (Micro)" vs "Urinalysis (Chem)").`, 'error');
+    } else {
+      toast('Failed to add test: ' + error.message, 'error');
+    }
+    return;
+  }
+
+  // Update local cache — no DB re-fetch needed
+  if (!testDefinitions.units[unit]) testDefinitions.units[unit] = [];
+  testDefinitions.units[unit].push(testName);
+  testDefinitions.testPrices[testName] = 0;
+  if (testType !== 'simple') testDefinitions.testTypes[testName] = testType;
+
+  renderUnitsList();
+
+  const unitId = unit.replace(/[^a-z0-9]/gi, '_');
+  const inputEl = document.getElementById('newTest_' + unitId);
+  if (inputEl) inputEl.value = '';
+
+  toast(`Test "${testName}" added to ${unit}`);
+}
+
+async function deleteTest(unit, test) {
+  if (!confirm(`Delete test "${test}"?`)) return;
+  try {
+    const { error } = await db.from('test_definitions')
+      .delete()
+      .eq('unit_name', unit)
+      .eq('test_name', test);
+    if (error) throw error;
+
+    // Update local cache — no DB re-fetch needed
+    testDefinitions.units[unit] = (testDefinitions.units[unit] || []).filter(t => t !== test);
+    delete testDefinitions.testPrices[test];
+    delete testDefinitions.testTypes[test];
+
+    renderUnitsList();
+    toast(`Test "${test}" deleted`, 'warn');
+  } catch(err) { toast("Delete failed: " + err.message, "error"); }
+}
+
+async function updateTestPrice(test, price) {
+  let p = parseFloat(price);
+  if (isNaN(p) || p < 0) p = 0;
+  try {
+    const { error } = await db.from('test_definitions')
+      .update({ price_ngn: p })
+      .eq('test_name', test);
+    if (error) throw error;
+
+    // Update local cache — no DB re-fetch needed
+    testDefinitions.testPrices[test] = p;
+    toast(`Price for "${test}" saved — ${p.toLocaleString()} NGN`);
+  } catch(err) { toast("Update failed: " + err.message, "error"); }
+}
+
+// ========== EXPANDED PARAMETER DEFINITIONS (FULL) ==========
+const CBC_PARAMS = [
+  {key:'wbc',  name:'WBC',         unit:'×10³/µL', low:4.0,   high:11.0},
+  {key:'rbc',  name:'RBC',         unit:'×10⁶/µL', low:4.2,   high:5.8 },
+  {key:'hb',   name:'Hemoglobin',  unit:'g/dL',    low:12.0,  high:16.0},
+  {key:'hct',  name:'Hematocrit',  unit:'%',       low:36,    high:46  },
+  {key:'mcv',  name:'MCV',         unit:'fL',      low:80,    high:100 },
+  {key:'mch',  name:'MCH',         unit:'pg',      low:27,    high:32  },
+  {key:'mchc', name:'MCHC',        unit:'g/dL',    low:32,    high:36  },
+  {key:'plt',  name:'Platelets',   unit:'×10³/µL', low:150,   high:450 },
+  {key:'neut', name:'Neutrophils', unit:'%',       low:40,    high:70  },
+  {key:'lymph',name:'Lymphocytes', unit:'%',       low:20,    high:45  },
+  {key:'mono', name:'Monocytes',   unit:'%',       low:2,     high:8   },
+  {key:'eo',   name:'Eosinophils', unit:'%',       low:0,     high:6   },
+  {key:'baso', name:'Basophils',   unit:'%',       low:0,     high:2   }
+];
+const LFT_PARAMS_FULL = [
+  {key:'alt', name:'ALT', unit:'U/L', low:10, high:40},
+  {key:'ast', name:'AST', unit:'U/L', low:10, high:35},
+  {key:'alp', name:'ALP', unit:'U/L', low:30, high:120},
+  {key:'ggt', name:'GGT', unit:'U/L', low:8, high:61},
+  {key:'tbil', name:'Total Bilirubin', unit:'mg/dL', low:0.3, high:1.2},
+  {key:'dbil', name:'Direct Bilirubin', unit:'mg/dL', low:0.0, high:0.3},
+  {key:'prot', name:'Total Protein', unit:'g/dL', low:6.0, high:8.0},
+  {key:'alb', name:'Albumin', unit:'g/dL', low:3.5, high:5.0},
+  {key:'glob', name:'Globulin', unit:'g/dL', low:2.0, high:3.5, calc:true},
+  {key:'agRatio', name:'A/G Ratio', unit:'', low:1.0, high:2.5, calc:true}
+];
+const RFT_PARAMS_FULL = [
+  {key:'urea', name:'Urea', unit:'mg/dL', low:10, high:50},
+  {key:'creat', name:'Creatinine', unit:'mg/dL', low:0.6, high:1.2},
+  {key:'sodium', name:'Sodium', unit:'mmol/L', low:135, high:145},
+  {key:'potassium', name:'Potassium', unit:'mmol/L', low:3.5, high:5.1},
+  {key:'chloride', name:'Chloride', unit:'mmol/L', low:98, high:107},
+  {key:'bicarb', name:'Bicarbonate (HCO3)', unit:'mmol/L', low:22, high:29},
+  {key:'calcium', name:'Calcium', unit:'mg/dL', low:8.5, high:10.2},
+  {key:'phosphate', name:'Phosphate', unit:'mg/dL', low:2.5, high:4.5},
+  {key:'magnesium', name:'Magnesium', unit:'mg/dL', low:1.7, high:2.2}
+];
+const THYROID_PARAMS = [
+  {key:'tsh', name:'TSH', unit:'µIU/mL', low:0.4, high:4.0},
+  {key:'ft3', name:'Free T3', unit:'pg/mL', low:2.3, high:4.2},
+  {key:'ft4', name:'Free T4', unit:'ng/dL', low:0.8, high:1.8}
+];
+const LIPID_PARAMS = [
+  {key:'chol', name:'Total Cholesterol', unit:'mg/dL', low:125, high:200},
+  {key:'hdl', name:'HDL Cholesterol', unit:'mg/dL', low:40, high:60},
+  {key:'ldl', name:'LDL Cholesterol', unit:'mg/dL', low:0, high:130},
+  {key:'tg', name:'Triglycerides', unit:'mg/dL', low:0, high:150},
+  {key:'vldl', name:'VLDL', unit:'mg/dL', low:5, high:40, calc:true},
+  {key:'ratio', name:'Total/HDL Ratio', unit:'', low:0, high:5, calc:true}
+];
+const COAG_PARAMS = [
+  {key:'pt', name:'Prothrombin Time', unit:'sec', low:11, high:13.5},
+  {key:'inr', name:'INR', unit:'', low:0.8, high:1.2},
+  {key:'aptt', name:'APTT', unit:'sec', low:25, high:35},
+  {key:'tt', name:'Thrombin Time', unit:'sec', low:14, high:21},
+  {key:'fibrinogen', name:'Fibrinogen', unit:'mg/dL', low:200, high:400},
+  {key:'bleeding_time', name:'Bleeding Time (Ivy)', unit:'min', low:1, high:9},
+  {key:'clotting_time', name:'Clotting Time (Lee‑White)', unit:'min', low:5, high:10},
+  {key:'d_dimer', name:'D‑Dimer', unit:'µg/mL', low:0, high:0.5}
+];
+const URINALYSIS_MICRO_PARAMS = [
+  {key:'colour', name:'Colour', unit:'', type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown']},
+  {key:'appearance', name:'Appearance', unit:'', type:'select', options:['Clear','Turbid','Cloudy']},
+  {key:'ph', name:'pH', unit:'', low:5.0, high:8.0, type:'number', step:0.5},
+  {key:'sg', name:'Specific Gravity', unit:'', low:1.005, high:1.030, type:'number', step:0.001},
+  {key:'protein', name:'Protein', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'glucose', name:'Glucose', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'ketones', name:'Ketones', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'blood', name:'Blood', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'bilirubin', name:'Bilirubin', unit:'', type:'select', options:['Negative','+','++']},
+  {key:'urobilinogen', name:'Urobilinogen', unit:'mg/dL', low:0.1, high:1.0, type:'number', step:0.1},
+  {key:'nitrite', name:'Nitrite', unit:'', type:'select', options:['Negative','Positive']},
+  {key:'leuko', name:'Leukocyte Esterase', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'wbc', name:'WBC', unit:'/HPF', low:0, high:5, type:'number'},
+  {key:'rbc', name:'RBC', unit:'/HPF', low:0, high:2, type:'number'},
+  {key:'epithelial', name:'Epithelial Cells', unit:'/HPF', type:'text'},
+  {key:'casts', name:'Casts', unit:'/LPF', type:'text'},
+  {key:'crystals', name:'Crystals', unit:'', type:'text'},
+  {key:'bacteria', name:'Bacteria', unit:'', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'yeast', name:'Yeast', unit:'', type:'select', options:['None','Few','Moderate','Many']}
+];
+const IRON_PARAMS = [
+  {key:'iron', name:'Serum Iron', unit:'µg/dL', low:50, high:150},
+  {key:'tibc', name:'TIBC', unit:'µg/dL', low:250, high:400},
+  {key:'uibc', name:'UIBC', unit:'µg/dL', low:150, high:300},
+  {key:'transferrinSat', name:'Transferrin Saturation', unit:'%', low:20, high:50},
+  {key:'ferritin', name:'Ferritin', unit:'ng/mL', low:20, high:300}
+];
+const BONE_PARAMS = [
+  {key:'calcium', name:'Calcium', unit:'mg/dL', low:8.5, high:10.2},
+  {key:'phosphate', name:'Phosphate', unit:'mg/dL', low:2.5, high:4.5},
+  {key:'alkaline_phosphatase', name:'ALP', unit:'U/L', low:30, high:120},
+  {key:'albumin', name:'Albumin', unit:'g/dL', low:3.5, high:5.0},
+  {key:'magnesium', name:'Magnesium', unit:'mg/dL', low:1.7, high:2.2},
+  {key:'vitaminD', name:'Vitamin D (25-OH)', unit:'ng/mL', low:30, high:80}
+];
+const CARDIAC_PARAMS = [
+  {key:'ckmb', name:'CK-MB', unit:'U/L', low:0, high:25},
+  {key:'troponinI', name:'Troponin I', unit:'ng/mL', low:0, high:0.04},
+  {key:'troponinT', name:'Troponin T', unit:'ng/mL', low:0, high:0.01},
+  {key:'ldh', name:'LDH', unit:'U/L', low:100, high:200},
+  {key:'ast_cardiac', name:'AST', unit:'U/L', low:10, high:35}
+];
+const OGTT_PARAMS = [
+  {key:'fasting', name:'Fasting', unit:'mg/dL', low:70, high:100},
+  {key:'one_hour', name:'1 Hour', unit:'mg/dL', low:0, high:180},
+  {key:'two_hour', name:'2 Hours', unit:'mg/dL', low:0, high:140},
+  {key:'three_hour', name:'3 Hours', unit:'mg/dL', low:0, high:120}
+];
+const MALARIA_PARAMS = [
+  {key:'species', name:'Species', type:'select', options:['Plasmodium falciparum','Plasmodium vivax','Plasmodium ovale','Plasmodium malariae','Mixed infection','None']},
+  {key:'stage', name:'Stage', type:'select', options:['Ring','Trophozoite','Schizont','Gametocyte','Not applicable']},
+  {key:'density', name:'Parasite Density', unit:'parasites/µL', type:'number', low:0, high:1000000}
+];
+const TB_GX_PARAMS = [
+  {key:'mtb_detected', name:'MTB Detected', type:'select', options:['Detected','Not detected','Invalid']},
+  {key:'rif_resistance', name:'Rifampicin Resistance', type:'select', options:['Detected','Not detected','Invalid']},
+  {key:'probeA_ct', name:'Probe A Ct', unit:'', type:'number'},
+  {key:'probeB_ct', name:'Probe B Ct', unit:'', type:'number'},
+  {key:'probeC_ct', name:'Probe C Ct', unit:'', type:'number'},
+  {key:'probeD_ct', name:'Probe D Ct', unit:'', type:'number'},
+  {key:'probeE_ct', name:'Probe E Ct', unit:'', type:'number'}
+];
+const CSF_PARAMS = [
+  {key:'appearance', name:'Appearance', type:'select', options:['Clear','Cloudy','Xanthochromic','Bloody']},
+  {key:'wbc', name:'WBC', unit:'/mm³', low:0, high:5, type:'number'},
+  {key:'rbc', name:'RBC', unit:'/mm³', low:0, high:0, type:'number'},
+  {key:'protein', name:'Protein', unit:'mg/dL', low:15, high:45, type:'number'},
+  {key:'glucose', name:'Glucose', unit:'mg/dL', low:40, high:80, type:'number'},
+  {key:'gram_stain', name:'Gram Stain', type:'select', options:['No organisms seen','Gram positive cocci','Gram negative rods','Fungi','Other']},
+  {key:'india_ink', name:'India Ink', type:'select', options:['Negative','Positive']},
+  {key:'crypto_ag', name:'Cryptococcal Antigen', type:'select', options:['Negative','Positive']}
+];
+const ABG_PARAMS = [
+  {key:'ph', name:'pH', unit:'', low:7.35, high:7.45, type:'number', step:0.01},
+  {key:'pco2', name:'pCO2', unit:'mmHg', low:35, high:45, type:'number'},
+  {key:'po2', name:'pO2', unit:'mmHg', low:80, high:100, type:'number'},
+  {key:'hco3', name:'HCO3', unit:'mmol/L', low:22, high:26, type:'number'},
+  {key:'base_excess', name:'Base Excess', unit:'mmol/L', low:-2, high:2, type:'number'},
+  {key:'o2sat', name:'O2 Saturation', unit:'%', low:95, high:100, type:'number'},
+  {key:'lactate', name:'Lactate', unit:'mmol/L', low:0.5, high:2.0, type:'number'}
+];
+const SEMEN_PARAMS = [
+  {key:'volume', name:'Volume', unit:'mL', low:1.5, high:6.0, type:'number', step:0.1},
+  {key:'count', name:'Sperm Count', unit:'million/mL', low:15, high:200, type:'number'},
+  {key:'motility', name:'Motility', unit:'%', low:40, high:100, type:'number'},
+  {key:'morphology', name:'Normal Morphology', unit:'%', low:4, high:100, type:'number'},
+  {key:'ph', name:'pH', unit:'', low:7.2, high:8.0, type:'number', step:0.1},
+  {key:'viscosity', name:'Viscosity', type:'select', options:['Normal','High']},
+  {key:'wbc', name:'WBC', unit:'million/mL', low:0, high:1, type:'number'}
+];
+const SEROLOGY_PARAMS = [
+  {key:'hbsag', name:'HBsAg', type:'select', options:['Non-reactive','Reactive']},
+  {key:'anti_hbs', name:'Anti-HBs', type:'select', options:['Non-reactive','Reactive']},
+  {key:'hbeag', name:'HBeAg', type:'select', options:['Non-reactive','Reactive']},
+  {key:'anti_hbe', name:'Anti-HBe', type:'select', options:['Non-reactive','Reactive']},
+  {key:'anti_hbc', name:'Anti-HBc (Total)', type:'select', options:['Non-reactive','Reactive']},
+];
+
+// ========== MCS PARAMS ==========
+// NOTE: These must exactly match result_entry.html's URINE_MICRO_PARAMS (same keys, same option strings)
+const URINE_MICRO_PARAMS = [
+  // Physical
+  {key:'colour',       name:'Colour',              unit:'', section:'Physical',   type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown','Amber','Orange']},
+  {key:'appearance',   name:'Appearance',           unit:'', section:'Physical',   type:'select', options:['Clear','Slightly Turbid','Turbid','Cloudy','Bloody','Frothy']},
+  {key:'volume',       name:'Volume',               unit:'mL', section:'Physical', type:'number', low:0, high:3000, step:10},
+  // Chemical
+  {key:'ph',           name:'pH',                   unit:'', section:'Chemical',   type:'number', step:0.5, low:5.0, high:8.0},
+  {key:'sg',           name:'Specific Gravity',     unit:'', section:'Chemical',   type:'number', step:0.001, low:1.005, high:1.030},
+  {key:'protein',      name:'Protein',              unit:'', section:'Chemical',   type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'glucose',      name:'Glucose',              unit:'', section:'Chemical',   type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'ketones',      name:'Ketones',              unit:'', section:'Chemical',   type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'blood',        name:'Blood',                unit:'', section:'Chemical',   type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'bilirubin',    name:'Bilirubin',            unit:'', section:'Chemical',   type:'select', options:['Negative','+','++']},
+  {key:'urobilinogen', name:'Urobilinogen',         unit:'mg/dL', section:'Chemical', type:'number', step:0.1, low:0.1, high:1.0},
+  {key:'nitrite',      name:'Nitrite',              unit:'', section:'Chemical',   type:'select', options:['Negative','Positive']},
+  {key:'leuko',        name:'Leukocyte Esterase',   unit:'', section:'Chemical',   type:'select', options:['Negative','Trace','+','++','+++']},
+  // Microscopy — option strings must match result_entry exactly (TNTC full label)
+  {key:'wbc_micro',    name:'WBC (Pus Cells)',      unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','21–50','>50','Too numerous to count (TNTC)']},
+  {key:'rbc_micro',    name:'RBC',                  unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–2','3–5','6–10','11–20','>20','Too numerous to count (TNTC)']},
+  {key:'epithelial',   name:'Epithelial Cells',     unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','Squamous — Few','Squamous — Moderate','Squamous — Many','Transitional — Few','Transitional — Moderate','Renal tubular — seen']},
+  {key:'casts',        name:'Casts',                unit:'/LPF', section:'Microscopy', type:'select', options:['None seen','Hyaline casts','Granular casts (coarse)','Granular casts (fine)','RBC casts','WBC casts','Epithelial cell casts','Waxy casts','Broad casts','Fatty casts','Mixed casts']},
+  {key:'crystals',     name:'Crystals',             unit:'',     section:'Microscopy', type:'select', options:['None seen','Uric acid','Calcium oxalate (monohydrate)','Calcium oxalate (dihydrate)','Triple phosphate (struvite)','Amorphous phosphates','Amorphous urates','Calcium carbonate','Calcium phosphate','Cystine','Tyrosine','Leucine']},
+  {key:'bacteria',     name:'Bacteria',             unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many','Too numerous to count (TNTC)']},
+  {key:'yeast',        name:'Yeast Cells',          unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'parasite',     name:'Parasite / Ova',       unit:'',     section:'Microscopy', type:'select', options:['None seen','Trichomonas vaginalis','Schistosoma haematobium ova','Other — see comments']},
+  {key:'mucus',        name:'Mucus Threads',        unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'sperm',        name:'Spermatozoa',          unit:'',     section:'Microscopy', type:'select', options:['Not seen','Seen (incidental)']},
+  {key:'micro_comment',name:'Microscopy Comment',   unit:'',     section:'Microscopy', type:'text'}
+];
+const STOOL_MICRO_PARAMS = [
+  {key:'consistency',  name:'Consistency',          unit:'', section:'Macroscopy', type:'select', options:['Formed','Soft','Watery','Loose','Bloody','Mucoid','Fatty']},
+  {key:'colour_stool', name:'Colour',               unit:'', section:'Macroscopy', type:'select', options:['Brown','Yellow','Green','Black (Tarry)','Red (Bloody)','Grey/Clay','Pale/Fatty']},
+  {key:'blood_stool',  name:'Blood (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['Absent','Present']},
+  {key:'mucus_stool',  name:'Mucus (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['Absent','Present']},
+  {key:'wbc_stool',    name:'WBC (Pus Cells)',      unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','>20']},
+  {key:'rbc_stool',    name:'RBC',                  unit:'/HPF', section:'Microscopy', type:'select', options:['None seen','1–5','6–10','11–20','>20']},
+  {key:'fat_globules', name:'Fat Globules',         unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'ova_parasite', name:'Ova / Parasites',      unit:'',     section:'Microscopy', type:'select', options:['None seen','Ascaris lumbricoides ova','Trichuris trichiura ova','Hookworm ova','Strongyloides larvae','Entamoeba histolytica cysts','Entamoeba histolytica trophozoites','Giardia lamblia cysts','Cryptosporidium oocysts','Taenia spp. ova','Enterobius vermicularis ova','Other — see comments']},
+  {key:'yeast_stool',  name:'Yeast Cells',          unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'epithelial_stool',name:'Epithelial Cells',  unit:'',     section:'Microscopy', type:'select', options:['None seen','Few','Moderate','Many']},
+  {key:'occult_blood', name:'Occult Blood (Chemical)',unit:'',   section:'Microscopy', type:'select', options:['Negative','Positive']},
+  {key:'micro_comment_stool',name:'Microscopy Comment',unit:'', section:'Microscopy', type:'text'}
+];
+
+// ========== PARAMETER HELPER FUNCTIONS ==========
+
+// Mirrors result_entry.html's getTestType() — DB lookup first, then regex fallback
+// so results always render even if test_definitions name casing differs slightly
+function getTestType(testName) {
+  if (testDefinitions.testTypes[testName]) return testDefinitions.testTypes[testName];
+  const n = testName.toLowerCase().trim();
+  if (/liver\s*function|lft\b/.test(n))                              return 'complex_lft';
+  if (/renal\s*function|kidney\s*function|rft\b/.test(n))            return 'complex_rft';
+  if (/full\s*blood\s*count|complete\s*blood|cbc\b|fbc\b/.test(n))   return 'complex_cbc';
+  if (/thyroid|tsh|thyroid\s*function/.test(n))                      return 'complex_thyroid';
+  if (/lipid\s*profile|cholesterol/.test(n))                         return 'complex_lipid';
+  if (/coagul|prothrombin|clotting\s*profile|pt\/inr|coag\b/.test(n))return 'complex_coag';
+  if (/widal/.test(n))                                               return 'complex_widal';
+  if (/urine\s*mcs|urine\s*m\/c\/s|urine\s*culture|urinalysis\s*mcs/.test(n)) return 'complex_urine_mcs';
+  if (/stool\s*mcs|stool\s*m\/c\/s|stool\s*culture/.test(n))        return 'complex_stool_mcs';
+  if (/urinalysis|urine\s*r\/e|u\/a\b|routine\s*urine/.test(n))     return 'complex_urinalysis';
+  if (/culture|sensitivity|c\/s\b|cs\b/.test(n) && /stool|faec/.test(n)) return 'complex_stool_cs';
+  if (/culture|sensitivity|c\/s\b|cs\b/.test(n))                    return 'complex_culture';
+  if (/malaria|rdt|thick.*film|blood.*film/.test(n))                 return 'complex_malaria';
+  if (/genexpert|xpert|tb.*pcr|mtb/.test(n))                        return 'complex_tb_genexpert';
+  if (/serology|hbsag|hepatitis/.test(n))                           return 'complex_serology';
+  if (/iron\s*studies|iron\s*profile|serum\s*iron/.test(n))         return 'complex_iron';
+  if (/bone\s*profile|calcium\s*profile/.test(n))                   return 'complex_bone';
+  if (/cardiac|troponin|ckmb/.test(n))                              return 'complex_cardiac';
+  if (/ogtt|glucose\s*tolerance/.test(n))                           return 'complex_ogtt';
+  if (/csf|cerebrospinal/.test(n))                                  return 'complex_csf';
+  if (/blood\s*gas|abg\b/.test(n))                                  return 'complex_abg';
+  if (/semen\s*analysis|seminal/.test(n))                           return 'complex_semen';
+  if (/packed\s*cell|pcv\b|haematocrit/.test(n))                    return 'complex_pcv';
+  if (/haemoglobin|hemoglobin|\bhb\b/.test(n))                      return 'complex_hb';
+  if (/esr\b|sedimentation/.test(n))                                return 'complex_esr';
+  if (/random\s*blood\s*sugar|rbs\b/.test(n))                       return 'complex_rbs';
+  if (/fasting\s*blood\s*sugar|fbs\b/.test(n))                      return 'complex_fbs';
+  return 'simple';
+}
+function getParamFlag(val, p) {
+  let n = parseFloat(val);
+  if (isNaN(n)) return '';
+  if (p.high !== null && n > p.high) return '↑';
+  if (p.low  !== null && n < p.low)  return '↓';
+  return '';
+}
+
+function paramsFor(testType) {
+  switch (testType) {
+    case 'complex_cbc': return CBC_PARAMS;
+    case 'complex_lft': return LFT_PARAMS_FULL;
+    case 'complex_rft': return RFT_PARAMS_FULL;
+    case 'complex_thyroid': return THYROID_PARAMS;
+    case 'complex_lipid': return LIPID_PARAMS;
+    case 'complex_coag': return COAG_PARAMS;
+    case 'complex_urinalysis': return URINALYSIS_MICRO_PARAMS;
+    case 'complex_urine_mcs': return URINE_MICRO_PARAMS;
+    case 'complex_stool_mcs': return STOOL_MICRO_PARAMS;
+    case 'complex_iron': return IRON_PARAMS;
+    case 'complex_bone': return BONE_PARAMS;
+    case 'complex_cardiac': return CARDIAC_PARAMS;
+    case 'complex_ogtt': return OGTT_PARAMS;
+    case 'complex_malaria': return MALARIA_PARAMS;
+    case 'complex_tb_genexpert': return TB_GX_PARAMS;
+    case 'complex_csf': return CSF_PARAMS;
+    case 'complex_abg': return ABG_PARAMS;
+    case 'complex_semen': return SEMEN_PARAMS;
+    case 'complex_serology': return SEROLOGY_PARAMS;
+    case 'complex_pcv':
+    case 'complex_hb':
+    case 'complex_esr':
+    case 'complex_rbs':
+    case 'complex_fbs':
+      return [];
+    default: return [];
+  }
+}
+
+function buildReportPreview(s) {
+  let rows = '';
+  s.tests.forEach(t => {
+    let testType = getTestType(t.test_name);
+    const techWho  = t.tech_name || t.done_by || null;
+    const techDone = t.done_at ? new Date(t.done_at).toLocaleString() : null;
+    const techBadge = techWho
+      ? `<span style="font-size:0.72rem;font-weight:500;color:#1a6840;background:#eaf5ef;
+                       border:1px solid #c6e8d4;border-radius:20px;padding:1px 9px;margin-left:8px;">
+           <i class="fas fa-user-circle" style="font-size:0.65rem;"></i>&nbsp;${esc(techWho)}${techDone ? ` &middot; ${techDone}` : ''}
+         </span>`
+      : `<span style="font-size:0.72rem;color:#9ca3af;margin-left:8px;">No tech recorded</span>`;
+
+    // ── Rejected test — show as a note row, no results ──────────────────
+    if (t.status === 'Rejected') {
+      rows += `<tr style="background:#fff0f0;">
+        <td colspan="4" style="padding:8px 12px;">
+          <span style="font-weight:600;color:#b91c1c;"><i class="fas fa-ban"></i> ${esc(t.test_name)}</span>
+          <span style="font-size:0.78rem;color:#b91c1c;background:#fff;border:1px solid #fca5a5;border-radius:20px;padding:2px 10px;margin-left:8px;">
+            Rejected: ${esc(t.rejection_reason || 'No reason recorded')}
+          </span>
+          <span style="font-size:0.72rem;color:#92400e;margin-left:8px;">Patient to return for recollection</span>
+        </td>
+      </tr>`;
+      return;
+    }
+    rows += `<tr style="background:#f8fafb;"><td colspan="4" style="padding:8px 12px; font-weight:600;">${esc(t.test_name)}${techBadge}</td></tr>`;
+    if (t.result && t.result.startsWith('{')) {
+      try {
+        let d = JSON.parse(t.result);
+        if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
+            testType === 'complex_rbs' || testType === 'complex_fbs') {
+          let key = testType.split('_')[1];
+          let val = d[key];
+          if (val !== undefined) {
+            let range = getReferenceRange(t.test_name, s.age, s.gender);
+            if (!range) range = { low: 0, high: 100, unit: '' };
+            let flag = '';
+            let num = parseFloat(val);
+            if (!isNaN(num)) {
+              if (num > range.high) flag = '↑';
+              else if (num < range.low) flag = '↓';
+            }
+            rows += `<tr><td style="padding:6px 12px;">Result</td>
+                         <td style="padding:6px 12px; ${flag ? 'font-weight:700;color:#dc2626;' : ''}">${val} ${flag}</td>
+                         <td style="padding:6px 12px;">${esc(range.unit)}</td>
+                         <td style="padding:6px 12px;">${range.low}–${range.high}</td></tr>`;
+          }
+        } else if (testType === 'complex_widal') {
+          const widalEntries = [
+            { organism: 'Salmonella Typhi',        o: d.o ?? '—', h: d.h ?? '—' },
+            { organism: 'Salmonella Paratyphi A',  o: d.ao ?? '—', h: d.ah ?? '—' },
+            { organism: 'Salmonella Paratyphi B',  o: d.bo ?? '—', h: d.bh ?? '—' },
+            { organism: 'Salmonella Paratyphi C',  o: d.co ?? '—', h: d.ch ?? '—' }
+          ];
+          let widalRows = '';
+          for (let r of widalEntries) {
+            const oFlag = parseInt(r.o) >= 160 ? ' ↑' : '';
+            const hFlag = parseInt(r.h) >= 160 ? ' ↑' : '';
+            const oDisplay = r.o !== '—' ? `1:${r.o}${oFlag}` : '—';
+            const hDisplay = r.h !== '—' ? `1:${r.h}${hFlag}` : '—';
+            widalRows += `<tr><td style="padding:6px 12px;">${r.organism}</td>
+                             <td style="padding:6px 12px; ${oFlag ? 'font-weight:700;color:#dc2626;' : ''}">${oDisplay}</td>
+                             <td style="padding:6px 12px; ${hFlag ? 'font-weight:700;color:#dc2626;' : ''}">${hDisplay}</td></tr>`;
+          }
+          rows += `<tr><td colspan="4"><table style="width:100%; border-collapse:collapse;"><thead><tr><th>Organism</th><th>O Antigen (TO)</th><th>H Antigen (TH)</th></tr></thead><tbody>${widalRows}</tbody></table></td></tr>`;
+        } else if (testType === 'complex_culture' || testType === 'complex_stool_cs') {
+          let organism = d.organism || 'Not specified';
+          rows += `<tr style="background:#f0f7f4;"><td colspan="4" style="padding:8px 12px;"><strong>Organism:</strong> <span style="font-style:italic;">${esc(organism)}</span></td></tr>`;
+          if (d.sensitivities && d.sensitivities.length) {
+            rows += `<tr style="background:#e8f4f0;"><th style="padding:6px 12px;">Antibiotic</th><th style="padding:6px 12px;">Result</th><th style="padding:6px 12px;">Interpretation</th><th style="padding:6px 12px;"></th></tr>`;
+            d.sensitivities.forEach(s => {
+              const label  = s.result === 'S' ? 'Sensitive'     : s.result === 'R' ? 'Resistant'    : s.result === 'I' ? 'Intermediate' : s.result || '—';
+              const colour = s.result === 'S' ? '#15803d'       : s.result === 'R' ? '#b91c1c'       : s.result === 'I' ? '#92400e'      : '#374151';
+              const bg     = s.result === 'S' ? '#dcfce7'       : s.result === 'R' ? '#fee2e2'        : s.result === 'I' ? '#fef3c7'      : '#f3f4f6';
+              rows += `<tr><td style="padding:6px 12px;">${esc(s.antibiotic)}</td><td style="padding:6px 12px; font-weight:700; color:${colour};">${esc(s.result)}</td><td style="padding:6px 12px;"><span style="display:inline-block; padding:2px 10px; border-radius:20px; background:${bg}; color:${colour}; font-size:0.78rem; font-weight:600;">${label}</span></td><td></td></tr>`;
+            });
+          } else {
+            rows += `<tr><td colspan="4" style="padding:6px 12px; color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+          }
+        } else if (testType === 'complex_urine_mcs' || testType === 'complex_stool_mcs') {
+          const isMCS = testType === 'complex_urine_mcs';
+          const MICRO_PARAMS = isMCS ? URINE_MICRO_PARAMS : STOOL_MICRO_PARAMS;
+          const sections = isMCS ? ['Physical','Chemical','Microscopy'] : ['Macroscopy','Microscopy'];
+          sections.forEach(sec => {
+            rows += `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:700; padding:6px 12px; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">${sec}</td></tr>`;
+            MICRO_PARAMS.filter(p => p.section === sec).forEach(p => {
+              let v = d[p.key]; if (v === undefined || v === '' || v === 'None seen' || v === 'Absent' || v === 'Negative') return;
+              let flag = '';
+              if (p.type === 'number' && p.low !== undefined) { let n = parseFloat(v); if (!isNaN(n)) { if (n > p.high) flag = '↑'; else if (n < p.low) flag = '↓'; } }
+              rows += `<tr><td style="padding:5px 12px;">${esc(p.name)}</td><td style="padding:5px 12px;${flag?'font-weight:700;color:#dc2626;':''}">${esc(v)} ${flag}</td><td style="padding:5px 12px;">${esc(p.unit||'')}</td><td></td></tr>`;
+            });
+          });
+          rows += `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:700; padding:6px 12px; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">Culture &amp; Sensitivity</td></tr>`;
+          rows += `<tr><td style="padding:6px 12px;">Organism</td><td colspan="3" style="padding:6px 12px; font-style:italic;">${esc(d.organism || 'No growth / Not specified')}</td></tr>`;
+          if (d.sensitivities && d.sensitivities.length) {
+            rows += `<tr style="background:#e8f4f0;"><th style="padding:6px 12px;">Antibiotic</th><th style="padding:6px 12px;">Result</th><th style="padding:6px 12px;">Interpretation</th><th></th></tr>`;
+            d.sensitivities.forEach(s => {
+              const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
+              const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
+              const bg     = s.result==='S'?'#dcfce7':s.result==='R'?'#fee2e2':s.result==='I'?'#fef3c7':'#f3f4f6';
+              rows += `<tr><td style="padding:6px 12px;">${esc(s.antibiotic)}</td><td style="padding:6px 12px;font-weight:700;color:${colour};">${esc(s.result)}</td><td style="padding:6px 12px;"><span style="display:inline-block;padding:2px 10px;border-radius:20px;background:${bg};color:${colour};font-size:0.78rem;font-weight:600;">${label}</span></td><td></td></tr>`;
+            });
+          } else {
+            rows += `<tr><td colspan="4" style="padding:6px 12px;color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+          }
+        } else if (testType === 'complex_malaria') {
+          if (d.species) rows += `<tr><td>Species</td><td colspan="3">${esc(d.species)}</td></tr>`;
+          if (d.stage) rows += `<tr><td>Stage</td><td colspan="3">${esc(d.stage)}</td></tr>`;
+          if (d.density !== undefined) rows += `<tr><td>Parasite Density</td><td colspan="3">${esc(d.density)} parasites/µL</td></tr>`;
+        } else if (testType === 'complex_tb_genexpert') {
+          if (d.mtb_detected) rows += `<tr><td>MTB Detected</td><td colspan="3">${esc(d.mtb_detected)}</td></tr>`;
+          if (d.rif_resistance) rows += `<tr><td>Rifampicin Resistance</td><td colspan="3">${esc(d.rif_resistance)}</td></tr>`;
+          for (let probe of ['probeA_ct','probeB_ct','probeC_ct','probeD_ct','probeE_ct']) {
+            if (d[probe] !== undefined) rows += `<tr><td>${probe.replace('_ct',' Probe Ct')}</td><td colspan="3">${esc(d[probe])}</td></tr>`;
+          }
+        } else if (testType === 'complex_serology') {
+          for (let p of SEROLOGY_PARAMS) {
+            if (d[p.key] !== undefined) rows += `<tr><td>${esc(p.name)}</td><td colspan="3">${esc(d[p.key])}</td></tr>`;
+          }
+        } else {
+          let params = paramsFor(testType);
+          if (params.length) {
+            params.forEach(p => {
+              let v = d[p.key];
+              if (v === undefined) return;
+              let flag = getParamFlag(v, p);
+              let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : (p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—');
+              rows += `<tr><td style="padding:6px 12px;">${esc(p.name)}</td>
+                           <td style="padding:6px 12px; ${flag ? 'font-weight:700;color:#dc2626;' : ''}">${v} ${flag}</td>
+                           <td style="padding:6px 12px;">${esc(p.unit)}</td>
+                           <td style="padding:6px 12px;">${ref}</td></tr>`;
+            });
+          } else {
+            rows += `<tr><td colspan="4">${esc(JSON.stringify(d))}</td></tr>`;
+          }
+        }
+      } catch(e) { rows += `<tr><td colspan="4">${esc(t.result)}</td></tr>`; }
+    } else {
+      rows += `<tr><td colspan="4">${esc(t.result || '—')}</td></tr>`;
+    }
+  });
+  return `<table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ========== RENDER ALL SAMPLES (unchanged, kept from your previous version) ==========
+async function renderAllSamples() {
+  await loadSamples();
+  let search = document.getElementById('allSearch')?.value.toLowerCase() || '';
+  let status = document.getElementById('allStatusFilter')?.value || 'all';
+  let payment = document.getElementById('allPayFilter')?.value || 'all';
+  let filtered = samples.filter(s => {
+    if (status !== 'all' && s.status !== status) return false;
+    if (payment !== 'all' && s.paystatus !== payment) return false;
+    if (search && !s.id.toString().includes(search) && !s.patient.toLowerCase().includes(search) && !(s.offline_ref || '').toLowerCase().includes(search) && !(s.receipt_no || '').toLowerCase().includes(search)) return false;
+    return true;
+  });
+  let tbody = document.getElementById('allSamplesTable');
+  if (!tbody) return;
+  if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;">No samples found.</td></tr>'; return; }
+  let today = new Date().toISOString().slice(0,10);
+  tbody.innerHTML = filtered.map(s => {
+    let isOverdue = s.due && s.due < today && s.status !== 'Result Released' && s.status !== 'Rejected';
+    let priCls = s.priority === 'STAT' ? 'badge-stat' : s.priority === 'Urgent' ? 'badge-urgent' : 'badge-routine';
+    return `<tr>
+      <td style="font-family:monospace;">MU-${s.id}${s.offline_ref ? `<br><span style="font-size:0.6rem;background:#fff9ec;border:1px solid #fde68a;color:#92400e;padding:1px 5px;border-radius:5px;font-family:monospace;">${esc(s.offline_ref)}</span>` : ''}</td>
+      <td><strong>${esc(s.patient)}</strong><br><small>${s.age ?? '?'}y ${esc(s.gender)}</small></td>
+      <td><small>${s.tests.map(t => esc(t.test_name)).join('<br>')}</small></td>
+      <td><small>${esc(s.stype || '')}</small></td>
+      <td>${esc(s.collDate || '')}</td>
+      <td><small ${isOverdue ? 'style="color:var(--red-light);font-weight:700;"' : ''}>${s.due || '—'}${isOverdue ? ' ⚠' : ''}</small></td>
+      <td><span class="badge ${priCls}">${esc(s.priority)}</span></td>
+      <td><span class="badge">${esc(s.status)}</span></td>
+      <td>${payBadge(s.paystatus)}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-secondary btn-sm" onclick="togglePayment(${s.id})"><i class="fas fa-dollar-sign"></i></button>
+        ${s.status === 'Result Released' ? `<button class="btn btn-secondary btn-sm" onclick="generatePDF(${s.id})"><i class="fas fa-file-pdf"></i></button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deleteSample(${s.id})"><i class="fas fa-trash"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function togglePayment(id) {
+  let s = samples.find(x => x.id === id);
+  if (!s) return;
+  if (s.paystatus === 'Paid') {
+    s.paystatus = 'Unpaid'; s.amountPaid = 0; s.balanceDue = s.totalAmount || 0;
+  } else {
+    s.paystatus = 'Paid'; s.amountPaid = s.totalAmount || 0; s.balanceDue = 0;
+  }
+  await saveSample(s);
+  await addAudit('Payment toggled', id, `New status: ${s.paystatus}`);
+  await renderAllSamples();
+  toast(`Payment: ${s.paystatus}`);
+}
+async function deleteSample(id) {
+  if (!confirm(`Permanently delete sample MU-${id}?`)) return;
+  await deleteSampleFromServer(id);
+  await addAudit('Deleted', id, 'Sample removed');
+  await Promise.all([renderAllSamples(), renderDashboard(), renderVerifyTable()]);
+  toast('Sample deleted', 'warn');
+}
+function exportAllSamples() {
+  let headers = ['ID','Patient','Age','Gender','Phone','Clinician','Tests','Sample Type','Collection Date','Due Date','Priority','Status','Payment Status','Total NGN','Paid NGN','Balance NGN'];
+  let rows = samples.map(s => [`MU-${s.id}`, s.patient, s.age || '', s.gender, s.phone || '', s.clinician || '', s.tests.map(t => t.test_name).join('; '), s.stype, s.collDate, s.due || '', s.priority, s.status, s.paystatus, (s.totalAmount||0).toFixed(2), (s.amountPaid||0).toFixed(2), (s.balanceDue||0).toFixed(2)]);
+  let csv = [headers, ...rows].map(r => r.map(c => `"${String(c ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
+  let blob = new Blob([csv], { type:'text/csv' });
+  let a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `muujiza_samples_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  toast('CSV exported');
+}
+async function renderDashboard() {
+  await loadSamples();
+  let byStatus = s => samples.filter(x => x.status === s).length;
+  let overdue = samples.filter(s => s.status !== 'Result Released' && s.status !== 'Rejected' && s.due && s.due < new Date().toISOString().slice(0,10)).length;
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card"><div><div class="stat-label">Total</div><div class="stat-val">${samples.length}</div></div><i class="fas fa-flask fa-2x"></i></div>
+    <div class="stat-card"><div><div class="stat-label">Collected</div><div class="stat-val">${byStatus('Collected')}</div></div><i class="fas fa-clipboard-list fa-2x"></i></div>
+    <div class="stat-card"><div><div class="stat-label">Processing</div><div class="stat-val">${byStatus('Processing')}</div></div><i class="fas fa-microscope fa-2x"></i></div>
+    <div class="stat-card"><div><div class="stat-label">Verifying</div><div class="stat-val">${byStatus('Verifying')}</div></div><i class="fas fa-check-double fa-2x"></i></div>
+    <div class="stat-card"><div><div class="stat-label">Released</div><div class="stat-val">${byStatus('Result Released')}</div></div><i class="fas fa-file-alt fa-2x"></i></div>
+    <div class="stat-card" style="${overdue > 0 ? 'border-color:#f87171;' : ''}"><div><div class="stat-label">Overdue</div><div class="stat-val" style="${overdue > 0 ? 'color:var(--red-light);' : ''}">${overdue}</div></div><i class="fas fa-clock fa-2x"></i></div>`;
+  let overdueSamples = samples.filter(s => s.status !== 'Result Released' && s.status !== 'Rejected' && s.due && s.due < new Date().toISOString().slice(0,10));
+  document.getElementById('criticalList').innerHTML = '<p>No critical flags at this time.</p>';
+  document.getElementById('overdueList').innerHTML = overdueSamples.length ? overdueSamples.map(s => `<div><strong>MU-${s.id}</strong> ${esc(s.patient)} — Due: ${s.due}</div>`).join('') : '<p>No overdue samples.</p>';
+}
+async function renderVerifyTable() {
+  await loadSamples();
+  let search = document.getElementById('verifySearch')?.value.toLowerCase() || '';
+  let statusFilter = document.getElementById('verifyStatusFilter')?.value || 'all';
+  let filtered = samples.filter(s => {
+    if (statusFilter === 'all') return s.status === 'Verifying' || s.status === 'Result Released';
+    return s.status === statusFilter;
+  });
+  if (search) filtered = filtered.filter(s => s.id.toString().includes(search) || s.patient.toLowerCase().includes(search) || (s.offline_ref || '').toLowerCase().includes(search) || (s.receipt_no || '').toLowerCase().includes(search));
+  let tbody = document.getElementById('verifyTable');
+  if (!tbody) return;
+  if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;">No samples found.</td></tr>'; return; }
+  tbody.innerHTML = filtered.map(s => {
+    const isReleased = s.status === 'Result Released';
+    const statusBadge = isReleased
+      ? '<span class="badge badge-paid"><i class="fas fa-check-circle"></i> Released</span>'
+      : '<span class="badge badge-partial">Verifying</span>';
+    const releasedAt = isReleased && s.releasedAt ? new Date(s.releasedAt).toLocaleString() : (isReleased ? '—' : '');
+    const actions = `<button class="btn btn-primary btn-sm" onclick="openVerifyModal(${s.id})"><i class="fas fa-eye"></i> Review</button>`;
+    return `<tr style="${isReleased ? 'opacity:0.85;background:#f8fff9;' : ''}">
+      <td style="font-family:monospace;">MU-${s.id}${s.offline_ref ? `<br><span style="font-size:0.6rem;background:#fff9ec;border:1px solid #fde68a;color:#92400e;padding:1px 5px;border-radius:5px;font-family:monospace;">${esc(s.offline_ref)}</span>` : ''}</td>
+      <td><strong>${esc(s.patient)}</strong><br><small>${s.age ?? '?'}y ${esc(s.gender)}</small></td>
+      <td><small>${s.tests.map(t => esc(t.test_name)).join('<br>')}</small></td>
+      <td><small>${s.tests.map(t => {
+        const who = t.tech_name || t.done_by || '—';
+        return `<span style="display:block;">${esc(t.test_name)}: <strong>${esc(who)}</strong></span>`;
+      }).join('')}</small></td>
+      <td>${statusBadge}</td>
+      <td><small>${releasedAt}</small></td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+}
+async function openVerifyModal(id) {
+  currentVerifySample = samples.find(s => s.id === id);
+  if (!currentVerifySample) return;
+
+  const actionableTests = currentVerifySample.tests.filter(t => t.status !== 'Rejected');
+  const rejectedTests   = currentVerifySample.tests.filter(t => t.status === 'Rejected');
+
+  let flags = [];
+  actionableTests.forEach(t => {
+    let testType = getTestType(t.test_name);
+    if (!t.result || !t.result.startsWith('{')) return;
+    try {
+      let d = JSON.parse(t.result);
+      let params = paramsFor(testType);
+      params.forEach(p => {
+        let v = d[p.key];
+        if (v !== undefined) {
+          if (p.high && parseFloat(v) > p.high) flags.push(`${p.name} ↑ (${v})`);
+          if (p.low  && parseFloat(v) < p.low)  flags.push(`${p.name} ↓ (${v})`);
+        }
+      });
+    } catch(e) {}
+  });
+
+  // Rejected tests banner
+  const rejectedBanner = rejectedTests.length ? `
+    <div style="background:#fff0f0; border:1.5px solid #fca5a5; border-radius:12px; padding:12px 16px; margin-bottom:14px;">
+      <div style="font-weight:700; color:#b91c1c; margin-bottom:8px;"><i class="fas fa-ban"></i> ${rejectedTests.length} Test(s) Rejected — Patient Must Return</div>
+      ${rejectedTests.map(t => `
+        <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid #fde8e8;">
+          <span style="font-weight:600; font-size:0.85rem;">${esc(t.test_name)}</span>
+          <span style="font-size:0.78rem; color:#b91c1c; background:#fff; border:1px solid #fca5a5; border-radius:20px; padding:2px 10px;">${esc(t.rejection_reason || 'No reason recorded')}</span>
+        </div>`).join('')}
+      <div style="font-size:0.75rem; color:#92400e; margin-top:8px; background:#fff7ed; border-radius:8px; padding:6px 10px;">
+        <i class="fas fa-info-circle"></i> You can still authorise and release the available results. The printed report will note the rejected tests with instructions for the patient to return.
+      </div>
+    </div>` : '';
+
+  let html = `
+    <div style="background:#f0f7f4; border-radius:16px; padding:14px; margin-bottom:16px;">
+      <strong>MU-${currentVerifySample.id}</strong> | ${esc(currentVerifySample.patient)} | ${currentVerifySample.age ?? '?'}y ${esc(currentVerifySample.gender)}<br>
+      <small>Clinician: ${esc(currentVerifySample.clinician || '—')}</small>
+    </div>
+    ${rejectedBanner}
+    ${flags.length
+      ? `<div class="interp-abnormal"><strong>⚠ Abnormal:</strong> ${flags.join(' · ')}</div>`
+      : '<div style="background:#dcfce7;color:#15803d;border-radius:12px;padding:8px 14px;margin-bottom:16px;">✓ All available values within range</div>'}
+    <div style="border:1px solid var(--border); border-radius:16px; overflow-x:auto; margin-bottom:16px; padding:8px;">${buildReportPreview(currentVerifySample)}</div>
+    <div class="form-group"><label class="form-label">Supervisor Comment</label><textarea id="supervisorComment" rows="2" class="form-input" style="width:100%;"></textarea></div>`;
+
+  document.getElementById('verifyModalTitle').innerHTML = `Review — MU-${currentVerifySample.id} | ${esc(currentVerifySample.patient)}`;
+  document.getElementById('verifyModalBody').innerHTML = html;
+  document.getElementById('verifyModal').style.display = 'flex';
+}
+async function returnToTech() {
+  if (!currentVerifySample) { toast('No sample selected', 'error'); return; }
+  const s = currentVerifySample; // capture before closeVerifyModal clears it
+  const comment = document.getElementById('supervisorComment')?.value || '';
+  s.status = 'Processing';
+  // Reset all test done-stamps so techs must re-enter and re-mark
+  if (s.tests) s.tests.forEach(t => { t.status = 'Processing'; t.done_by = null; t.done_at = null; });
+  await saveSample(s);
+  await addAudit('Returned to Tech', s.id, comment);
+  closeVerifyModal();
+  await Promise.all([renderVerifyTable(), renderAllSamples()]);
+  toast(`MU-${s.id} returned to technologist`);
+}
+async function releaseResults() {
+  if (!currentVerifySample) { toast('No sample selected', 'error'); return; }
+  const s = currentVerifySample;
+  s.status = 'Result Released';
+  s.releasedAt = new Date().toISOString();
+  s.supervisorComment = document.getElementById('supervisorComment')?.value || '';
+
+  // Update sample_tests — only move non-rejected tests to Released
+  try {
+    for (const t of s.tests) {
+      if (t.status === 'Rejected') continue; // preserve rejected tests as-is
+      await db.from('sample_tests').update({ status: 'Released' }).eq('id', t.id);
+    }
+  } catch(e) { console.warn('[M1] Failed to update test statuses on release', e); }
+
+  const rejectedCount = s.tests.filter(t => t.status === 'Rejected').length;
+  const releaseNote = rejectedCount
+    ? `Authorised by ${currentUser?.name}. ${rejectedCount} test(s) still rejected. ${s.supervisorComment}`
+    : `Authorised by ${currentUser?.name}. ${s.supervisorComment}`;
+
+  await saveSample(s);
+  await addAudit('Released', s.id, releaseNote);
+  closeVerifyModal();
+  await Promise.all([renderVerifyTable(), renderAllSamples(), renderDashboard()]);
+  toast(`MU-${s.id} released ✓${rejectedCount ? ` (${rejectedCount} test(s) pending recollection)` : ''}`);
+}
+function closeVerifyModal() { document.getElementById('verifyModal').style.display = 'none'; currentVerifySample = null; }
+async function renderAudit() {
+  let { data, error } = await db.from('audit_log').select('ts,user_name,user_role,action,sample_id,details').order('ts', { ascending: false }).limit(500);
+  if (error) return;
+  document.getElementById('auditTableBody').innerHTML = data.map(e => `<tr>
+    <td>${new Date(e.ts).toLocaleString()}</td>
+    <td>${esc(e.user_name)} (${esc(e.user_role)})</td>
+    <td><strong>${esc(e.action)}</strong></td>
+    <td>${e.sample_id ? `MU-${e.sample_id}` : '—'}</td>
+    <td><small>${esc(e.details || '')}</small></td>
+  </tr>`).join('');
+}
+async function renderFinanceReport() {
+  await loadSamples();
+  let start = document.getElementById('financeStart')?.value, end = document.getElementById('financeEnd')?.value;
+  let filtered = samples.filter(s => (!start || (s.collDate || '') >= start) && (!end || (s.collDate || '') <= end));
+  let daily = {};
+  filtered.forEach(s => { let d = s.collDate || 'Unknown'; if(!daily[d]) daily[d] = {total:0,paid:0,balance:0,count:0}; daily[d].total += s.totalAmount||0; daily[d].paid += s.amountPaid||0; daily[d].balance += s.balanceDue||0; daily[d].count++; });
+  let totalRevenue=0,totalPaid=0,totalBalance=0, rows = '';
+  for(let [date,data] of Object.entries(daily).sort((a,b)=>b[0].localeCompare(a[0]))) {
+    rows += `<tr><td>${esc(date)}</td><td>${data.total.toFixed(2)} NGN</td><td>${data.paid.toFixed(2)} NGN</td><td>${data.balance.toFixed(2)} NGN</td><td>${data.count}</td></tr>`;
+    totalRevenue+=data.total; totalPaid+=data.paid; totalBalance+=data.balance;
+  }
+  rows += `<tr style="font-weight:700;background:#f0f7f4;"><td>TOTAL</td><td>${totalRevenue.toFixed(2)} NGN</td><td>${totalPaid.toFixed(2)} NGN</td><td>${totalBalance.toFixed(2)} NGN</td><td>${filtered.length}</td></tr>`;
+  document.getElementById('financeTable').innerHTML = rows;
+  document.getElementById('financeStats').innerHTML = `<div class="stat-card"><div>Total Revenue</div><div>${totalRevenue.toFixed(2)} NGN</div></div><div class="stat-card"><div>Paid</div><div>${totalPaid.toFixed(2)} NGN</div></div><div class="stat-card"><div>Outstanding</div><div>${totalBalance.toFixed(2)} NGN</div></div>`;
+}
+function resetFinanceFilter() { document.getElementById('financeStart').value=''; document.getElementById('financeEnd').value=''; renderFinanceReport(); }
+function exportFinanceCSV() {
+  let headers = ['ID','Patient','Date','Total (NGN)','Paid (NGN)','Balance (NGN)','Status'];
+  let rows = samples.map(s => [`MU-${s.id}`, s.patient, s.collDate, (s.totalAmount||0).toFixed(2), (s.amountPaid||0).toFixed(2), (s.balanceDue||0).toFixed(2), s.paystatus]);
+  let csv = [headers, ...rows].map(r => r.map(c => `"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  let a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv])); a.download=`finance_${new Date().toISOString().slice(0,10)}.csv`; a.click(); toast('CSV exported');
+}
+async function generatePDF(id) {
+  let s = samples.find(x => x.id === id);
+  if (!s) return;
+  let wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed; left:-9999px; top:0; width:800px; background:white; padding:30px; font-family:Arial; font-size:12px;';
+  let rows = '';
+  const rejectedTests = s.tests.filter(t => t.status === 'Rejected');
+
+  for (let t of s.tests) {
+    if (t.status === 'Rejected') {
+      // Show rejected tests as a clearly marked row — no result
+      rows += `<tr style="background:#fff0f0;">
+        <td colspan="4" style="padding:8px; color:#b91c1c; font-weight:bold;">
+          ✗ ${t.test_name} — SAMPLE REJECTED: ${t.rejection_reason || 'No reason recorded'} · Patient to return for recollection
+        </td>
+      </tr>`;
+      continue;
+    }
+    let testType = getTestType(t.test_name);
+    if (t.result && t.result.startsWith('{') && testType) {
+      try {
+        let data = JSON.parse(t.result);
+        rows += generatePDFRows(t.test_name, data, testType, s.age, s.gender);
+      } catch(e) { rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result)}</td></tr>`; }
+    } else {
+      rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result || '—')}</td></tr>`;
+    }
+  }
+
+  const rejectedNote = rejectedTests.length
+    ? `<p style="background:#fff7ed; border:1px solid #fed7aa; border-radius:6px; padding:8px 12px; color:#92400e; font-size:11px; margin-top:12px;">
+        <strong>⚠ Note:</strong> ${rejectedTests.map(t => `${t.test_name} (${t.rejection_reason || 'rejected'})`).join(', ')} — patient is required to return to the laboratory for recollection of the affected sample(s).
+       </p>` : '';
+
+  wrap.innerHTML = `<div style="text-align:center; margin-bottom:20px; border-bottom:2px solid #1F6E43; padding-bottom:16px;">
+      <h1 style="color:#1F6E43;">MU'UJIZA DIAGNOSTICS</h1>
+      <p style="font-size:11px;">Accredited Laboratory · ISO 15189</p>
+    </div>
+    <div style="margin-bottom:16px;">
+      <p><strong>Sample ID:</strong> MU-${s.id}</p>
+      <p><strong>Patient:</strong> ${esc(s.patient)} (${s.age ?? '?'}y, ${esc(s.gender)})</p>
+      <p><strong>Collected:</strong> ${s.collection_date} | <strong>Released:</strong> ${s.released_at ? new Date(s.released_at).toLocaleString() : '—'}</p>
+      <p><strong>Payment:</strong> ${s.pay_status} | Paid: ${(s.amount_paid || 0).toFixed(2)} NGN | Balance: ${(s.balance_due || 0).toFixed(2)} NGN</p>
+      ${s.supervisor_comment ? `<p><strong>Supervisor Note:</strong> ${esc(s.supervisor_comment)}</p>` : ''}
+    </div>
+    <table border="1" style="border-collapse:collapse; width:100%;">
+      <thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${rejectedNote}
+    <div style="margin-top:20px; text-align:center; font-size:9px;">Electronically generated by MU'UJIZA DIAGNOSTICS LIS</div>`;
+  document.body.appendChild(wrap);
+  const { jsPDF } = window.jspdf;
+  let pdf = new jsPDF('p', 'mm', 'a4');
+  await html2canvas(wrap, { scale: 2 }).then(canvas => {
+    let img = canvas.toDataURL('image/png');
+    let w = 190, h = (canvas.height * w) / canvas.width;
+    pdf.addImage(img, 'PNG', 10, 10, w, h);
+    pdf.save(`MU${s.id}_${(s.patient || 'patient').replace(/\s/g, '_')}.pdf`);
+  });
+  document.body.removeChild(wrap);
+  await addAudit('PDF Downloaded', s.id, `Report downloaded by ${currentUser ? currentUser.name : 'Unknown'}`);
+  toast('PDF downloaded');
+}
+function generatePDFRows(testName, data, testType, age, gender) {
+  if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
+      testType === 'complex_rbs' || testType === 'complex_fbs') {
+    let key = testType.split('_')[1];
+    let val = data[key];
+    if (val === undefined) return '';
+    let range = getReferenceRange(testName, age, gender);
+    if (!range) range = { low: 0, high: 100, unit: '' };
+    let flag = '';
+    let num = parseFloat(val);
+    if (!isNaN(num)) {
+      if (num > range.high) flag = '↑';
+      else if (num < range.low) flag = '↓';
+    }
+    return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>
+            <tr><td style="padding:5px;">Value</td><td>${val} ${flag}</td><td>${esc(range.unit)}</td><td>${range.low}–${range.high}</td></tr>`;
+  }
+if (testType === 'complex_widal') {
+  const rows = [
+    { organism: 'Salmonella Typhi',        o: data.o ?? '—', h: data.h ?? '—' },
+    { organism: 'Salmonella Paratyphi A',  o: data.ao ?? '—', h: data.ah ?? '—' },
+    { organism: 'Salmonella Paratyphi B',  o: data.bo ?? '—', h: data.bh ?? '—' },
+    { organism: 'Salmonella Paratyphi C',  o: data.co ?? '—', h: data.ch ?? '—' }
+  ];
+  let tableRows = '';
+  for (let r of rows) {
+    const oFlag = parseInt(r.o) >= 160 ? ' ↑' : '';
+    const hFlag = parseInt(r.h) >= 160 ? ' ↑' : '';
+    const oDisplay = r.o !== '—' ? `1:${r.o}${oFlag}` : '—';
+    const hDisplay = r.h !== '—' ? `1:${r.h}${hFlag}` : '—';
+    tableRows += `<tr><td style="padding:5px;">${r.organism}</td><td style="padding:5px;${oFlag?'font-weight:bold;':''}">${oDisplay}</td><td style="padding:5px;${hFlag?'font-weight:bold;':''}">${hDisplay}</td></tr>`;
+  }
+  return `<tr style="background:#f0f0f0;"><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>
+          <tr><td colspan="4"><table style="width:100%; border-collapse:collapse;"><thead><tr><th>Organism</th><th>O Antigen</th><th>H Antigen</th></tr></thead><tbody>${tableRows}</tbody></table></td></tr>`;
+}
+  if (testType === 'complex_culture' || testType === 'complex_stool_cs') {
+    let organism = data.organism || 'Not specified';
+    let html = `<tr style="background:#e8f4f0;"><td colspan="4" style="font-weight:bold; padding:7px;">${esc(testName)}</td></tr>`;
+    html += `<tr><td colspan="4" style="padding:6px;"><strong>Organism:</strong> <em>${esc(organism)}</em></td></tr>`;
+    if (data.sensitivities && data.sensitivities.length) {
+      html += `<tr style="background:#f0f0f0;"><th style="padding:6px;">Antibiotic</th><th style="padding:6px;">Result</th><th style="padding:6px;">Interpretation</th><th style="padding:6px;"></th></tr>`;
+      data.sensitivities.forEach(s => {
+        const label  = s.result === 'S' ? 'Sensitive' : s.result === 'R' ? 'Resistant' : s.result === 'I' ? 'Intermediate' : s.result || '—';
+        const colour = s.result === 'S' ? '#15803d'   : s.result === 'R' ? '#b91c1c'   : s.result === 'I' ? '#92400e'      : '#374151';
+        html += `<tr><td style="padding:5px;">${esc(s.antibiotic)}</td><td style="padding:5px; font-weight:bold; color:${colour};">${esc(s.result)}</td><td style="padding:5px; color:${colour};">${label}</td><td></td></tr>`;
+      });
+    } else {
+      html += `<tr><td colspan="4" style="padding:5px; color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+    }
+    return html;
+  }
+  if (testType === 'complex_urine_mcs' || testType === 'complex_stool_mcs') {
+    const isMCS = testType === 'complex_urine_mcs';
+    const MICRO_PARAMS = isMCS ? URINE_MICRO_PARAMS : STOOL_MICRO_PARAMS;
+    const sections = isMCS ? ['Physical','Chemical','Microscopy'] : ['Macroscopy','Microscopy'];
+    let html = `<tr style="background:#dbeafe;"><td colspan="4" style="font-weight:bold; padding:8px;">${esc(testName)}</td></tr>`;
+    sections.forEach(sec => {
+      html += `<tr style="background:#eff6ff;"><td colspan="4" style="font-weight:700; padding:5px 8px; font-size:0.72rem; text-transform:uppercase; letter-spacing:1px;">${sec}</td></tr>`;
+      MICRO_PARAMS.filter(p => p.section === sec).forEach(p => {
+        let v = data[p.key]; if (v === undefined || v === '' || v === 'None seen' || v === 'Absent' || v === 'Negative') return;
+        let flag = '';
+        if (p.type === 'number' && p.low !== undefined) { let n = parseFloat(v); if (!isNaN(n)) { if (n > p.high) flag = '↑'; else if (n < p.low) flag = '↓'; } }
+        let ref = (p.low !== undefined) ? `${p.low}–${p.high}` : '—';
+        html += `<tr><td style="padding:4px 8px;">${esc(p.name)}</td><td style="padding:4px 8px;${flag?'font-weight:bold;color:#b91c1c;':''}">${esc(v)} ${flag}</td><td style="padding:4px 8px;">${esc(p.unit||'')}</td><td style="padding:4px 8px;">${ref}</td></tr>`;
+      });
+    });
+    html += `<tr style="background:#eff6ff;"><td colspan="4" style="font-weight:700; padding:5px 8px; font-size:0.72rem; text-transform:uppercase; letter-spacing:1px;">Culture &amp; Sensitivity</td></tr>`;
+    html += `<tr><td style="padding:4px 8px;">Organism</td><td colspan="3" style="padding:4px 8px; font-style:italic;">${esc(data.organism || 'No growth / Not specified')}</td></tr>`;
+    if (data.sensitivities && data.sensitivities.length) {
+      html += `<tr style="background:#f0f0f0;"><th style="padding:5px;">Antibiotic</th><th style="padding:5px;">Result</th><th style="padding:5px;">Interpretation</th><th></th></tr>`;
+      data.sensitivities.forEach(s => {
+        const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
+        const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
+        html += `<tr><td style="padding:5px;">${esc(s.antibiotic)}</td><td style="padding:5px;font-weight:bold;color:${colour};">${esc(s.result)}</td><td style="padding:5px;color:${colour};">${label}</td><td></td></tr>`;
+      });
+    } else {
+      html += `<tr><td colspan="4" style="padding:5px;color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`;
+    }
+    return html;
+  }
+  if (testType === 'complex_malaria') {
+    let rows = '';
+    if (data.species) rows += `<tr><td>Species</td><td colspan="3">${esc(data.species)}</td></tr>`;
+    if (data.stage) rows += `<tr><td>Stage</td><td colspan="3">${esc(data.stage)}</td></tr>`;
+    if (data.density !== undefined) rows += `<tr><td>Parasite Density</td><td colspan="3">${esc(data.density)} parasites/µL</td></tr>`;
+    return `<tr><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
+  }
+  if (testType === 'complex_tb_genexpert') {
+    let rows = '';
+    if (data.mtb_detected) rows += `<tr><td>MTB Detected</td><td colspan="3">${esc(data.mtb_detected)}</td></tr>`;
+    if (data.rif_resistance) rows += `<tr><td>Rifampicin Resistance</td><td colspan="3">${esc(data.rif_resistance)}</td></tr>`;
+    for (let probe of ['probeA_ct','probeB_ct','probeC_ct','probeD_ct','probeE_ct']) {
+      if (data[probe] !== undefined) rows += `<tr><td>${probe.replace('_ct',' Probe Ct')}</td><td colspan="3">${esc(data[probe])}</td></tr>`;
+    }
+    return `<tr><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
+  }
+  if (testType === 'complex_serology') {
+    let rows = '';
+    for (let p of SEROLOGY_PARAMS) {
+      if (data[p.key] !== undefined) rows += `<tr><td>${esc(p.name)}</td><td colspan="3">${esc(data[p.key])}</td></tr>`;
+    }
+    return `<tr><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
+  }
+  let params = [];
+  if (testType === 'complex_cbc') params = CBC_PARAMS;
+  else if (testType === 'complex_lft') params = LFT_PARAMS_FULL;
+  else if (testType === 'complex_rft') params = RFT_PARAMS_FULL;
+  else if (testType === 'complex_thyroid') params = THYROID_PARAMS;
+  else if (testType === 'complex_lipid') params = LIPID_PARAMS;
+  else if (testType === 'complex_coag') params = COAG_PARAMS;
+  else if (testType === 'complex_urinalysis') params = URINALYSIS_MICRO_PARAMS;
+  else if (testType === 'complex_iron') params = IRON_PARAMS;
+  else if (testType === 'complex_bone') params = BONE_PARAMS;
+  else if (testType === 'complex_cardiac') params = CARDIAC_PARAMS;
+  else if (testType === 'complex_ogtt') params = OGTT_PARAMS;
+  else if (testType === 'complex_csf') params = CSF_PARAMS;
+  else if (testType === 'complex_abg') params = ABG_PARAMS;
+  else if (testType === 'complex_semen') params = SEMEN_PARAMS;
+  if (!params.length) return `<tr><td colspan="4">${esc(testName)}: ${esc(JSON.stringify(data))}</td></tr>`;
+  let rows = params.filter(p => data[p.key] !== undefined).map(p => {
+    let val = data[p.key];
+    let flag = '';
+    let n = parseFloat(val);
+    if (!isNaN(n)) {
+      if (p.high !== null && n > p.high) flag = '↑';
+      if (p.low !== null && n < p.low) flag = '↓';
+    }
+    let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : (p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—');
+    return `<tr><td style="padding:5px;">${esc(p.name)}</td><td style="padding:5px;${flag?'font-weight:bold;':''}">${val} ${flag}</td><td style="padding:5px;">${esc(p.unit)}</td><td style="padding:5px;">${ref}</td></tr>`;
+  }).join('');
+  return `<tr><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
+}
+
+function startClock() {
+  function tick() {
+    let el = document.getElementById('clockDisplay');
+    if (el) el.innerText = new Date().toLocaleTimeString('en-GB');
+  }
+  tick(); setInterval(tick, 1000);
+}
+if (currentUser) {
+  document.getElementById('logoutBtn').addEventListener('click', logoutUser);
+  document.getElementById('userDisplay').innerHTML = `<i class="fas fa-user-shield"></i> ${esc(currentUser.name || '')} (${esc(currentUser.role || '')})`;
+  if (currentUser.role !== 'admin' && currentUser.role !== 'supervisor') {
+    const adminTabBtn = document.getElementById('adminTabBtn');
+    if (adminTabBtn) adminTabBtn.style.display = 'none';
+  }
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+    let tab = btn.getAttribute('data-tab');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    if(tab==='all') renderAllSamples();
+    if(tab==='dashboard') renderDashboard();
+    if(tab==='qc') renderQC();
+    if(tab==='verify') renderVerifyTable();
+    if(tab==='audit') renderAudit();
+    if(tab==='finance') renderFinanceReport();
+    if(tab==='admin') renderUnitsList();
+  }));
+  document.getElementById('allSearch')?.addEventListener('input', renderAllSamples);
+  document.getElementById('allStatusFilter')?.addEventListener('change', renderAllSamples);
+  document.getElementById('allPayFilter')?.addEventListener('change', renderAllSamples);
+  document.getElementById('verifySearch')?.addEventListener('input', renderVerifyTable);
+  document.getElementById('verifyStatusFilter')?.addEventListener('change', renderVerifyTable);
+  document.getElementById('addUnitBtn')?.addEventListener('click', addUnit);
+  startClock();
+  loadTestDefinitions().then(() => {
+    renderAllSamples();
+    renderDashboard();
+    renderQC();
+    renderVerifyTable();
+    renderAudit();
+    renderFinanceReport();
+    renderUnitsList();
+  });
+  setInterval(() => { if(!currentVerifySample) Promise.all([renderVerifyTable(), renderAllSamples(), renderDashboard()]); }, 30000);
+}

@@ -10,6 +10,7 @@
     }
 
     let currentUser = null;
+    let announcementAudio = null;   // Audio element for LIS.mp3
 
     async function initGlobalFeatures() {
         // Get current user from session
@@ -35,8 +36,41 @@
         
         // Setup sample search
         setupSampleSearch();
+
+        // Preload announcement audio
+        setupAnnouncementAudio();
     }
 
+    // ========== ANNOUNCEMENT SOUND (LIS.mp3) ==========
+    function setupAnnouncementAudio() {
+        announcementAudio = new Audio('LIS.mp3');
+        announcementAudio.preload = 'auto';
+        announcementAudio.load();
+
+        // Workaround for autoplay policies: enable audio after first user click
+        document.body.addEventListener('click', function enableAudioOnce() {
+            if (announcementAudio) {
+                announcementAudio.play().catch(() => {});
+            }
+            document.body.removeEventListener('click', enableAudioOnce);
+        }, { once: true });
+    }
+
+    function playAnnouncementSound() {
+        if (!announcementAudio) return;
+        announcementAudio.currentTime = 0;
+        announcementAudio.play().catch(err => {
+            console.warn('Audio play blocked (autoplay policy):', err);
+            // Show a small hint that sound is blocked
+            const toast = document.createElement('div');
+            toast.textContent = '🔔 New announcement! Click anywhere to enable sound.';
+            toast.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001;';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        });
+    }
+
+    // ========== EXISTING FUNCTIONS (with sound added to realtime) ==========
     function addGlobalUI() {
         // Check if already added
         if (document.getElementById('globalNotificationPanel')) return;
@@ -217,14 +251,21 @@
             .channel('announcements-channel')
             .on('postgres_changes', 
                 { event: 'INSERT', schema: 'public', table: 'announcements' },
-                () => {
+                (payload) => {
+                    // Refresh announcements list
                     loadAnnouncements();
-                    // Play notification sound (optional)
-                    try {
-                        const audio = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
-                        audio.volume = 0.3;
-                        audio.play().catch(() => {});
-                    } catch(e) {}
+                    // Play sound for new announcement
+                    playAnnouncementSound();
+
+                    // Request browser notification permission if not already
+                    if (Notification.permission === 'granted') {
+                        new Notification('📢 New Lab Announcement', {
+                            body: payload.new?.message || 'Check the announcements panel',
+                            icon: '/favicon.ico'
+                        });
+                    } else if (Notification.permission !== 'denied') {
+                        Notification.requestPermission();
+                    }
                 }
             )
             .subscribe();
