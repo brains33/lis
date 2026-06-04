@@ -11,8 +11,6 @@
 
     let currentUser = null;
     let announcementAudio = null;   // Audio element for LIS.mp3
-    let audioEnabled = false;       // Prevents playing on initial load
-    let lastSeenTimestamp = 0;
 
     async function initGlobalFeatures() {
         // Get current user from session
@@ -29,57 +27,86 @@
 
         // Add global UI elements to the page
         addGlobalUI();
-        
+
+        // Wait a tick for supabase client to initialize on the page
+        await new Promise(r => setTimeout(r, 200));
+
         // Load announcements (does NOT play sound)
         await loadAnnouncements();
-        
-        // Setup realtime subscription
+
+        // Setup realtime subscription AFTER announcements are loaded
         setupRealtimeSubscription();
-        
+
         // Setup sample search
         setupSampleSearch();
 
-        // Preload announcement audio but do NOT play yet
+        // Preload announcement audio (does NOT play)
         setupAnnouncementAudio();
-
-        // Enable audio only after 1 second (prevents initial subscription events)
-        setTimeout(() => { audioEnabled = true; }, 1000);
     }
 
     // ========== ANNOUNCEMENT SOUND (LIS.mp3) ==========
+    let audioUnlocked = false;
+    let audioContext  = null;
+    let mediaNode     = null;   // MediaElementSourceNode — wires announcementAudio into the context
+
     function setupAnnouncementAudio() {
         announcementAudio = new Audio('LIS.mp3');
         announcementAudio.preload = 'auto';
+        announcementAudio.crossOrigin = 'anonymous';  // required for createMediaElementSource
         announcementAudio.load();
-        // NOTE: We do NOT play on first click anymore.
-        // Audio is unlocked lazily inside playAnnouncementSound() only when
-        // a real new announcement arrives — browsers allow play() inside a
-        // user-gesture OR inside a realtime event that the user's own action triggered.
-        // This means the sound plays ONLY when an announcement is actually sent.
+
+        // On the first real user gesture:
+        //   1. Create/resume an AudioContext  — this is the gesture-gated unlock call.
+        //   2. Connect announcementAudio through a MediaElementSourceNode so future
+        //      play() calls travel through the same unlocked context.
+        //
+        //   Without step 2, the <audio> element and the AudioContext are two separate
+        //   audio pipelines.  Unlocking the context alone does NOT unblock
+        //   HTMLMediaElement.play() — they must share the same graph.
+        function unlockAudio() {
+            if (audioUnlocked) return;
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (!mediaNode && announcementAudio) {
+                    mediaNode = audioContext.createMediaElementSource(announcementAudio);
+                    mediaNode.connect(audioContext.destination);
+                }
+                audioContext.resume().then(() => {
+                    audioUnlocked = true;
+                    console.log('Audio unlocked');
+                }).catch(() => {});
+            } catch(e) {
+                // AudioContext unavailable — mark unlocked so plain play() is attempted
+                audioUnlocked = true;
+            }
+            document.removeEventListener('click',   unlockAudio);
+            document.removeEventListener('keydown', unlockAudio);
+        }
+
+        document.addEventListener('click',   unlockAudio);
+        document.addEventListener('keydown', unlockAudio);
     }
 
     function playAnnouncementSound() {
-        if (!announcementAudio || !audioEnabled) return;
+        if (!announcementAudio) return;
+        // Re-resume if the context was suspended (e.g. tab was backgrounded)
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+        }
         announcementAudio.currentTime = 0;
         announcementAudio.play().catch(err => {
-            // Autoplay blocked (e.g. user has never interacted with page yet).
-            // Show a subtle one-time nudge — don't spam on every announcement.
-            if (!window._oqAudioNudgeShown) {
-                window._oqAudioNudgeShown = true;
-                const nudge = document.createElement('div');
-                nudge.textContent = '🔔 New announcement! Click anywhere once to enable sound.';
-                nudge.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001; cursor:pointer;';
-                nudge.addEventListener('click', () => {
-                    announcementAudio.play().catch(() => {});
-                    nudge.remove();
-                });
-                document.body.appendChild(nudge);
-                setTimeout(() => nudge.remove(), 5000);
-            }
+            console.warn('Audio play blocked (autoplay policy):', err);
+            const toast = document.createElement('div');
+            toast.textContent = '🔔 New announcement! Click anywhere to enable sound.';
+            toast.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001;';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
         });
     }
 
-    // ========== EXISTING FUNCTIONS (with sound added to realtime) ==========
+    // ========== UI ==========
     function addGlobalUI() {
         // Check if already added
         if (document.getElementById('globalNotificationPanel')) return;
@@ -126,7 +153,7 @@
         const header = document.getElementById('notificationHeader');
         const content = document.getElementById('notificationContent');
         let isCollapsed = false;
-        
+
         if (header && content) {
             header.addEventListener('click', () => {
                 isCollapsed = !isCollapsed;
@@ -138,7 +165,7 @@
         // Send announcement
         const sendBtn = document.getElementById('sendAnnouncementBtn');
         const input = document.getElementById('announcementInput');
-        
+
         if (sendBtn && input) {
             sendBtn.addEventListener('click', () => sendAnnouncement());
             input.addEventListener('keypress', (e) => {
@@ -150,7 +177,7 @@
     async function sendAnnouncement() {
         const input = document.getElementById('announcementInput');
         if (!input) return;
-        
+
         const message = input.value.trim();
         if (!message) return;
 
@@ -174,14 +201,14 @@
 
             if (error) throw error;
             input.value = '';
-            
+
             // Show temporary confirmation
             const toast = document.createElement('div');
             toast.style.cssText = 'position:fixed; bottom:100px; right:20px; background:var(--primary); color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:1001;';
             toast.innerHTML = '<i class="fas fa-check"></i> Announcement sent!';
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 2000);
-            
+
         } catch(err) {
             console.error('Send failed:', err);
         }
@@ -205,7 +232,7 @@
 
             if (error) throw error;
             renderAnnouncements(data || []);
-            
+
             // Update unread count
             const lastSeen = localStorage.getItem('lastSeenAnnouncement') || 0;
             const unreadCount = (data || []).filter(a => new Date(a.created_at).getTime() > parseInt(lastSeen)).length;
@@ -218,7 +245,7 @@
                     unreadBadge.style.display = 'none';
                 }
             }
-            
+
         } catch(err) {
             console.error('Load announcements failed:', err);
         }
@@ -227,12 +254,12 @@
     function renderAnnouncements(announcements) {
         const container = document.getElementById('announcementsList');
         if (!container) return;
-        
+
         if (!announcements.length) {
             container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--muted);"><i class="fas fa-comment-slash"></i> No announcements</div>';
             return;
         }
-        
+
         container.innerHTML = announcements.map(a => `
             <div class="notification-message ${a.is_pinned ? 'pinned' : ''}">
                 <div class="message-text">${escapeHtml(a.message)}</div>
@@ -242,7 +269,7 @@
                 </div>
             </div>
         `).join('');
-        
+
         // Mark as seen
         if (announcements.length > 0) {
             const latestTime = Math.max(...announcements.map(a => new Date(a.created_at).getTime()));
@@ -256,94 +283,59 @@
         const client = getSupabaseClient();
         if (!client) return;
 
-        // Store last seen timestamp to avoid replaying old announcements
-        let lastSeen = parseInt(localStorage.getItem('lastSeenAnnouncement') || '0');
+        // Use a flag set only after Supabase confirms the subscription is live.
+        // The old approach compared payload.new.created_at (server UTC) against
+        // Date.now() (local browser time) — any clock skew between the browser and
+        // the Supabase server would silently drop every INSERT as a "replay".
+        let subscribed = false;
 
-        // Track channel so we can remove it on reconnect
-        let _channel = null;
-        let _reconnectTimer = null;
+        const channel = client
+            .channel('announcements-channel')
+            .on('postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'announcements' },
+                (payload) => {
+                    // Ignore events that arrive before the subscription is confirmed
+                    if (!subscribed) return;
 
-        function _subscribe() {
-            // Remove previous channel cleanly before re-subscribing
-            if (_channel) {
-                try { client.removeChannel(_channel); } catch(e) {}
-                _channel = null;
-            }
+                    // Refresh the announcements list
+                    loadAnnouncements();
 
-            _channel = client
-                .channel('announcements-channel')
-                .on('postgres_changes',
-                    { event: 'INSERT', schema: 'public', table: 'announcements' },
-                    (payload) => {
-                        const newTime = new Date(payload.new?.created_at).getTime();
-                        // Only process if truly newer than last seen AND page has been active
-                        if (newTime > lastSeen && audioEnabled) {
-                            loadAnnouncements();
-                            // Play sound ONLY for announcements sent by others.
-                            // The sender already sees the confirmation toast — no need to beep at themselves.
-                            const senderId = payload.new?.sender_name;
-                            const isSelf = currentUser && senderId === (currentUser.name || currentUser.username);
-                            if (!isSelf) {
-                                playAnnouncementSound();
-                            }
+                    // Play sound for genuinely new announcement
+                    playAnnouncementSound();
 
-                            if (Notification.permission === 'granted') {
-                                new Notification('📢 New Lab Announcement', {
-                                    body: payload.new?.message || 'Check the announcements panel',
-                                    icon: '/favicon.ico'
-                                });
-                            } else if (Notification.permission !== 'denied') {
-                                Notification.requestPermission();
-                            }
-
-                            lastSeen = newTime;
-                        }
+                    // Browser notification
+                    if (Notification.permission === 'granted') {
+                        new Notification('📢 New Lab Announcement', {
+                            body: payload.new?.message || 'Check the announcements panel',
+                            icon: '/favicon.ico'
+                        });
+                    } else if (Notification.permission !== 'denied') {
+                        Notification.requestPermission();
                     }
-                )
-                .subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        console.log('[Global] Realtime announcements subscribed');
-                        clearTimeout(_reconnectTimer);
-                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                        // Websocket dropped or timed out — schedule a reconnect
-                        console.warn('[Global] Realtime channel error/timeout, reconnecting in 5s…', status);
-                        clearTimeout(_reconnectTimer);
-                        _reconnectTimer = setTimeout(_subscribe, 5000);
-                    } else if (status === 'CLOSED') {
-                        // Only reconnect if we're still online and it wasn't a deliberate removal
-                        if (navigator.onLine) {
-                            clearTimeout(_reconnectTimer);
-                            _reconnectTimer = setTimeout(_subscribe, 3000);
-                        }
-                    }
-                });
-        }
-
-        _subscribe();
-
-        // Also reconnect when the browser comes back online
-        window.addEventListener('online', () => {
-            clearTimeout(_reconnectTimer);
-            _reconnectTimer = setTimeout(_subscribe, 2000);
-        });
+                }
+            )
+            .subscribe((status) => {
+                console.log('Announcements realtime status:', status);
+                if (status === 'SUBSCRIBED') subscribed = true;
+            });
     }
 
     function setupSampleSearch() {
         const searchInput = document.getElementById('globalSampleSearchInput');
         const searchBtn = document.getElementById('globalSampleSearchBtn');
         const dropdown = document.getElementById('searchResultsDropdown');
-        
+
         if (!searchInput || !searchBtn || !dropdown) return;
-        
+
         let debounceTimer;
-        
+
         async function performSearch() {
             let query = searchInput.value.trim().replace(/MU-?/i, '');
             if (!query) {
                 dropdown.classList.remove('show');
                 return;
             }
-            
+
             try {
                 const client = getSupabaseClient();
                 if (!client) {
@@ -353,18 +345,18 @@
 
                 const { data, error } = await client
                     .from('samples')
-                    .select('id, patient, status, released_at')
+                    .select('id, patient, status, released_at, rejection_reason')
                     .eq('id', parseInt(query))
                     .limit(5);
-                    
+
                 if (error) throw error;
-                
+
                 if (!data || data.length === 0) {
                     dropdown.innerHTML = '<div class="search-result-item" style="color:var(--muted);">No sample found</div>';
                     dropdown.classList.add('show');
                     return;
                 }
-                
+
                 dropdown.innerHTML = data.map(s => {
                     let statusBadge;
                     if (s.status === 'Rejected') {
@@ -383,30 +375,22 @@
                     </div>`;
                 }).join('');
                 dropdown.classList.add('show');
-                
+
             } catch(err) {
                 console.error('Search failed:', err);
             }
         }
-        
+
         searchInput.addEventListener('input', () => {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(performSearch, 500);
         });
 
-        // Apply the same debounce to button click and Enter key —
-        // rapid clicks/keypresses previously fired multiple simultaneous queries
-        searchBtn.addEventListener('click', () => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(performSearch, 100);
-        });
+        searchBtn.addEventListener('click', performSearch);
         searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(performSearch, 100);
-            }
+            if (e.key === 'Enter') performSearch();
         });
-        
+
         // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
             const searchWidget = document.getElementById('globalSampleSearch');
@@ -418,25 +402,22 @@
 
     // Helper to get Supabase client from window
     function getSupabaseClient() {
-        // Try multiple possible variable names
         if (window._supabaseClient) return window._supabaseClient;
         if (window.db) return window.db;
         if (window.supabase && window.supabase.from) return window.supabase;
         if (window.supabaseService) return window.supabaseService;
-        
-        // Create client if needed (but avoid if already exists)
+
         if (typeof window.buildAuthClient === 'function') {
             const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
             const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
             window._supabaseClient = window.buildAuthClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             return window._supabaseClient;
         }
-        
+
         return null;
     }
 
     window.viewSampleDetails = function(sampleId) {
-        // Redirect to appropriate page based on user role
         let targetPage = '';
         if (currentUser && currentUser.role === 'technologist') {
             targetPage = 'result_entry.html';
@@ -447,8 +428,7 @@
         } else {
             targetPage = 'pending_portal.html';
         }
-        
-        // Store sample ID to load on target page
+
         sessionStorage.setItem('quickViewSampleId', sampleId);
         window.location.href = targetPage;
     };
@@ -487,9 +467,9 @@
                 .select('*')
                 .eq('sample_id', sampleId)
                 .order('created_at', { ascending: true });
-                
+
             if (error) throw error;
-            
+
             showTimelineModal(sampleId, data || []);
         } catch(err) {
             console.error('Failed to load timeline:', err);
@@ -497,7 +477,6 @@
     };
 
     function showTimelineModal(sampleId, events) {
-        // Create modal if not exists
         let modal = document.getElementById('timelineModal');
         if (!modal) {
             modal = document.createElement('div');
@@ -514,7 +493,7 @@
             `;
             document.body.appendChild(modal);
         }
-        
+
         const listDiv = document.getElementById('timelineEventsList');
         if (!events || events.length === 0) {
             listDiv.innerHTML = '<div style="text-align:center; padding:20px; color:var(--muted);">No events recorded yet</div>';
@@ -531,7 +510,7 @@
                 </div>
             `).join('');
         }
-        
+
         modal.style.display = 'flex';
     }
 
@@ -540,21 +519,18 @@
         const sampleId = sessionStorage.getItem('quickViewSampleId');
         if (sampleId) {
             sessionStorage.removeItem('quickViewSampleId');
-            // Small delay to ensure page is fully loaded
             setTimeout(() => {
                 if (typeof openResultModal === 'function') {
                     openResultModal(parseInt(sampleId));
                 } else if (typeof openVerifyModal === 'function') {
                     openVerifyModal(parseInt(sampleId));
                 } else {
-                    // Fallback: redirect to management1
                     window.location.href = 'management1.html?sample=' + sampleId;
                 }
             }, 500);
         }
     }
 
-    // Call checkForQuickView after page loads
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', checkForQuickView);
     } else {
