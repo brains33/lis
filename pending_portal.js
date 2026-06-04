@@ -424,13 +424,32 @@ const ABG_PARAMS = [
   {key:'lactate', name:'Lactate', unit:'mmol/L', low:0.5, high:2.0, type:'number'}
 ];
 const SEMEN_PARAMS = [
+  // Standard physical
   {key:'volume', name:'Volume', unit:'mL', low:1.5, high:6.0, type:'number', step:0.1},
-  {key:'count', name:'Sperm Count', unit:'million/mL', low:15, high:200, type:'number'},
-  {key:'motility', name:'Motility', unit:'%', low:40, high:100, type:'number'},
-  {key:'morphology', name:'Normal Morphology', unit:'%', low:4, high:100, type:'number'},
-  {key:'ph', name:'pH', unit:'', low:7.2, high:8.0, type:'number', step:0.1},
+  {key:'liquefaction', name:'Liquefaction Time', type:'select', options:['Normal (<60 min)','Delayed (>60 min)']},
   {key:'viscosity', name:'Viscosity', type:'select', options:['Normal','High']},
-  {key:'wbc', name:'WBC', unit:'million/mL', low:0, high:1, type:'number'}
+  {key:'ph', name:'pH', unit:'', low:7.2, high:8.0, type:'number', step:0.1},
+
+  // Microscopic
+  {key:'count', name:'Sperm Concentration', unit:'million/mL', low:15, high:200, type:'number'},
+  {key:'total_count', name:'Total Sperm Count', unit:'million/ejaculate', low:39, high:500, type:'number'},
+  {key:'progressive_motility', name:'Progressive Motility (PR)', unit:'%', low:32, high:100, type:'number'},
+  {key:'non_progressive_motility', name:'Non-Progressive Motility (NP)', unit:'%', low:0, high:100, type:'number'},
+  {key:'immotile', name:'Immotile (IM)', unit:'%', low:0, high:100, type:'number'},
+  {key:'vitality', name:'Sperm Vitality (live)', unit:'%', low:58, high:100, type:'number'},
+  {key:'morphology_normal', name:'Normal Morphology (Kruger)', unit:'%', low:4, high:14, type:'number'},
+  {key:'morphology_strict', name:'Strict Morphology (Tygerberg)', unit:'%', low:4, high:14, type:'number'},
+  {key:'agglutination', name:'Agglutination', type:'select', options:['None','Mild','Moderate','Severe']},
+  {key:'round_cells', name:'Round Cells', unit:'x10⁶/mL', low:0, high:5, type:'number'},
+  {key:'wbc', name:'WBC (Peroxidase positive)', unit:'x10⁶/mL', low:0, high:1, type:'number'},
+
+  // Advanced (optional)
+  {key:'mar_test', name:'MAR Test (IgG)', unit:'% bound', low:0, high:10, type:'number'},
+  {key:'dna_fragmentation', name:'Sperm DNA Fragmentation', unit:'%', low:0, high:15, type:'number'},
+  {key:'fructose', name:'Seminal Fructose', unit:'µmol/ejaculate', low:13, high:35, type:'number'},
+
+  // Comments
+  {key:'comments', name:'Microscopy Comments', type:'text'}
 ];
 const SEROLOGY_PARAMS = [
   {key:'hbsag', name:'HBsAg', type:'select', options:['Non-reactive','Reactive']},
@@ -798,13 +817,13 @@ function buildParamTable(testName, data, testType, age, gender) {
     let displayVal = val;
     let flag = '';
     let unit = p.unit || '';
-    let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : (p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—');
+    let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : (p.low != null ? `≥${p.low}` : p.high != null ? `≤${p.high}` : '—');
     if (p.type === 'number' || !p.type) {
       let n = parseFloat(val);
       if (!isNaN(n)) {
-        if (p.high !== null && n > p.high) flag = '↑';
-        if (p.low !== null && n < p.low) flag = '↓';
-        displayVal = `${n} ${flag}`;
+        if (p.high != null && n > p.high) flag = '↑';
+        if (p.low != null && n < p.low) flag = '↓';
+        displayVal = flag ? `${n} ${flag}` : String(n);
       }
     }
     let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
@@ -1124,11 +1143,11 @@ function collectAutoTableRows(body, testName, data, testType, age, gender) {
     let val = data[p.key];
     if (val === undefined || val === '') continue;
     let flag = ''; let col = null;
-    let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—';
+    let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : p.low != null ? `≥${p.low}` : p.high != null ? `≤${p.high}` : '—';
     let n = parseFloat(val);
     if (!isNaN(n)) {
-      if (p.high !== null && n > p.high) { flag = ' ↑'; col = HIGH_COLOR; }
-      if (p.low  !== null && n < p.low)  { flag = ' ↓'; col = LOW_COLOR; }
+      if (p.high != null && n > p.high) { flag = ' ↑'; col = HIGH_COLOR; }
+      if (p.low  != null && n < p.low)  { flag = ' ↓'; col = LOW_COLOR; }
     }
     body.push([p.name, { content: String(val) + flag, styles: col ? { textColor: col, fontStyle: 'bold' } : {} }, p.unit || '', ref]);
   }
