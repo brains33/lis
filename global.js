@@ -51,27 +51,31 @@
         announcementAudio = new Audio('LIS.mp3');
         announcementAudio.preload = 'auto';
         announcementAudio.load();
-
-        // Workaround for autoplay policies: enable audio after first user click
-        document.body.addEventListener('click', function enableAudioOnce() {
-            if (announcementAudio) {
-                announcementAudio.play().catch(() => {});
-            }
-            document.body.removeEventListener('click', enableAudioOnce);
-        }, { once: true });
+        // NOTE: We do NOT play on first click anymore.
+        // Audio is unlocked lazily inside playAnnouncementSound() only when
+        // a real new announcement arrives — browsers allow play() inside a
+        // user-gesture OR inside a realtime event that the user's own action triggered.
+        // This means the sound plays ONLY when an announcement is actually sent.
     }
 
     function playAnnouncementSound() {
         if (!announcementAudio || !audioEnabled) return;
         announcementAudio.currentTime = 0;
         announcementAudio.play().catch(err => {
-            console.warn('Audio play blocked (autoplay policy):', err);
-            // Show a small hint that sound is blocked
-            const toast = document.createElement('div');
-            toast.textContent = '🔔 New announcement! Click anywhere to enable sound.';
-            toast.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001;';
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+            // Autoplay blocked (e.g. user has never interacted with page yet).
+            // Show a subtle one-time nudge — don't spam on every announcement.
+            if (!window._oqAudioNudgeShown) {
+                window._oqAudioNudgeShown = true;
+                const nudge = document.createElement('div');
+                nudge.textContent = '🔔 New announcement! Click anywhere once to enable sound.';
+                nudge.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001; cursor:pointer;';
+                nudge.addEventListener('click', () => {
+                    announcementAudio.play().catch(() => {});
+                    nudge.remove();
+                });
+                document.body.appendChild(nudge);
+                setTimeout(() => nudge.remove(), 5000);
+            }
         });
     }
 
@@ -255,35 +259,73 @@
         // Store last seen timestamp to avoid replaying old announcements
         let lastSeen = parseInt(localStorage.getItem('lastSeenAnnouncement') || '0');
 
-        const channel = client
-            .channel('announcements-channel')
-            .on('postgres_changes', 
-                { event: 'INSERT', schema: 'public', table: 'announcements' },
-                (payload) => {
-                    const newTime = new Date(payload.new?.created_at).getTime();
-                    // Only process if it's truly newer than last seen AND audio is enabled (page loaded)
-                    if (newTime > lastSeen && audioEnabled) {
-                        // Refresh announcements list
-                        loadAnnouncements();
-                        // Play sound for new announcement
-                        playAnnouncementSound();
+        // Track channel so we can remove it on reconnect
+        let _channel = null;
+        let _reconnectTimer = null;
 
-                        // Request browser notification permission if not already
-                        if (Notification.permission === 'granted') {
-                            new Notification('📢 New Lab Announcement', {
-                                body: payload.new?.message || 'Check the announcements panel',
-                                icon: '/favicon.ico'
-                            });
-                        } else if (Notification.permission !== 'denied') {
-                            Notification.requestPermission();
+        function _subscribe() {
+            // Remove previous channel cleanly before re-subscribing
+            if (_channel) {
+                try { client.removeChannel(_channel); } catch(e) {}
+                _channel = null;
+            }
+
+            _channel = client
+                .channel('announcements-channel')
+                .on('postgres_changes',
+                    { event: 'INSERT', schema: 'public', table: 'announcements' },
+                    (payload) => {
+                        const newTime = new Date(payload.new?.created_at).getTime();
+                        // Only process if truly newer than last seen AND page has been active
+                        if (newTime > lastSeen && audioEnabled) {
+                            loadAnnouncements();
+                            // Play sound ONLY for announcements sent by others.
+                            // The sender already sees the confirmation toast — no need to beep at themselves.
+                            const senderId = payload.new?.sender_name;
+                            const isSelf = currentUser && senderId === (currentUser.name || currentUser.username);
+                            if (!isSelf) {
+                                playAnnouncementSound();
+                            }
+
+                            if (Notification.permission === 'granted') {
+                                new Notification('📢 New Lab Announcement', {
+                                    body: payload.new?.message || 'Check the announcements panel',
+                                    icon: '/favicon.ico'
+                                });
+                            } else if (Notification.permission !== 'denied') {
+                                Notification.requestPermission();
+                            }
+
+                            lastSeen = newTime;
                         }
-                        
-                        // Update lastSeen locally to avoid double play for same announcement
-                        lastSeen = newTime;
                     }
-                }
-            )
-            .subscribe();
+                )
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        console.log('[Global] Realtime announcements subscribed');
+                        clearTimeout(_reconnectTimer);
+                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        // Websocket dropped or timed out — schedule a reconnect
+                        console.warn('[Global] Realtime channel error/timeout, reconnecting in 5s…', status);
+                        clearTimeout(_reconnectTimer);
+                        _reconnectTimer = setTimeout(_subscribe, 5000);
+                    } else if (status === 'CLOSED') {
+                        // Only reconnect if we're still online and it wasn't a deliberate removal
+                        if (navigator.onLine) {
+                            clearTimeout(_reconnectTimer);
+                            _reconnectTimer = setTimeout(_subscribe, 3000);
+                        }
+                    }
+                });
+        }
+
+        _subscribe();
+
+        // Also reconnect when the browser comes back online
+        window.addEventListener('online', () => {
+            clearTimeout(_reconnectTimer);
+            _reconnectTimer = setTimeout(_subscribe, 2000);
+        });
     }
 
     function setupSampleSearch() {
@@ -351,10 +393,18 @@
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(performSearch, 500);
         });
-        
-        searchBtn.addEventListener('click', performSearch);
+
+        // Apply the same debounce to button click and Enter key —
+        // rapid clicks/keypresses previously fired multiple simultaneous queries
+        searchBtn.addEventListener('click', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(performSearch, 100);
+        });
         searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') performSearch();
+            if (e.key === 'Enter') {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(performSearch, 100);
+            }
         });
         
         // Close dropdown when clicking outside

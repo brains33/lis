@@ -677,13 +677,32 @@ const ABG_PARAMS = [
   {key:'lactate', name:'Lactate', unit:'mmol/L', low:0.5, high:2.0, type:'number'}
 ];
 const SEMEN_PARAMS = [
+  // Standard physical
   {key:'volume', name:'Volume', unit:'mL', low:1.5, high:6.0, type:'number', step:0.1},
-  {key:'count', name:'Sperm Count', unit:'million/mL', low:15, high:200, type:'number'},
-  {key:'motility', name:'Motility', unit:'%', low:40, high:100, type:'number'},
-  {key:'morphology', name:'Normal Morphology', unit:'%', low:4, high:100, type:'number'},
-  {key:'ph', name:'pH', unit:'', low:7.2, high:8.0, type:'number', step:0.1},
+  {key:'liquefaction', name:'Liquefaction Time', type:'select', options:['Normal (<60 min)','Delayed (>60 min)']},
   {key:'viscosity', name:'Viscosity', type:'select', options:['Normal','High']},
-  {key:'wbc', name:'WBC', unit:'million/mL', low:0, high:1, type:'number'}
+  {key:'ph', name:'pH', unit:'', low:7.2, high:8.0, type:'number', step:0.1},
+  
+  // Microscopic
+  {key:'count', name:'Sperm Concentration', unit:'million/mL', low:15, high:200, type:'number'},
+  {key:'total_count', name:'Total Sperm Count', unit:'million/ejaculate', low:39, high:500, type:'number'}, // optional, calculate if needed
+  {key:'progressive_motility', name:'Progressive Motility (PR)', unit:'%', low:32, high:100, type:'number'},
+  {key:'non_progressive_motility', name:'Non-Progressive Motility (NP)', unit:'%', low:0, high:100, type:'number'},
+  {key:'immotile', name:'Immotile (IM)', unit:'%', low:0, high:100, type:'number'},
+  {key:'vitality', name:'Sperm Vitality (live)', unit:'%', low:58, high:100, type:'number'},
+  {key:'morphology_normal', name:'Normal Morphology (Kruger)', unit:'%', low:4, high:14, type:'number'},
+  {key:'morphology_strict', name:'Strict Morphology (Tygerberg)', unit:'%', low:4, high:14, type:'number'}, // alias
+  {key:'agglutination', name:'Agglutination', type:'select', options:['None','Mild','Moderate','Severe']},
+  {key:'round_cells', name:'Round Cells', unit:'x10⁶/mL', low:0, high:5, type:'number'},
+  {key:'wbc', name:'WBC (Peroxidase positive)', unit:'x10⁶/mL', low:0, high:1, type:'number'},
+  
+  // Advanced (optional)
+  {key:'mar_test', name:'MAR Test (IgG)', unit:'% bound', low:0, high:10, type:'number'}, // >50% positive
+  {key:'dna_fragmentation', name:'Sperm DNA Fragmentation', unit:'%', low:0, high:15, type:'number'},
+  {key:'fructose', name:'Seminal Fructose', unit:'µmol/ejaculate', low:13, high:35, type:'number'},
+  
+  // Comments
+  {key:'comments', name:'Microscopy Comments', type:'text'}
 ];
 const SEROLOGY_PARAMS = [
   {key:'hbsag', name:'HBsAg', type:'select', options:['Non-reactive','Reactive']},
@@ -1077,8 +1096,9 @@ async function openVerifyModal(id) {
   currentVerifySample = samples.find(s => s.id === id);
   if (!currentVerifySample) return;
 
-  const actionableTests = currentVerifySample.tests.filter(t => t.status !== 'Rejected');
-  const rejectedTests   = currentVerifySample.tests.filter(t => t.status === 'Rejected');
+  const s = currentVerifySample;
+  const actionableTests = s.tests.filter(t => t.status !== 'Rejected');
+  const rejectedTests   = s.tests.filter(t => t.status === 'Rejected');
 
   let flags = [];
   actionableTests.forEach(t => {
@@ -1097,7 +1117,73 @@ async function openVerifyModal(id) {
     } catch(e) {}
   });
 
-  // Rejected tests banner
+  // ── Payment status panel ─────────────────────────────────────────────────
+  const total    = parseFloat(s.totalAmount  || 0);
+  const paid     = parseFloat(s.amountPaid   || 0);
+  const balance  = parseFloat(s.balanceDue   || 0);
+  const paymode  = s.paymode     || '—';
+  const receipt  = s.receiptNo   || '—';
+  const paydate  = s.paymentDate ? new Date(s.paymentDate).toLocaleDateString() : '—';
+  const insurance = s.insurance  || null;
+
+  const isPaid    = s.paystatus === 'Paid';
+  const isPartial = s.paystatus === 'Partial';
+  const isUnpaid  = !isPaid && !isPartial;
+
+  const panelBg     = isPaid ? '#f0fdf4' : isPartial ? '#fffbeb' : '#fef2f2';
+  const panelBorder = isPaid ? '#86efac' : isPartial ? '#fde68a' : '#fca5a5';
+  const iconColour  = isPaid ? '#15803d' : isPartial ? '#b45309' : '#b91c1c';
+  const payIcon     = isPaid ? 'fa-check-circle' : isPartial ? 'fa-exclamation-circle' : 'fa-times-circle';
+  const payLabel    = isPaid ? 'FULLY PAID' : isPartial ? 'PARTIAL PAYMENT' : 'UNPAID';
+
+  const overrideBlock = (isPartial || isUnpaid) ? `
+    <div style="margin-top:10px; padding:8px 12px; background:#fff7ed; border:1px solid #fde68a; border-radius:10px; font-size:0.8rem; color:#92400e;">
+      <i class="fas fa-lock"></i> <strong>Release blocked</strong> — payment not fully settled.
+      Tick the override box below and provide a reason. Balance will remain outstanding until cleared from Accession Settlement.
+    </div>
+    <div style="margin-top:8px; display:flex; align-items:flex-start; gap:8px;">
+      <input type="checkbox" id="payOverrideChk" style="margin-top:3px; width:16px; height:16px; cursor:pointer;"
+        onchange="document.getElementById('payOverrideReason').style.display=this.checked?'block':'none';
+                  document.querySelector('.release-btn').disabled=!this.checked;">
+      <label for="payOverrideChk" style="font-size:0.82rem; color:#92400e; cursor:pointer; font-weight:600;">
+        Override — release result before payment clearance (balance remains outstanding)
+      </label>
+    </div>
+    <textarea id="payOverrideReason" rows="2" class="form-input"
+      placeholder="Required: state reason for overriding payment gate…"
+      style="display:none; width:100%; margin-top:6px; border-color:#f97316; font-size:0.82rem;"></textarea>` : '';
+
+  const paymentPanel = `
+    <div style="background:${panelBg}; border:2px solid ${panelBorder}; border-radius:14px; padding:14px 16px; margin-bottom:16px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <i class="fas ${payIcon}" style="color:${iconColour}; font-size:1.15rem;"></i>
+        <span style="font-weight:700; color:${iconColour}; font-size:0.92rem; letter-spacing:0.4px;">${payLabel}</span>
+        <span style="margin-left:auto; font-size:0.76rem; color:#6b7280;">
+          Mode: <strong>${esc(paymode)}</strong>${insurance ? ` &nbsp;|&nbsp; Insurance: <strong>${esc(insurance)}</strong>` : ''}
+        </span>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px;">
+        <div style="background:#fff; border-radius:10px; padding:8px 12px; text-align:center; border:1px solid ${panelBorder};">
+          <div style="font-size:0.68rem; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px;">Total Bill</div>
+          <div style="font-weight:700; font-size:0.95rem; color:#1f2937;">₦${total.toLocaleString(undefined,{minimumFractionDigits:2})}</div>
+        </div>
+        <div style="background:#fff; border-radius:10px; padding:8px 12px; text-align:center; border:1px solid #86efac;">
+          <div style="font-size:0.68rem; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px;">Amount Paid</div>
+          <div style="font-weight:700; font-size:0.95rem; color:#15803d;">₦${paid.toLocaleString(undefined,{minimumFractionDigits:2})}</div>
+        </div>
+        <div style="background:#fff; border-radius:10px; padding:8px 12px; text-align:center; border:1px solid ${balance > 0 ? '#fca5a5' : '#86efac'};">
+          <div style="font-size:0.68rem; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px;">Balance Due</div>
+          <div style="font-weight:700; font-size:0.95rem; color:${balance > 0 ? '#b91c1c' : '#15803d'};">₦${balance.toLocaleString(undefined,{minimumFractionDigits:2})}</div>
+        </div>
+      </div>
+      <div style="font-size:0.74rem; color:#6b7280; display:flex; gap:16px; flex-wrap:wrap;">
+        <span><i class="fas fa-receipt"></i> Receipt: <strong>${esc(receipt)}</strong></span>
+        <span><i class="fas fa-calendar-check"></i> Payment Date: <strong>${esc(paydate)}</strong></span>
+      </div>
+      ${overrideBlock}
+    </div>`;
+
+  // ── Rejected tests banner ────────────────────────────────────────────────
   const rejectedBanner = rejectedTests.length ? `
     <div style="background:#fff0f0; border:1.5px solid #fca5a5; border-radius:12px; padding:12px 16px; margin-bottom:14px;">
       <div style="font-weight:700; color:#b91c1c; margin-bottom:8px;"><i class="fas fa-ban"></i> ${rejectedTests.length} Test(s) Rejected — Patient Must Return</div>
@@ -1107,32 +1193,49 @@ async function openVerifyModal(id) {
           <span style="font-size:0.78rem; color:#b91c1c; background:#fff; border:1px solid #fca5a5; border-radius:20px; padding:2px 10px;">${esc(t.rejection_reason || 'No reason recorded')}</span>
         </div>`).join('')}
       <div style="font-size:0.75rem; color:#92400e; margin-top:8px; background:#fff7ed; border-radius:8px; padding:6px 10px;">
-        <i class="fas fa-info-circle"></i> You can still authorise and release the available results. The printed report will note the rejected tests with instructions for the patient to return.
+        <i class="fas fa-info-circle"></i> You can still authorise and release the available results. The printed report will note the rejected tests.
       </div>
     </div>` : '';
 
   let html = `
-    <div style="background:#f0f7f4; border-radius:16px; padding:14px; margin-bottom:16px;">
-      <strong>MU-${currentVerifySample.id}</strong> | ${esc(currentVerifySample.patient)} | ${currentVerifySample.age ?? '?'}y ${esc(currentVerifySample.gender)}<br>
-      <small>Clinician: ${esc(currentVerifySample.clinician || '—')}</small>
+    <div style="background:#f0f7f4; border-radius:16px; padding:14px; margin-bottom:12px;">
+      <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        <div>
+          <span style="font-family:monospace; font-weight:700; font-size:1rem;">MU-${s.id}</span>
+          <span style="margin:0 8px; color:#9ca3af;">|</span>
+          <strong>${esc(s.patient)}</strong>
+          <span style="margin:0 6px; color:#9ca3af;">·</span>
+          <small>${s.age ?? '?'}y ${esc(s.gender)}</small>
+        </div>
+        <div style="margin-left:auto; font-size:0.78rem; color:#374151; display:flex; gap:12px; flex-wrap:wrap;">
+          <span><i class="fas fa-user-md"></i> ${esc(s.clinician || '—')}</span>
+          <span><i class="fas fa-calendar"></i> ${esc(s.collDate || '—')}</span>
+          <span><i class="fas fa-vial"></i> ${esc(s.stype || '—')}</span>
+        </div>
+      </div>
     </div>
+    ${paymentPanel}
     ${rejectedBanner}
     ${flags.length
       ? `<div class="interp-abnormal"><strong>⚠ Abnormal:</strong> ${flags.join(' · ')}</div>`
       : '<div style="background:#dcfce7;color:#15803d;border-radius:12px;padding:8px 14px;margin-bottom:16px;">✓ All available values within range</div>'}
-    <div style="border:1px solid var(--border); border-radius:16px; overflow-x:auto; margin-bottom:16px; padding:8px;">${buildReportPreview(currentVerifySample)}</div>
+    <div style="border:1px solid var(--border); border-radius:16px; overflow-x:auto; margin-bottom:16px; padding:8px;">${buildReportPreview(s)}</div>
     <div class="form-group"><label class="form-label">Supervisor Comment</label><textarea id="supervisorComment" rows="2" class="form-input" style="width:100%;"></textarea></div>`;
 
-  document.getElementById('verifyModalTitle').innerHTML = `Review — MU-${currentVerifySample.id} | ${esc(currentVerifySample.patient)}`;
+  document.getElementById('verifyModalTitle').innerHTML = `Review — MU-${s.id} | ${esc(s.patient)}`;
   document.getElementById('verifyModalBody').innerHTML = html;
+
+  // Disable release button immediately for unsettled payments
+  const releaseBtn = document.querySelector('.release-btn');
+  if (releaseBtn) releaseBtn.disabled = (isPartial || isUnpaid);
+
   document.getElementById('verifyModal').style.display = 'flex';
 }
 async function returnToTech() {
   if (!currentVerifySample) { toast('No sample selected', 'error'); return; }
-  const s = currentVerifySample; // capture before closeVerifyModal clears it
+  const s = currentVerifySample;
   const comment = document.getElementById('supervisorComment')?.value || '';
   s.status = 'Processing';
-  // Reset all test done-stamps so techs must re-enter and re-mark
   if (s.tests) s.tests.forEach(t => { t.status = 'Processing'; t.done_by = null; t.done_at = null; });
   await saveSample(s);
   await addAudit('Returned to Tech', s.id, comment);
@@ -1143,28 +1246,54 @@ async function returnToTech() {
 async function releaseResults() {
   if (!currentVerifySample) { toast('No sample selected', 'error'); return; }
   const s = currentVerifySample;
-  s.status = 'Result Released';
+
+  // ── Payment gate ─────────────────────────────────────────────────────────
+  const needsPayment = s.paystatus === 'Partial' || s.paystatus === 'Unpaid' || !s.paystatus;
+  if (needsPayment) {
+    const overrideChk    = document.getElementById('payOverrideChk');
+    const overrideReason = document.getElementById('payOverrideReason');
+    if (!overrideChk?.checked) {
+      toast('Release blocked — payment not settled. Tick override to proceed.', 'error'); return;
+    }
+    const reason = overrideReason?.value?.trim();
+    if (!reason) {
+      toast('Enter a reason for the payment override before releasing.', 'error');
+      overrideReason?.focus(); return;
+    }
+    // Balance is intentionally NOT cleared — must be resolved in Accession Settlement
+    s._payOverrideReason = reason;
+  }
+
+  s.status    = 'Result Released';
   s.releasedAt = new Date().toISOString();
   s.supervisorComment = document.getElementById('supervisorComment')?.value || '';
 
-  // Update sample_tests — only move non-rejected tests to Released
   try {
     for (const t of s.tests) {
-      if (t.status === 'Rejected') continue; // preserve rejected tests as-is
+      if (t.status === 'Rejected') continue;
       await db.from('sample_tests').update({ status: 'Released' }).eq('id', t.id);
     }
   } catch(e) { console.warn('[M1] Failed to update test statuses on release', e); }
 
   const rejectedCount = s.tests.filter(t => t.status === 'Rejected').length;
-  const releaseNote = rejectedCount
-    ? `Authorised by ${currentUser?.name}. ${rejectedCount} test(s) still rejected. ${s.supervisorComment}`
-    : `Authorised by ${currentUser?.name}. ${s.supervisorComment}`;
+  const overrideNote  = s._payOverrideReason
+    ? ` | PAYMENT OVERRIDE: ${s._payOverrideReason} (balance ₦${parseFloat(s.balanceDue||0).toFixed(2)} still outstanding)`
+    : '';
+  const releaseNote = `Authorised by ${currentUser?.name}.${rejectedCount ? ` ${rejectedCount} test(s) still rejected.` : ''} ${s.supervisorComment}${overrideNote}`;
 
   await saveSample(s);
   await addAudit('Released', s.id, releaseNote);
+  if (s._payOverrideReason) {
+    await addAudit('Payment Override on Release', s.id,
+      `Override by ${currentUser?.name}: ${s._payOverrideReason} — balance ₦${parseFloat(s.balanceDue||0).toFixed(2)} remains outstanding`);
+  }
   closeVerifyModal();
   await Promise.all([renderVerifyTable(), renderAllSamples(), renderDashboard()]);
-  toast(`MU-${s.id} released ✓${rejectedCount ? ` (${rejectedCount} test(s) pending recollection)` : ''}`);
+  toast(`MU-${s.id} released ✓${rejectedCount ? ` (${rejectedCount} test(s) pending recollection)` : ''}${s._payOverrideReason ? ' — balance still outstanding' : ''}`);
+
+  if (typeof window._analyticsInvalidateCache === 'function') {
+    window._analyticsInvalidateCache();
+  }
 }
 function closeVerifyModal() { document.getElementById('verifyModal').style.display = 'none'; currentVerifySample = null; }
 async function renderAudit() {
@@ -1180,25 +1309,95 @@ async function renderAudit() {
 }
 async function renderFinanceReport() {
   await loadSamples();
-  let start = document.getElementById('financeStart')?.value, end = document.getElementById('financeEnd')?.value;
-  let filtered = samples.filter(s => (!start || (s.collDate || '') >= start) && (!end || (s.collDate || '') <= end));
+  let start = document.getElementById('financeStart')?.value;
+  let end   = document.getElementById('financeEnd')?.value;
+  let filtered = samples.filter(s =>
+    (!start || (s.collDate || '') >= start) &&
+    (!end   || (s.collDate || '') <= end)
+  );
+
+  // ── Aggregate into daily buckets ─────────────────────────────────────────
   let daily = {};
-  filtered.forEach(s => { let d = s.collDate || 'Unknown'; if(!daily[d]) daily[d] = {total:0,paid:0,balance:0,count:0}; daily[d].total += s.totalAmount||0; daily[d].paid += s.amountPaid||0; daily[d].balance += s.balanceDue||0; daily[d].count++; });
-  let totalRevenue=0,totalPaid=0,totalBalance=0, rows = '';
-  for(let [date,data] of Object.entries(daily).sort((a,b)=>b[0].localeCompare(a[0]))) {
-    rows += `<tr><td>${esc(date)}</td><td>${data.total.toFixed(2)} NGN</td><td>${data.paid.toFixed(2)} NGN</td><td>${data.balance.toFixed(2)} NGN</td><td>${data.count}</td></tr>`;
-    totalRevenue+=data.total; totalPaid+=data.paid; totalBalance+=data.balance;
+  filtered.forEach(s => {
+    let d = s.collDate || 'Unknown';
+    if (!daily[d]) daily[d] = { total:0, paid:0, balance:0, count:0, unpaid:0, partial:0 };
+    daily[d].total   += parseFloat(s.totalAmount || 0);
+    daily[d].paid    += parseFloat(s.amountPaid  || 0);
+    daily[d].balance += parseFloat(s.balanceDue  || 0);
+    daily[d].count++;
+    if (s.paystatus === 'Unpaid')  daily[d].unpaid++;
+    if (s.paystatus === 'Partial') daily[d].partial++;
+  });
+
+  let totalRevenue = 0, totalPaid = 0, totalBalance = 0, rows = '';
+  for (let [date, data] of Object.entries(daily).sort((a,b) => b[0].localeCompare(a[0]))) {
+    const balColour  = data.balance  > 0 ? 'color:#b91c1c; font-weight:700;' : 'color:#15803d;';
+    const paidColour = 'color:#15803d; font-weight:600;';
+    const unpaidHint = (data.unpaid + data.partial) > 0
+      ? `<small style="color:#b91c1c; font-size:0.72rem; display:block;">${data.unpaid} unpaid · ${data.partial} partial</small>` : '';
+    rows += `<tr>
+      <td>${esc(date)}</td>
+      <td>₦${data.total.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+      <td style="${paidColour}">₦${data.paid.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+      <td style="${balColour}">₦${data.balance.toLocaleString(undefined,{minimumFractionDigits:2})}${unpaidHint}</td>
+      <td>${data.count}</td>
+    </tr>`;
+    totalRevenue += data.total; totalPaid += data.paid; totalBalance += data.balance;
   }
-  rows += `<tr style="font-weight:700;background:#f0f7f4;"><td>TOTAL</td><td>${totalRevenue.toFixed(2)} NGN</td><td>${totalPaid.toFixed(2)} NGN</td><td>${totalBalance.toFixed(2)} NGN</td><td>${filtered.length}</td></tr>`;
+  if (!rows) rows = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text2);">No records found.</td></tr>';
+  rows += `<tr style="font-weight:700; background:#f0f7f4;">
+    <td>TOTAL</td>
+    <td>₦${totalRevenue.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+    <td style="color:#15803d;">₦${totalPaid.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+    <td style="${totalBalance > 0 ? 'color:#b91c1c;' : 'color:#15803d;'}">₦${totalBalance.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+    <td>${filtered.length}</td>
+  </tr>`;
   document.getElementById('financeTable').innerHTML = rows;
-  document.getElementById('financeStats').innerHTML = `<div class="stat-card"><div>Total Revenue</div><div>${totalRevenue.toFixed(2)} NGN</div></div><div class="stat-card"><div>Paid</div><div>${totalPaid.toFixed(2)} NGN</div></div><div class="stat-card"><div>Outstanding</div><div>${totalBalance.toFixed(2)} NGN</div></div>`;
+
+  // ── Stats cards ──────────────────────────────────────────────────────────
+  const unpaidCount  = filtered.filter(s => s.paystatus === 'Unpaid').length;
+  const partialCount = filtered.filter(s => s.paystatus === 'Partial').length;
+  document.getElementById('financeStats').innerHTML = `
+    <div class="stat-card">
+      <div><div class="stat-label">Total Revenue</div><div class="stat-val">₦${totalRevenue.toLocaleString(undefined,{minimumFractionDigits:2})}</div></div>
+      <i class="fas fa-chart-line fa-2x"></i>
+    </div>
+    <div class="stat-card">
+      <div><div class="stat-label">Collected (Paid)</div><div class="stat-val" style="color:var(--green);">₦${totalPaid.toLocaleString(undefined,{minimumFractionDigits:2})}</div></div>
+      <i class="fas fa-check-circle fa-2x" style="color:var(--green);"></i>
+    </div>
+    <div class="stat-card" style="${totalBalance > 0 ? 'border-color:#f87171;' : ''}">
+      <div><div class="stat-label">Outstanding Balance</div><div class="stat-val" style="${totalBalance > 0 ? 'color:#b91c1c;' : ''}">₦${totalBalance.toLocaleString(undefined,{minimumFractionDigits:2})}</div></div>
+      <i class="fas fa-exclamation-circle fa-2x" style="${totalBalance > 0 ? 'color:#b91c1c;' : ''}"></i>
+    </div>
+    <div class="stat-card" style="${unpaidCount > 0 ? 'border-color:#f87171;' : ''}">
+      <div><div class="stat-label">Unpaid Samples</div><div class="stat-val" style="${unpaidCount > 0 ? 'color:#b91c1c;' : ''}">${unpaidCount}</div></div>
+      <i class="fas fa-times-circle fa-2x" style="${unpaidCount > 0 ? 'color:#b91c1c;' : ''}"></i>
+    </div>
+    <div class="stat-card" style="${partialCount > 0 ? 'border-color:#fde68a;' : ''}">
+      <div><div class="stat-label">Partial Payments</div><div class="stat-val" style="${partialCount > 0 ? 'color:#b45309;' : ''}">${partialCount}</div></div>
+      <i class="fas fa-adjust fa-2x" style="${partialCount > 0 ? 'color:#b45309;' : ''}"></i>
+    </div>`;
 }
-function resetFinanceFilter() { document.getElementById('financeStart').value=''; document.getElementById('financeEnd').value=''; renderFinanceReport(); }
+function resetFinanceFilter() {
+  document.getElementById('financeStart').value = '';
+  document.getElementById('financeEnd').value   = '';
+  renderFinanceReport();
+}
 function exportFinanceCSV() {
-  let headers = ['ID','Patient','Date','Total (NGN)','Paid (NGN)','Balance (NGN)','Status'];
-  let rows = samples.map(s => [`MU-${s.id}`, s.patient, s.collDate, (s.totalAmount||0).toFixed(2), (s.amountPaid||0).toFixed(2), (s.balanceDue||0).toFixed(2), s.paystatus]);
+  let headers = ['Date','Sample ID','Patient','Age','Gender','Tests','Total (NGN)','Paid (NGN)','Balance (NGN)','Payment Status','Pay Mode','Receipt No','Sample Status'];
+  let rows = samples.map(s => [
+    s.collDate || '', `MU-${s.id}`, s.patient, s.age || '', s.gender,
+    s.tests.map(t => t.test_name).join('; '),
+    (s.totalAmount||0).toFixed(2), (s.amountPaid||0).toFixed(2), (s.balanceDue||0).toFixed(2),
+    s.paystatus || 'Unpaid', s.paymode || '', s.receiptNo || '', s.status
+  ]);
   let csv = [headers, ...rows].map(r => r.map(c => `"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  let a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv])); a.download=`finance_${new Date().toISOString().slice(0,10)}.csv`; a.click(); toast('CSV exported');
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv]));
+  a.download = `finance_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  toast('CSV exported');
 }
 async function generatePDF(id) {
   let s = samples.find(x => x.id === id);

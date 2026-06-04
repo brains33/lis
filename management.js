@@ -397,6 +397,26 @@ if ('serviceWorker' in navigator) {
   let _testDefs = { units: {}, testTypes: {} };
   let _testDefsLoaded = false;
 
+  // ── Analytics dataset cache ───────────────────────────────────────────────
+  // renderAnalytics() is called on every filter change and tab click.
+  // Fetching 1000 released samples + their tests each time gets expensive fast.
+  // Cache the raw dataset for 5 minutes; filters and deep-dives run on the
+  // cached copy so the DB is only hit when the data is actually stale.
+  let _analyticsCache       = null;   // array of mapped sample objects
+  let _analyticsCacheTime   = 0;      // Date.now() when cache was filled
+  const _ANALYTICS_TTL_MS   = 5 * 60 * 1000; // 5 minutes
+
+  function _analyticsCacheValid() {
+    return _analyticsCache !== null && (Date.now() - _analyticsCacheTime) < _ANALYTICS_TTL_MS;
+  }
+  function _analyticsCacheInvalidate() {
+    _analyticsCache     = null;
+    _analyticsCacheTime = 0;
+  }
+  // Expose so the "Refresh" button (if added later) can bust it from outside
+  window._analyticsInvalidateCache = _analyticsCacheInvalidate;
+  // ─────────────────────────────────────────────────────────────────────────
+
   async function _loadTestDefs() {
     if (_testDefsLoaded) return;
     try {
@@ -648,21 +668,29 @@ if ('serviceWorker' in navigator) {
     await _loadTestDefs();
     _populateUnitFilter();
 
-    // Fetch released samples with their tests
+    // Fetch released samples with their tests — use cache when fresh
     let samples = [];
     try {
-      const { data, error } = await _db
-        .from('samples')
-        .select('id,patient,age,gender,collection_date,status,sample_tests(id,test_name,status,result)')
-        .eq('status', 'Result Released')
-        .order('id', { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      samples = (data || []).map(s => ({
-        ...s,
-        collDate: s.collection_date,
-        tests: s.sample_tests || []
-      }));
+      if (_analyticsCacheValid()) {
+        // Cache hit — re-use existing dataset, skip DB round-trip
+        samples = _analyticsCache;
+      } else {
+        // Cache miss or expired — fetch from DB and store
+        const { data, error } = await _db
+          .from('samples')
+          .select('id,patient,age,gender,collection_date,status,sample_tests(id,test_name,status,result)')
+          .eq('status', 'Result Released')
+          .order('id', { ascending: false })
+          .limit(1000);
+        if (error) throw error;
+        samples = (data || []).map(s => ({
+          ...s,
+          collDate: s.collection_date,
+          tests: s.sample_tests || []
+        }));
+        _analyticsCache     = samples;
+        _analyticsCacheTime = Date.now();
+      }
     } catch (err) {
       wrap.innerHTML = `<div class="analytics-empty" style="color:var(--red);">⚠️ Failed to load data: ${esc(err.message)}</div>`;
       return;
@@ -1150,6 +1178,30 @@ if ('serviceWorker' in navigator) {
     if (uSel) { uSel.value = ''; }
     const tSel = document.getElementById('analyticsTestSelect');
     if (tSel) tSel.value = '';
+    // Clearing filters reuses the cache — same data, different view
+    window.renderAnalytics();
+  });
+
+  // ── Refresh button — busts the dataset cache and re-fetches from DB ───────
+  // Injected next to the clear button if not already present in the HTML.
+  // Supervisors use this after new results are released to see them immediately
+  // without waiting for the 5-minute TTL to expire naturally.
+  (function _injectRefreshBtn() {
+    if (document.getElementById('analyticsRefreshBtn')) return;
+    const clearBtn = document.getElementById('analyticsClearBtn');
+    if (!clearBtn) return;
+    const refreshBtn = document.createElement('button');
+    refreshBtn.id        = 'analyticsRefreshBtn';
+    refreshBtn.className = clearBtn.className;
+    refreshBtn.style.cssText = 'margin-left:8px;';
+    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
+    refreshBtn.title     = 'Re-fetch released results from the database (cache expires every 5 min)';
+    clearBtn.insertAdjacentElement('afterend', refreshBtn);
+  })();
+
+  document.getElementById('analyticsRefreshBtn')?.addEventListener('click', () => {
+    _analyticsCacheInvalidate();
+    window.renderAnalytics();
   });
 
   // ── Unit filter change re-populates test selector without full re-render ──

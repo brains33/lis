@@ -478,6 +478,42 @@
   };
 
   window.confirmSettlement = async function (sampleId, balance, total, patient, phone) {
+    // ── Double-payment guard ─────────────────────────────────────────────
+    // Re-fetch the live pay_status before proceeding. If two receptionists
+    // opened the same sample simultaneously, one may have already settled it.
+    // Aborting here prevents a duplicate payment record and a second audit entry.
+    if (navigator.onLine) {
+      const btn = document.getElementById('settleConfirmBtn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking…'; }
+      try {
+        const { data: liveRow, error: checkErr } = await db
+          .from('samples')
+          .select('pay_status, balance_due')
+          .eq('id', sampleId)
+          .single();
+        if (!checkErr && liveRow && liveRow.pay_status === 'Paid') {
+          document.getElementById('settleResultBox').innerHTML =
+            `<div style="padding:14px;background:#dcfce7;border-radius:14px;">
+               ✓ MU-${sampleId} — ${esc(patient)} — has already been fully paid.
+             </div>`;
+          document.getElementById('settle-sample-id').value = '';
+          toast('Already paid — no action needed', 'warn');
+          return;
+        }
+        // Use the freshest balance from DB in case it changed since lookup
+        if (!checkErr && liveRow && liveRow.balance_due != null) {
+          balance = parseFloat(liveRow.balance_due) || balance;
+        }
+      } catch (e) {
+        // Network blip — fall through and attempt settlement normally
+        console.warn('[AC] confirmSettlement pre-check failed, proceeding', e);
+      } finally {
+        const b = document.getElementById('settleConfirmBtn');
+        if (b) { b.disabled = false; b.innerHTML = `<i class="fas fa-check-circle"></i> Confirm Payment of ${balance.toFixed(2)} NGN`; }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     if (_settleMode === 'Paystack') {
       const paystackRef = `MU-${sampleId}-BAL-${Date.now()}`;
       const email = `patient${sampleId}@muujiza-lab.com`;

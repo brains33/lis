@@ -50,8 +50,33 @@ function _oqInit() {
       if (!db.objectStoreNames.contains(STORE_PENDING)) db.createObjectStore(STORE_PENDING, { keyPath: 'offline_ref' });
     };
 
-    req.onsuccess = (e) => { _oqDB = e.target.result; resolve(_oqDB); };
+    req.onsuccess = (e) => {
+      _oqDB = e.target.result;
+
+      // ── Health check — verify we can actually read/write ─────────────────
+      // A corrupted or partially-upgraded DB can open successfully but fail
+      // on the first real transaction. Catch it here so callers get a clear
+      // error instead of a silent queue that never saves anything.
+      const healthTx = _oqDB.transaction(STORE_META, 'readwrite');
+      const healthReq = healthTx.objectStore(STORE_META).put({
+        key: '_healthcheck', value: Date.now()
+      });
+      healthReq.onsuccess = () => resolve(_oqDB);
+      healthReq.onerror = (ev) => {
+        console.error('[OQ] IndexedDB health check FAILED — queue degraded', ev.target.error);
+        // Mark queue as degraded so banner reflects it
+        window._oqDegraded = true;
+        // Still resolve so the rest of the app doesn't break —
+        // individual operations will fail gracefully and fall through to online path
+        resolve(_oqDB);
+      };
+      // ─────────────────────────────────────────────────────────────────────
+    };
+
     req.onerror   = (e) => reject(e.target.error);
+    req.onblocked = (e) => {
+      console.warn('[OQ] IndexedDB open blocked — another tab may be holding an older version open');
+    };
   });
 }
 
@@ -888,8 +913,17 @@ async function _oqRefreshBanner() {
   const banner = document.getElementById('oqBanner');
   if (!banner) return;
 
-  const pending = (await _idbGetAll(STORE_OUTBOX)).length;
   const label = banner.querySelector('.oq-label');
+
+  // ── Degraded state — IndexedDB health check failed ───────────────────────
+  if (window._oqDegraded) {
+    banner.className = 'oq-offline';
+    label.textContent = '⚠ Offline queue degraded — reload page';
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const pending = (await _idbGetAll(STORE_OUTBOX)).length;
 
   if (!_isOnline) {
     banner.className = 'oq-offline';
