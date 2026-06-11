@@ -31,15 +31,21 @@
     "files": [
       "main.js",
       "preload.js",
-      "app/**/*",
-      "build/icon.png"
+      "*.html",
+      "*.css",
+      "*.js",
+      "*.png",
+      "*.mp3",
+      "*.json",
+      "!package.json",
+      "!node_modules/**"
     ],
     "extraFiles": [],
     "win": {
       "target": [
         { "target": "nsis", "arch": ["x64", "ia32"] }
       ],
-      "icon": "build/icon.png",
+      "icon": "icon-512.png",
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
@@ -48,21 +54,19 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "MU'UJIZA LIS",
-      "installerIcon": "build/icon.png",
-      "uninstallerIcon": "build/icon.png",
-      "installerHeader": "build/icon.png",
-      "license": "LICENSE.txt",
+      "installerIcon": "icon-512.png",
+      "uninstallerIcon": "icon-512.png",
       "deleteAppDataOnUninstall": false
     },
     "mac": {
       "target": "dmg",
-      "icon": "build/icon.png",
+      "icon": "icon-512.png",
       "category": "public.app-category.medical",
       "darkModeSupport": true
     },
     "linux": {
       "target": ["AppImage", "deb"],
-      "icon": "build/icon.png",
+      "icon": "icon-512.png",
       "category": "Science"
     }
   }
