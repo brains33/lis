@@ -20,28 +20,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install image conversion tool
-        run: npm install -g png2icons
+      - name: Install Pillow
+        run: pip install pillow
 
       - name: Convert PNG to ICO
         run: |
-          node -e "
-          const fs = require('fs');
-          const { execSync } = require('child_process');
-          execSync('npx png-to-ico icon-512.png > icon.ico', {stdio: 'inherit'});
-          "
-        continue-on-error: true
-
-      - name: Convert icon using Python
-        run: |
           python -c "
           from PIL import Image
-          import struct, zlib
-
           img = Image.open('icon-512.png').convert('RGBA')
-          img = img.resize((256, 256))
-
-          # Save as ICO
           img.save('icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])
           print('icon.ico created successfully')
           "
