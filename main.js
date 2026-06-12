@@ -10,8 +10,6 @@ const path = require('path')
 // ── Security: prevent navigation to external URLs ────────────────────────────
 app.on('web-contents-created', (_, contents) => {
   contents.on('will-navigate', (event, url) => {
-    const appDir = path.resolve(__dirname, 'app')
-    const filePath = url.replace('file://', '').replace(/\?.*$/, '')
     // Allow: local app files and supabase API calls
     if (url.startsWith('file://') || url.includes('supabase.co')) return
     event.preventDefault()
@@ -32,21 +30,21 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "MU'UJIZA DIAGNOSTICS – LIS",
-    icon: path.join(__dirname, 'build', 'icon.png'),
+    icon: path.join(__dirname, 'icon-512.png'),
     backgroundColor: '#eef2f9',
     show: false, // show only after ready-to-show for a clean launch
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false,       // security: no Node.js in renderer
-      sandbox: false,               // needed for sessionStorage / IndexedDB
+      nodeIntegration: false,
+      sandbox: false,
       webSecurity: true,
       allowRunningInsecureContent: false,
     },
   })
 
-  // Show splash/login page
-  win.loadFile(path.join(__dirname, 'app', 'login.html'))
+  // Show login page (files are in root, not app/ subfolder)
+  win.loadFile(path.join(__dirname, 'login.html'))
 
   // Show window once page is ready — no white flash
   win.once('ready-to-show', () => {
@@ -64,7 +62,7 @@ function createWindow() {
       title: 'Exit MU\'UJIZA LIS',
       message: 'Are you sure you want to exit?',
       detail: 'Any unsaved work will be lost.',
-      icon: path.join(__dirname, 'build', 'icon.png'),
+      icon: path.join(__dirname, 'icon-512.png'),
     })
     if (choice === 0) e.preventDefault()
   })
@@ -112,7 +110,7 @@ function buildMenu() {
               title: "About MU'UJIZA LIS",
               message: "MU'UJIZA DIAGNOSTICS\nLaboratory Information System",
               detail: `Version: ${app.getVersion()}\nDeveloped by MU'UJIZA DATA\n© 2025 All rights reserved`,
-              icon: path.join(__dirname, 'build', 'icon.png'),
+              icon: path.join(__dirname, 'icon-512.png'),
               buttons: ['OK'],
             })
           }
