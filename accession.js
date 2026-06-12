@@ -404,7 +404,22 @@
       }
     } catch (err) {
       console.error(err);
-      toast(`Registration failed: ${err.message}`, 'error');
+      // Network error mid-attempt — save to offline queue so data is never lost
+      const isNetworkErr = !navigator.onLine ||
+        (err?.message || '').match(/fetch|network|failed to fetch|load failed/i) ||
+        err?.name === 'TypeError';
+      if (isNetworkErr && typeof window._oqEnqueueSample === 'function') {
+        window._oqEnqueueSample(sampleRow, [...tempTests], currentSession.name, paystatus, false);
+        toast('Network error — sample saved offline and will sync automatically.', 'warn');
+        showOfflineReceipt({
+          patient: name, priority: sampleRow.priority, tests: tempTests,
+          totalAmount: total, amountPaid: paid, balanceDue: balance, paystatus,
+          paymode: paymode, receiptNo: sampleRow.receipt_no, paymentDate: now.toISOString()
+        });
+        clearForm();
+      } else {
+        toast(`Registration failed: ${err.message}`, 'error');
+      }
     } finally {
       if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
     }
@@ -1059,7 +1074,15 @@
   updateOfflineButtonLabel();
 
   // Reload rejected samples when connection returns
-  window.addEventListener('online', () => { setTimeout(loadRejectedSamples, 1500); });
+  window.addEventListener('online', () => {
+    setTimeout(async () => {
+      loadRejectedSamples();
+      // Flush any offline-queued samples (registered while offline) to Supabase
+      if (typeof window._oqFlush === 'function') {
+        try { await window._oqFlush(); } catch(e) { console.warn('[AC] flush on reconnect failed', e); }
+      }
+    }, 1500);
+  });
   window.addEventListener('offline', () => {
     const container = document.getElementById('rejectedPanelBody');
     if (container) container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text2);"><i class="fas fa-wifi" style="opacity:0.4;"></i> Offline — rejected samples will reload when connection returns.</div>`;
@@ -1117,7 +1140,7 @@
       id: `OFFLINE-${offlineRef}`,
       patient: sampleRow.patient, age: sampleRow.age, gender: sampleRow.gender,
       priority: sampleRow.priority, status: sampleRow.status,
-      tests: testRows.map(t => ({ ...t, sample_id: null, id: null, result: '', tech_name: '', status: 'Collected' })),
+      tests: testRows.map(({ sample_type: _st, tube: _tb, ...t }) => ({ ...t, sample_id: null, id: null, result: '', tech_name: '', status: 'Collected' })),
       offline_ref: offlineRef, pay_status: paystatus, pay_mode: sampleRow.pay_mode,
       total_amount: sampleRow.total_amount, amount_paid: sampleRow.amount_paid,
       balance_due: sampleRow.balance_due, collection_date: sampleRow.collection_date,
