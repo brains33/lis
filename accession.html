@@ -75,6 +75,15 @@
         </div>
         <div class="form-group"><label class="form-label">Phone</label><input type="tel" class="form-input" id="f-phone"></div>
         <div class="form-group"><label class="form-label">ID / File No.</label><input type="text" class="form-input" id="f-nid"></div>
+        <div class="form-group" style="grid-column:span 2;">
+          <label class="form-label">Area / Locality</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" class="form-input" id="f-area-search" placeholder="🔍 Type to search area..." autocomplete="off" oninput="filterAreaDropdown()" onfocus="showAreaDropdown()" style="flex:1;">
+            <select class="form-select" id="f-area" style="flex:2;">
+              <option value="">— Select Area —</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -91,48 +100,7 @@
             <option>Routine</option><option>Urgent</option><option>STAT</option>
           </select>
         </div>
-<div class="form-group">
-  <label class="form-label">Sample Type</label>
-  <select class="form-select" id="f-stype">
-    <option>Whole Blood (EDTA)</option>
-    <option>Serum</option>
-    <option>Plasma (Citrate/Heparin/Fluoride)</option>
-    <option>Capillary Blood (Finger prick)</option>
-    <option>Urine</option>
-    <option>Stool</option>
-    <option>Sputum</option>
-    <option>CSF (Cerebrospinal fluid)</option>
-    <option>Pleural Fluid</option>
-    <option>Ascitic Fluid</option>
-    <option>Synovial Fluid</option>
-    <option>Swab (Throat/Nasopharyngeal/Vaginal/Urethral)</option>
-    <option>Tissue Biopsy</option>
-    <option>Bone Marrow Aspirate</option>
-    <option>Semen</option>
-    <option>Bronchoalveolar Lavage (BAL)</option>
-    <option>Amniotic Fluid</option>
-    <option>Saliva</option>
-    <option>Vitreous Humor</option>
-    <option>OTHERS</option>
-  </select>
-</div>
-       <div class="form-group">
-  <label class="form-label">Tube</label>
-  <select class="form-select" id="f-tube">
-    <option>Purple top (EDTA) – Haematology (CBC, Hb, HCT, malaria)</option>
-    <option>Red top (Plain/SST) – Serum chemistry (LFT, RFT, lipids, serology)</option>
-    <option>Blue top (Sodium Citrate) – Coagulation (PT/APTT, INR)</option>
-    <option>Green top (Heparin) – Plasma chemistry (STAT electrolytes, ammonia)</option>
-    <option>Grey top (Fluoride/Oxalate) – Glucose, lactate, OGTT</option>
-    <option>Yellow top (ACD/SPS) – Blood culture, DNA studies, paternity</option>
-    <option>Pink top (EDTA) – Blood bank (crossmatch, blood group)</option>
-    <option>Black top (Sodium Citrate) – ESR (Westergren tube)</option>
-    <option>Royal blue top (Trace element) – Heavy metals, copper, zinc</option>
-    <option>Gold top (SST) – Same as red SST, but with gel separator</option>
-    <option>swab stick</option>
-    <option>OTHERS</option>
-  </select>
-</div>
+
         <div class="form-group"><label class="form-label">Collection Date</label><input type="date" class="form-input" id="f-collDate"></div>
         <div class="form-group"><label class="form-label">Collection Time</label><input type="time" class="form-input" id="f-collTime"></div>
         <div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-input" id="f-due"></div>
@@ -165,6 +133,8 @@
       <div id="testCart" class="test-cart">
         <span style="color:var(--text3);">No tests added yet.</span>
       </div>
+      <!-- Sample Collection Summary -->
+      <div id="sampleSummary" style="margin-top:14px;display:none;"></div>
     </div>
   </div>
 

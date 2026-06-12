@@ -73,12 +73,14 @@
   }
 
   function applyTestDefinitions(data) {
-    testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
+    testDefinitions = { units: {}, testPrices: {}, testTypes: {}, sampleTypes: {}, tubes: {} };
     data.forEach(td => {
       if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
       testDefinitions.units[td.unit_name].push(td.test_name);
       testDefinitions.testPrices[td.test_name] = td.price_ngn;
       if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
+      if (td.sample_type) testDefinitions.sampleTypes[td.test_name] = td.sample_type;
+      if (td.tube) testDefinitions.tubes[td.test_name] = td.tube;
     });
     populateUnits();
   }
@@ -118,17 +120,56 @@
     if (!tempTests.length) {
       cart.innerHTML = '<span style="color:var(--text3);">No tests added yet.</span>';
       updateTotal();
+      updateSampleSummary();
       return;
     }
     cart.innerHTML = tempTests.map((t, i) => `
       <div class="test-chip">
-        <span>${esc(t.unit_name)}: ${esc(t.test_name)} – <strong>${getTestPrice(t.test_name).toFixed(2)} NGN</strong></span>
+        <span>${esc(t.unit_name)}: ${esc(t.test_name)} – <strong>${getTestPrice(t.test_name).toFixed(2)} NGN</strong>
+          ${t.sample_type ? `<span style="font-size:0.7rem;color:var(--primary);margin-left:4px;">🧪 ${esc(t.sample_type)}</span>` : ''}
+        </span>
         <button class="chip-remove" data-idx="${i}" title="Remove">×</button>
       </div>`).join('');
     cart.querySelectorAll('.chip-remove').forEach(btn => {
-      btn.addEventListener('click', () => { tempTests.splice(parseInt(btn.dataset.idx), 1); renderCart(); });
+      btn.addEventListener('click', () => { tempTests.splice(parseInt(btn.dataset.idx), 1); renderCart(); updateSampleSummary(); });
     });
     updateTotal();
+    updateSampleSummary();
+  }
+
+  // ── Sample Summary: groups tests by sample type and shows required tubes ──
+  function updateSampleSummary() {
+    const wrap = document.getElementById('sampleSummary');
+    if (!wrap) return;
+    if (!tempTests.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+
+    // Group by sample_type
+    const groups = {};
+    tempTests.forEach(t => {
+      const st = t.sample_type || 'Not specified';
+      const tb = t.tube || 'Not specified';
+      const key = st + '||' + tb;
+      if (!groups[key]) groups[key] = { sample_type: st, tube: tb, tests: [] };
+      groups[key].tests.push(t.test_name);
+    });
+
+    const groupsArr = Object.values(groups);
+    wrap.style.display = 'block';
+    wrap.innerHTML = `
+      <div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;color:var(--primary);">
+        <i class="fas fa-vials"></i> Sample Collection Required (${groupsArr.length} sample${groupsArr.length > 1 ? 's' : ''})
+      </div>
+      ${groupsArr.map((g, i) => `
+        <div style="background:#f0f9f4;border:1.5px solid #bbf7d0;border-radius:10px;padding:10px 14px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="background:var(--primary);color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">${i+1}</span>
+            <strong style="font-size:0.85rem;">🧪 ${esc(g.sample_type)}</strong>
+            <span style="font-size:0.75rem;color:#6b7280;">— ${esc(g.tube)}</span>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text2);padding-left:28px;">
+            Tests: ${g.tests.map(t => `<span style="background:#e0f2fe;border-radius:4px;padding:1px 6px;margin:1px;display:inline-block;">${esc(t)}</span>`).join('')}
+          </div>
+        </div>`).join('')}`;
   }
 
   function updateTotal() {
@@ -162,11 +203,15 @@
       toast(`"${test}" already in the cart`, 'warn'); return;
     }
     const testType = testDefinitions.testTypes[test] || 'simple';
+    const sampleType = testDefinitions.sampleTypes[test] || null;
+    const tube = testDefinitions.tubes[test] || null;
     tempTests.push({
       unit_name: unit, test_name: test, test_type: testType,
+      sample_type: sampleType, tube: tube,
       result: '', result_json: null, tech_name: '', status: 'Collected', sort_order: tempTests.length
     });
     renderCart();
+    updateSampleSummary();
     toast(`${test} added`);
   }
 
@@ -195,11 +240,12 @@
       gender: document.getElementById('f-gender')?.value || 'Male',
       phone: document.getElementById('f-phone')?.value.trim() || null,
       nid: document.getElementById('f-nid')?.value.trim() || null,
+      area: document.getElementById('f-area')?.value.trim() || null,
       clinician: document.getElementById('f-clinician')?.value.trim() || null,
       history: document.getElementById('f-history')?.value.trim() || null,
       priority: document.getElementById('f-priority')?.value || 'Routine',
-      sample_type: document.getElementById('f-stype')?.value || 'Whole Blood (EDTA)',
-      tube: document.getElementById('f-tube')?.value || 'Purple top (EDTA)',
+      sample_type: [...new Set(tempTests.map(t => t.sample_type).filter(Boolean))].join('; ') || null,
+      tube: [...new Set(tempTests.map(t => t.tube).filter(Boolean))].join('; ') || null,
       collection_date: collDate, collection_time: collTime,
       due_date: document.getElementById('f-due')?.value || null,
       pay_mode: paymode, insurance_no: document.getElementById('f-insurance')?.value.trim() || null,
@@ -369,15 +415,14 @@
   //  CLEAR FORM
   // --------------------------------------------------------------
   function clearForm() {
-    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance','f-patient-email'].forEach(id => {
+    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance','f-patient-email','f-area-search'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
     });
+    const areaEl = document.getElementById('f-area'); if (areaEl) areaEl.value = '';
     document.getElementById('f-name')?.classList.remove('required-empty');
     document.getElementById('f-age').value = '';
     document.getElementById('f-gender').value = 'Male';
     document.getElementById('f-priority').value = 'Routine';
-    document.getElementById('f-stype').value = 'Whole Blood (EDTA)';
-    document.getElementById('f-tube').value = 'Purple top (EDTA)';
     document.getElementById('f-paymode').value = 'Cash';
     window.handlePaymodeChange?.();
     setDefaultDates();
@@ -955,6 +1000,46 @@
   document.getElementById('f-unit')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTest(); } });
   document.getElementById('settle-sample-id')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupSampleBalance(); } });
   document.getElementById('labelModal')?.addEventListener('click', e => { if (e.target === document.getElementById('labelModal')) closeLabelModal(); });
+
+  // ── Area / Locality loader ────────────────────────────────────────────────
+  let _allAreas = [];
+
+  async function loadAreas() {
+    try {
+      const { data, error } = await db.from('areas').select('name').order('name');
+      if (error) throw error;
+      _allAreas = (data || []).map(a => a.name);
+      populateAreaSelect(_allAreas);
+    } catch (e) {
+      console.warn('Could not load areas:', e.message);
+    }
+  }
+
+  function populateAreaSelect(areas) {
+    const sel = document.getElementById('f-area');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— Select Area —</option>';
+    areas.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a; opt.textContent = a;
+      sel.appendChild(opt);
+    });
+    if (current) sel.value = current;
+  }
+
+  window.filterAreaDropdown = function() {
+    const q = (document.getElementById('f-area-search')?.value || '').toLowerCase();
+    const filtered = q ? _allAreas.filter(a => a.toLowerCase().includes(q)) : _allAreas;
+    populateAreaSelect(filtered);
+    if (filtered.length === 1) document.getElementById('f-area').value = filtered[0];
+  };
+
+  window.showAreaDropdown = function() {
+    document.getElementById('f-area')?.focus();
+  };
+
+  loadAreas();
 
   // UI: online/offline button label
   function updateOfflineButtonLabel() {

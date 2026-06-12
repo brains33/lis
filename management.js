@@ -452,6 +452,22 @@ if ('serviceWorker' in navigator) {
     if (prev) sel.value = prev;
   }
 
+  async function _populateAreaFilter() {
+    const sel = document.getElementById('analyticsAreaFilter');
+    if (!sel) return;
+    const prev = sel.value;
+    try {
+      const { data } = await _db.from('areas').select('name').order('name');
+      sel.innerHTML = '<option value="">All Areas</option>';
+      (data || []).forEach(a => {
+        const o = document.createElement('option');
+        o.value = a.name; o.textContent = a.name;
+        sel.appendChild(o);
+      });
+      if (prev) sel.value = prev;
+    } catch(e) { console.warn('Could not load areas for filter', e); }
+  }
+
   // ── Reference ranges (gender/age aware) ──────────────────────────────────
   function _refRange(testName, age, gender) {
     const isMale   = gender === 'Male';
@@ -667,6 +683,7 @@ if ('serviceWorker' in navigator) {
     // Load test_definitions from DB first (populates unit filter + test type resolver)
     await _loadTestDefs();
     _populateUnitFilter();
+    await _populateAreaFilter();
 
     // Fetch released samples with their tests — use cache when fresh
     let samples = [];
@@ -678,7 +695,7 @@ if ('serviceWorker' in navigator) {
         // Cache miss or expired — fetch from DB and store
         const { data, error } = await _db
           .from('samples')
-          .select('id,patient,age,gender,collection_date,status,sample_tests(id,test_name,status,result)')
+          .select('id,patient,age,gender,area,collection_date,status,sample_tests(id,test_name,status,result)')
           .eq('status', 'Result Released')
           .order('id', { ascending: false })
           .limit(1000);
@@ -710,15 +727,17 @@ if ('serviceWorker' in navigator) {
     const ageMin     = parseInt(document.getElementById('analyticsAgeMin')?.value)  || 0;
     const ageMax     = parseInt(document.getElementById('analyticsAgeMax')?.value)  || 999;
     const unitFilt   = document.getElementById('analyticsUnitFilter')?.value || '';
+    const areaFilt   = document.getElementById('analyticsAreaFilter')?.value || '';
     const testFilt   = document.getElementById('analyticsTestSelect')?.value || '';
 
-    // Apply filters (demographic + unit)
+    // Apply filters (demographic + unit + area)
     let filtered = withResults.filter(s => {
       if (dateFrom && (s.collDate || '') < dateFrom) return false;
       if (dateTo   && (s.collDate || '') > dateTo)   return false;
       if (genderFilt !== 'all' && s.gender !== genderFilt) return false;
       const a = parseInt(s.age);
       if (!isNaN(a) && (a < ageMin || a > ageMax)) return false;
+      if (areaFilt && (s.area || '') !== areaFilt) return false;
       // Unit filter: keep sample only if it has at least one test from that unit
       if (unitFilt) {
         const unitTests = new Set(_testDefs.units[unitFilt] || []);

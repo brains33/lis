@@ -196,6 +196,7 @@ function filterTable() {
       <td style="padding:10px 14px;">
         <strong>${esc(s.patient)}</strong><br>
         <small style="color:var(--text2);">${s.age ?? '?'}y ${esc(s.gender)}</small>
+        ${s.area ? `<br><small style="color:var(--primary);"><i class="fas fa-map-marker-alt" style="font-size:0.65rem;"></i> ${esc(s.area)}</small>` : ''}
        </td>
       <td style="padding:10px 14px;">${testList}</td>
       <td style="padding:10px 14px; color:var(--text2); font-size:0.8rem;">${esc(s.collDate || '—')}</td>
@@ -567,6 +568,7 @@ function buildResultCard(s) {
             &nbsp;|&nbsp; Released: ${s.released_at ? new Date(s.released_at).toLocaleString() : '—'}
           </div>
           ${s.clinician ? `<div style="font-size:0.8rem; color:var(--text2);">Clinician: ${esc(s.clinician)}</div>` : ''}
+          ${s.area ? `<div style="font-size:0.8rem; color:var(--text2);"><i class="fas fa-map-marker-alt" style="color:var(--primary);margin-right:3px;"></i>Area: <strong>${esc(s.area)}</strong></div>` : ''}
           ${s.offline_ref ? `<div style="margin-top:4px;"><span style="font-family:var(--mono); font-size:0.68rem; background:#fff9ec; border:1px solid #fde68a; color:#92400e; padding:2px 8px; border-radius:6px; display:inline-block;"><i class="fas fa-link" style="margin-right:3px;"></i>${esc(s.offline_ref)}</span></div>` : ''}
         </div>
         <div style="text-align:right;">
@@ -904,7 +906,8 @@ async function generatePDF(id) {
     [`Patient: ${s.patient || '—'}  (${s.age ?? '?'}y, ${s.gender || '—'})`,
      `Released: ${s.released_at ? new Date(s.released_at).toLocaleString() : '—'}`],
     [`Payment: ${s.pay_status || '—'}  |  Paid: ${(s.amount_paid || 0).toFixed(2)} NGN  |  Balance: ${(s.balance_due || 0).toFixed(2)} NGN`,
-     s.clinician ? `Clinician: ${s.clinician}` : '']
+     s.clinician ? `Clinician: ${s.clinician}` : ''],
+    [s.area ? `Area / Locality: ${s.area}` : '', '']
   ];
   if (s.supervisor_comment) {
     infoLines.push([`Supervisor Note: ${s.supervisor_comment}`, '']);

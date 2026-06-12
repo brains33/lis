@@ -93,7 +93,7 @@ async function loadTestDefinitions() {
     const { data, error } = await db.from('test_definitions').select('*');
     if (error) throw error;
     // Include refRanges and selectOptions in the global object
-    testDefinitions = { units: {}, testPrices: {}, testTypes: {}, refRanges: {}, selectOptions: {} };
+    testDefinitions = { units: {}, testPrices: {}, testTypes: {}, refRanges: {}, selectOptions: {}, sampleTypes: {}, tubes: {} };
     data.forEach(td => {
       if (td.test_name === '__unit_placeholder__') {
         if (!testDefinitions.units[td.unit_name]) testDefinitions.units[td.unit_name] = [];
@@ -103,6 +103,8 @@ async function loadTestDefinitions() {
       testDefinitions.units[td.unit_name].push(td.test_name);
       testDefinitions.testPrices[td.test_name] = td.price_ngn;
       if (td.test_type !== 'simple') testDefinitions.testTypes[td.test_name] = td.test_type;
+      if (td.sample_type) testDefinitions.sampleTypes[td.test_name] = td.sample_type;
+      if (td.tube) testDefinitions.tubes[td.test_name] = td.tube;
       
       // Load reference range for simple_numeric
       if (td.test_type === 'simple_numeric' && td.ref_low !== null && td.ref_high !== null) {
@@ -298,6 +300,7 @@ async function renderUnitsList() {
             <div style="flex:1;">
               <span style="font-size:0.85rem;">${esc(test)}</span>
               ${extraInfo}
+              ${testDefinitions.sampleTypes && testDefinitions.sampleTypes[test] ? `<span style="font-size:0.68rem;color:var(--primary);display:block;">🧪 ${esc(testDefinitions.sampleTypes[test])} · ${esc(testDefinitions.tubes[test] || '—')}</span>` : ''}
             </div>
             <div style="display:flex;gap:4px;align-items:center;">
               <input type="number" step="0.01" style="width:90px; padding:4px 8px; border-radius:8px; border:1px solid var(--border); font-size:0.8rem;" id="price_${testId}" value="${testDefinitions.testPrices[test] || 0}">
@@ -352,13 +355,18 @@ async function renderUnitsList() {
         <div id="optionsFields_${unitId}" style="display:none;">
           <input type="text" id="selectOptions_${unitId}" placeholder="Options (comma separated)" style="width:200px;" class="form-input">
         </div>
+        <!-- Sample Type & Tube fields -->
+        <input type="text" id="sampleType_${unitId}" placeholder="Sample Type (e.g. Urine)" class="form-input" style="flex:1; min-width:140px;">
+        <input type="text" id="tube_${unitId}" placeholder="Tube/Container (e.g. Universal)" class="form-input" style="flex:1; min-width:140px;">
         <button class="btn btn-primary btn-sm" onclick="addTestToUnit('${esc(unit)}', 
           document.getElementById('newTest_${unitId}').value,
           document.getElementById('testType_${unitId}').value,
           document.getElementById('refLow_${unitId}')?.value,
           document.getElementById('refHigh_${unitId}')?.value,
           document.getElementById('refUnit_${unitId}')?.value,
-          document.getElementById('selectOptions_${unitId}')?.value
+          document.getElementById('selectOptions_${unitId}')?.value,
+          document.getElementById('sampleType_${unitId}')?.value,
+          document.getElementById('tube_${unitId}')?.value
         )">Add Test</button>
       </div>
     </div>`;
@@ -422,7 +430,7 @@ async function deleteUnit(unit) {
   } catch(err) { toast("Delete failed: " + err.message, "error"); }
 }
 
-async function addTestToUnit(unit, testName, testType, refLow, refHigh, refUnit, selectOptionsRaw) {
+async function addTestToUnit(unit, testName, testType, refLow, refHigh, refUnit, selectOptionsRaw, sampleType, tube) {
   testName = (testName || '').trim();
   if (!testName) { toast('Test name required', 'error'); return; }
 
@@ -454,7 +462,9 @@ async function addTestToUnit(unit, testName, testType, refLow, refHigh, refUnit,
     ref_low: (testType === 'simple_numeric' && refLow) ? parseFloat(refLow) : null,
     ref_high: (testType === 'simple_numeric' && refHigh) ? parseFloat(refHigh) : null,
     ref_unit: (testType === 'simple_numeric' && refUnit) ? refUnit : null,
-    select_options: selectOptions
+    select_options: selectOptions,
+    sample_type: sampleType ? sampleType.trim() : null,
+    tube: tube ? tube.trim() : null
   };
 
   const { error } = await db.from('test_definitions').insert(insertData);
@@ -1630,6 +1640,7 @@ if (currentUser) {
   document.getElementById('verifySearch')?.addEventListener('input', renderVerifyTable);
   document.getElementById('verifyStatusFilter')?.addEventListener('change', renderVerifyTable);
   document.getElementById('addUnitBtn')?.addEventListener('click', addUnit);
+  document.getElementById('addAreaBtn')?.addEventListener('click', addArea);
   startClock();
   loadTestDefinitions().then(() => {
     renderAllSamples();
@@ -1639,6 +1650,88 @@ if (currentUser) {
     renderAudit();
     renderFinanceReport();
     renderUnitsList();
+    renderAreasList();
   });
   setInterval(() => { if(!currentVerifySample) Promise.all([renderVerifyTable(), renderAllSamples(), renderDashboard()]); }, 30000);
 }
+
+// ── Area Management ──────────────────────────────────────────────────────────
+let _allAreasAdmin = [];
+
+async function renderAreasList() {
+  const container = document.getElementById('areasList');
+  if (!container) return;
+  container.innerHTML = '<div style="color:var(--muted);font-size:.82rem;">Loading...</div>';
+  try {
+    const { data, error } = await db.from('areas').select('id,name').order('name');
+    if (error) throw error;
+    _allAreasAdmin = data || [];
+    _renderAreasTable(_allAreasAdmin);
+  } catch(e) {
+    container.innerHTML = `<div style="color:var(--red);font-size:.82rem;">Failed to load areas: ${e.message}</div>`;
+  }
+}
+
+function _renderAreasTable(areas) {
+  const container = document.getElementById('areasList');
+  if (!container) return;
+  if (!areas.length) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:.82rem;padding:12px 0;">No areas added yet. Add your first area above.</div>';
+    return;
+  }
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+      <thead><tr style="background:var(--card-bg);border-bottom:2px solid var(--border);">
+        <th style="padding:8px 12px;text-align:left;">Area Name</th>
+        <th style="padding:8px 12px;text-align:right;">Action</th>
+      </tr></thead>
+      <tbody>
+        ${areas.map(a => `
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px 12px;">${esc(a.name)}</td>
+            <td style="padding:8px 12px;text-align:right;">
+              <button class="btn btn-danger btn-sm" onclick="deleteArea('${a.id}','${esc(a.name)}')" style="padding:4px 10px;font-size:.75rem;">
+                <i class="fas fa-trash"></i> Delete
+              </button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+window.filterAreasList = function() {
+  const q = (document.getElementById('areaSearch')?.value || '').toLowerCase();
+  const filtered = q ? _allAreasAdmin.filter(a => a.name.toLowerCase().includes(q)) : _allAreasAdmin;
+  _renderAreasTable(filtered);
+};
+
+async function addArea() {
+  const input = document.getElementById('newAreaName');
+  const name = input?.value.trim();
+  if (!name) { toast('Please enter an area name', 'error'); input?.focus(); return; }
+  const btn = document.getElementById('addAreaBtn');
+  btn.disabled = true; btn.textContent = 'Adding...';
+  try {
+    const { error } = await db.from('areas').insert([{ name }]);
+    if (error) throw error;
+    input.value = '';
+    toast(`Area "${name}" added successfully`, 'success');
+    await renderAreasList();
+  } catch(e) {
+    toast('Failed to add area: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus"></i> Add Area';
+  }
+}
+
+window.deleteArea = async function(id, name) {
+  if (!confirm(`Delete area "${name}"? This cannot be undone.`)) return;
+  try {
+    const { error } = await db.from('areas').delete().eq('id', id);
+    if (error) throw error;
+    toast(`Area "${name}" deleted`, 'success');
+    await renderAreasList();
+  } catch(e) {
+    toast('Failed to delete: ' + e.message, 'error');
+  }
+};

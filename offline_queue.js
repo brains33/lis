@@ -360,7 +360,8 @@ async function _oqReplay(item) {
       former_offline_ref: offlineRef || null
     }).eq('id', sampleId);
 
-    const testRowsInsert = testRows.map(t => ({ ...t, sample_id: sampleId }));
+    // sample_type and tube are stored on the samples row, not per-test — strip them before insert
+    const testRowsInsert = testRows.map(({ sample_type: _st, tube: _tb, ...t }) => ({ ...t, sample_id: sampleId }));
     const { data: insertedTests, error: tErr } = await db.from('sample_tests')
       .insert(testRowsInsert)
       .select('id, test_name, unit_name, status');

@@ -147,6 +147,25 @@
 
   <!-- Admin -->
   <div id="tab-admin" class="tab-content">
+
+    <!-- Area Management -->
+    <div class="card admin-section" style="margin-bottom:20px;">
+      <div class="card-header"><i class="fas fa-map-marker-alt"></i> Manage Areas / Localities <small style="font-weight:400;color:#7a5c00;">(Admin only)</small></div>
+      <div class="card-body">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; align-items:flex-end;">
+          <div class="form-group">
+            <label class="form-label">New Area Name</label>
+            <input type="text" id="newAreaName" class="form-input" placeholder="e.g., Tudun Wada, Kano Municipal" style="width:280px;">
+          </div>
+          <button class="btn btn-primary" id="addAreaBtn"><i class="fas fa-plus"></i> Add Area</button>
+        </div>
+        <div style="margin-bottom:10px;">
+          <input type="text" id="areaSearch" class="form-input" placeholder="🔍 Search areas..." style="max-width:300px;" oninput="filterAreasList()">
+        </div>
+        <div id="areasList"></div>
+      </div>
+    </div>
+
     <div class="card admin-section">
       <div class="card-header"><i class="fas fa-cog"></i> Manage Units &amp; Tests <small style="font-weight:400;color:#7a5c00;">(Admin only)</small></div>
       <div class="card-body">

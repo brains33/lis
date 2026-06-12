@@ -91,19 +91,28 @@
 
     function playAnnouncementSound() {
         if (!announcementAudio) return;
-        // Re-resume if the context was suspended (e.g. tab was backgrounded)
+
+        const doPlay = () => {
+            announcementAudio.currentTime = 0;
+            announcementAudio.play().catch(err => {
+                console.warn('Audio play blocked (autoplay policy):', err);
+                const toast = document.createElement('div');
+                toast.textContent = '🔔 New announcement! Click anywhere to enable sound.';
+                toast.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001;';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            });
+        };
+
+        // If already playing let it finish — don't restart mid-play
+        if (!announcementAudio.paused && !announcementAudio.ended) return;
+
+        // AudioContext must be fully resumed BEFORE play(), not fire-and-forget
         if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume().catch(() => {});
+            audioContext.resume().then(doPlay).catch(doPlay);
+        } else {
+            doPlay();
         }
-        announcementAudio.currentTime = 0;
-        announcementAudio.play().catch(err => {
-            console.warn('Audio play blocked (autoplay policy):', err);
-            const toast = document.createElement('div');
-            toast.textContent = '🔔 New announcement! Click anywhere to enable sound.';
-            toast.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#333; color:white; padding:8px 16px; border-radius:20px; font-size:0.75rem; z-index:10001;';
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-        });
     }
 
     // ========== UI ==========

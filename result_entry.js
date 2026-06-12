@@ -996,6 +996,8 @@ async function openResultModal(id) {
         let val = data[p.key] !== undefined ? data[p.key] : '';
         if (p.type === 'select') {
           formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="semen_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else if (p.type === 'text') {
+          formsHtml += `<div class="param-item" style="grid-column:span 2"><label>${esc(p.name)}</label><textarea id="semen_${idx}_${p.key}" rows="2" placeholder="e.g. Azoospermia, Teratospermia, Oligospermia…" style="width:100%;resize:vertical;">${esc(val)}</textarea></div>`;
         } else {
           let flagCls = val !== '' ? getFlag(val, p) : '';
           formsHtml += `<div class="param-item"><label>${esc(p.name)} (${esc(p.unit)}) Ref: ${p.low}–${p.high}</label><input type="number" step="${p.step||0.1}" min="${p.low}" max="${p.high}" id="semen_${idx}_${p.key}" value="${val}" class="${flagCls}"></div>`;
