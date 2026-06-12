@@ -25,8 +25,7 @@
     "productName": "MU'UJIZA LIS",
     "copyright": "© 2025 MU'UJIZA DATA. All rights reserved.",
     "directories": {
-      "output": "dist",
-      "buildResources": "build"
+      "output": "dist"
     },
     "files": [
       "main.js",
@@ -36,8 +35,6 @@
       "*.js",
       "*.png",
       "*.mp3",
-      "*.json",
-      "!package.json",
       "!node_modules/**"
     ],
     "extraFiles": [],
