@@ -23,7 +23,7 @@ jobs:
       - name: Install Pillow
         run: pip install pillow
 
-      - - name: Convert PNG to ICO
+      - name: Convert PNG to ICO
         run: |
           python -c "
           from PIL import Image
