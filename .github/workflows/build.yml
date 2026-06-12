@@ -23,12 +23,13 @@ jobs:
       - name: Install Pillow
         run: pip install pillow
 
-      - name: Convert PNG to ICO
+      - - name: Convert PNG to ICO
         run: |
           python -c "
           from PIL import Image
           img = Image.open('icon-512.png').convert('RGBA')
-          img.save('icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])
+          img = img.resize((256, 256), Image.LANCZOS)
+          img.save('icon.ico', format='ICO')
           print('icon.ico created successfully')
           "
 
