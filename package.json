@@ -1,11 +1,11 @@
 {
   "name": "muujiza-lis",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "MU'UJIZA DIAGNOSTICS Laboratory Information System",
   "main": "main.js",
   "author": {
     "name": "MU'UJIZA DATA",
-    "email": "support@muujizadata.com"
+    "email": "muujizadata@gmail.com"
   },
   "license": "UNLICENSED",
   "private": true,
@@ -23,7 +23,7 @@
   "build": {
     "appId": "com.muujizadata.lis",
     "productName": "MU'UJIZA LIS",
-    "copyright": "© 2025 MU'UJIZA DATA. All rights reserved.",
+    "copyright": "© 2023-2026 MU'UJIZA DATA. All rights reserved.",
     "directories": {
       "output": "dist"
     },
