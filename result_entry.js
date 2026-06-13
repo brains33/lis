@@ -266,11 +266,24 @@ window.renderProcessingSamples = renderProcessingSamples;
 function getTestType(testName) {
   if (testDefinitions.testTypes[testName]) return testDefinitions.testTypes[testName];
   const n = testName.toLowerCase().trim();
+  // Kontagora Clinical Chemistry panels (1-10)
+  if (/e\/u\/cr|eucr|e\.u\.cr|electrolytes.*urea|urea.*electrolyte/.test(n)) return 'complex_eucr';
+  if (/lipid\s*profile|cholesterol/.test(n)) return 'complex_lipid';
+  if (/\bcalcium\b/.test(n) && !/phosphate|bone/.test(n)) return 'complex_calcium';
+  if (/inorganic\s*phosphate|phosphate\s*profile/.test(n)) return 'complex_phosphate';
+  if (/uric\s*acid/.test(n)) return 'complex_uric_acid';
   if (/liver\s*function|lft\b/.test(n)) return 'complex_lft';
+  if (/total\s*protein\b|albumin.*globulin|protein\s*profile/.test(n)) return 'complex_total_protein';
+  if (/\bpsa\b|prostate\s*specific/.test(n)) return 'complex_psa';
+  if (/diabetes\s*profile|glucose\s*profile/.test(n)) return 'complex_diabetes';
+  if (/\brf\b|rheumatoid\s*factor/.test(n)) return 'complex_rf';
+  if (/\blh\b|\bfsh\b|testosterone|progesterone|prolactin|hormone\s*profile|reproductive/.test(n)) return 'complex_hormone';
+  if (/\bmarry\b|marriage\s*screen|pre.?marital/.test(n)) return 'complex_marry';
+  if (/antenatal|ante.?natal|anc\b|booking\s*test/.test(n)) return 'complex_antenatal';
+  if (/\bblood\s*transfusion\b|grouping.*cross|crossmatch|cross\s*match/.test(n)) return 'complex_blood';
   if (/renal\s*function|kidney\s*function|rft\b/.test(n)) return 'complex_rft';
   if (/full\s*blood\s*count|complete\s*blood|cbc\b|fbc\b/.test(n)) return 'complex_cbc';
   if (/thyroid|tsh|thyroid\s*function/.test(n)) return 'complex_thyroid';
-  if (/lipid\s*profile|cholesterol/.test(n)) return 'complex_lipid';
   if (/coagul|prothrombin|clotting\s*profile|pt\/inr|coag\b/.test(n)) return 'complex_coag';
   if (/widal/.test(n)) return 'complex_widal';
   if (/urine\s*mcs|urine\s*m\/c\/s|urine\s*culture|urinalysis\s*mcs/.test(n)) return 'complex_urine_mcs';
@@ -323,57 +336,166 @@ function getReferenceRange(testName, age, gender) {
 }
 
 // ========== PARAMETER DEFINITIONS ==========
+// ========== COMPLEX FBC (Kontagora GH form) ==========
+// Parameters match the printed FBC request form exactly.
+// Gender-specific ranges for HB, PCV, ESR handled in render via note field.
 const CBC_PARAMS = [
-  {key:'wbc',  name:'WBC',         unit:'×10³/µL', low:4.0,   high:11.0},
-  {key:'rbc',  name:'RBC',         unit:'×10⁶/µL', low:4.2,   high:5.8 },
-  {key:'hb',   name:'Hemoglobin',  unit:'g/dL',    low:12.0,  high:16.0},
-  {key:'hct',  name:'Hematocrit',  unit:'%',       low:36,    high:46  },
-  {key:'mcv',  name:'MCV',         unit:'fL',      low:80,    high:100 },
-  {key:'mch',  name:'MCH',         unit:'pg',      low:27,    high:32  },
-  {key:'mchc', name:'MCHC',        unit:'g/dL',    low:32,    high:36  },
-  {key:'plt',  name:'Platelets',   unit:'×10³/µL', low:150,   high:450 },
-  {key:'neut', name:'Neutrophils', unit:'%',       low:40,    high:70  },
-  {key:'lymph',name:'Lymphocytes', unit:'%',       low:20,    high:45  },
-  {key:'mono', name:'Monocytes',   unit:'%',       low:2,     high:8   },
-  {key:'eo',   name:'Eosinophils', unit:'%',       low:0,     high:6   },
-  {key:'baso', name:'Basophils',   unit:'%',       low:0,     high:2   }
+  // Main indices
+  {key:'hb',           name:'HB (Haemoglobin)',      unit:'g/dL',       low:11.5, high:15.5, note:'F: 11.5–15.5 | M: 13.5–18.0 g/dL'},
+  {key:'pcv',          name:'PCV',                   unit:'%',          low:35,   high:54,   note:'M: 40–54% | F: 35–45%'},
+  {key:'twbc',         name:'TWBC',                  unit:'×10⁹/L',     low:4.0,  high:11.0},
+  {key:'rbc',          name:'RBC',                   unit:'×10¹²/L',    low:4.5,  high:5.5},
+  {key:'mcv',          name:'MCV',                   unit:'fL',         low:76,   high:98},
+  {key:'mch',          name:'MCH',                   unit:'pg',         low:27,   high:31},
+  {key:'mchc',         name:'MCHC',                  unit:'g/dL',       low:31,   high:36},
+  {key:'plt',          name:'Platelets (PLC)',        unit:'×10⁹/L',     low:150,  high:400},
+  {key:'retics',       name:'Retics',                unit:'%',          low:0.2,  high:2.0},
+  {key:'esr',          name:'ESR',                   unit:'mm/Hr',      low:0,    high:10,   note:'M: 0–5 | F: 0–10 mm/Hr'},
+  {key:'bleeding_time',name:'Bleeding Time',         unit:'min',        low:0,    high:11},
+  {key:'clotting_time',name:'Clotting Time',         unit:'min',        low:5,    high:11},
+  // Differential Count
+  {key:'neut',         name:'Neutrophils',           unit:'%',          low:40,   high:75},
+  {key:'lymph',        name:'Lymphocytes',           unit:'%',          low:20,   high:45},
+  {key:'eo',           name:'Eosinophils',           unit:'%',          low:1,    high:6},
+  {key:'baso',         name:'Basophils',             unit:'%',          low:0,    high:2},
+  {key:'mono',         name:'Monocytes',             unit:'%',          low:2,    high:10}
 ];
 const WIDAL_TITERS = [20, 40, 80, 160, 320, 640, 1280];
+// ========== KONTAGORA GH CLINICAL CHEMISTRY PANELS ==========
+// Panel 1 — E/U/Cr (Electrolytes, Urea, Creatinine)
+const EUCR_PARAMS = [
+  {key:'sodium',    name:'Sodium (Na⁺)',              unit:'mmol/L', low:136,  high:150},
+  {key:'potassium', name:'Potassium (K⁺)',             unit:'mmol/L', low:3.5,  high:5.0},
+  {key:'bicarb',    name:'Bicarbonate (HCO₃⁻)',       unit:'mmol/L', low:22,   high:30},
+  {key:'chloride',  name:'Chloride (Cl⁻)',             unit:'mmol/L', low:96,   high:108},
+  {key:'urea',      name:'Urea',                       unit:'mmol/L', low:2.1,  high:7.0},
+  {key:'creat',     name:'Creatinine (Male)',           unit:'mg/dL',  low:0.9,  high:1.50},
+  {key:'creat_f',   name:'Creatinine (Female)',         unit:'mg/dL',  low:0.7,  high:1.37}
+];
+
+// Panel 6 — LFT (Kontagora exact parameters)
 const LFT_PARAMS_FULL = [
-  {key:'alt', name:'ALT', unit:'U/L', low:10, high:40},
-  {key:'ast', name:'AST', unit:'U/L', low:10, high:35},
-  {key:'alp', name:'ALP', unit:'U/L', low:30, high:120},
-  {key:'ggt', name:'GGT', unit:'U/L', low:8, high:61},
-  {key:'tbil', name:'Total Bilirubin', unit:'mg/dL', low:0.3, high:1.2},
-  {key:'dbil', name:'Direct Bilirubin', unit:'mg/dL', low:0.0, high:0.3},
-  {key:'prot', name:'Total Protein', unit:'g/dL', low:6.0, high:8.0},
-  {key:'alb', name:'Albumin', unit:'g/dL', low:3.5, high:5.0},
-  {key:'glob', name:'Globulin', unit:'g/dL', low:2.0, high:3.5, calc:true},
-  {key:'agRatio', name:'A/G Ratio', unit:'', low:1.0, high:2.5, calc:true}
+  {key:'tbil',  name:'Total Bilirubin',                unit:'mg/dL',  low:0,    high:1.11},
+  {key:'dbil',  name:'Direct Bilirubin',               unit:'mg/dL',  low:0,    high:0.023},
+  {key:'alp',   name:'Alkaline Phosphatase (Adult)',    unit:'U/L',    low:9,    high:35},
+  {key:'alp_c', name:'Alkaline Phosphatase (Children)',unit:'U/L',    low:35,   high:100},
+  {key:'ast',   name:'AST (GOT)',                       unit:'U/L',    low:3.5,  high:35},
+  {key:'alt',   name:'ALT (GPT)',                       unit:'U/L',    low:2.5,  high:37}
 ];
+
+// Panel 7 — Total Protein
+const TOTAL_PROTEIN_PARAMS = [
+  {key:'prot', name:'Total Protein', unit:'g/dL', low:5.8, high:8.2},
+  {key:'alb',  name:'Albumin',       unit:'g/dL', low:3.5, high:5.2},
+  {key:'glob', name:'Globulin',      unit:'g/dL', low:2.2, high:3.2, calc:true}
+];
+
+// Panel 3 — Calcium
+const CALCIUM_PARAMS = [
+  {key:'calcium', name:'Calcium', unit:'mmol/L', low:2.2, high:2.7}
+];
+
+// Panel 4 — Inorganic Phosphate
+const PHOSPHATE_PARAMS = [
+  {key:'phosphate_adult',    name:'Inorganic Phosphate (Adult)',    unit:'mmol/L', low:0.9, high:1.6},
+  {key:'phosphate_children', name:'Inorganic Phosphate (Children)', unit:'mmol/L', low:1.1, high:2.0}
+];
+
+// Panel 5 — Uric Acid
+const URIC_ACID_PARAMS = [
+  {key:'uric_female', name:'Uric Acid (Female)', unit:'mmol/L', low:0.16, high:0.43},
+  {key:'uric_male',   name:'Uric Acid (Male)',   unit:'mmol/L', low:0.24, high:0.51}
+];
+
+// Panel 8 — PSA Qualitative
+const PSA_PARAMS = [
+  {key:'psa_qual', name:'PSA (Qualitative)', unit:'', type:'select', options:['Non-reactive','Reactive','Borderline']}
+];
+
+// Panel 9 — Diabetes Profile
+const DIABETES_PARAMS = [
+  {key:'fbs',   name:'FBS (Fasting Blood Sugar)',    unit:'mmol/L', low:3.0, high:6.0},
+  {key:'rbs',   name:'RBS (Random Blood Sugar)',      unit:'mmol/L', low:3.0, high:9.0},
+  {key:'hpp2',  name:'2HPP (2-Hour Post-Prandial)',  unit:'mmol/L', low:3.0, high:9.0},
+  {key:'ogtt',  name:'OGTT',                          unit:'mmol/L', low:3.0, high:7.8},
+  {key:'hba1c', name:'HbA1c',                         unit:'%',      low:3.0, high:6.0}
+];
+
+// Panel 10 — RF (Rheumatoid Factor)
+const RF_PARAMS = [
+  {key:'rf', name:'Rheumatoid Factor (RF)', unit:'', type:'select', options:['Negative','Positive','Weakly Positive']}
+];
+
+// Hormone Panel — LH, FSH, Testosterone, Progesterone, Prolactin (Kontagora GH form)
+const HORMONE_PARAMS = [
+  {key:'lh',           name:'LH',           unit:'mIU/mL', low:null, high:null},
+  {key:'fsh',          name:'FSH',          unit:'mIU/mL', low:null, high:null},
+  {key:'testosterone', name:'Testosterone', unit:'ng/mL',  low:null, high:null},
+  {key:'progesterone', name:'Progesterone', unit:'ng/mL',  low:null, high:null},
+  {key:'prolactin',    name:'Prolactin',    unit:'ng/mL',  low:null, high:null}
+];
+// Marry Panel — HBsAg, HCV, RVS, SHCG, Hb Genotype, Blood Group
+const MARRY_PARAMS = [
+  {key:'hbsag',       name:'HBsAg',        unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'hcv',         name:'HCV',          unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'rvs',         name:'RVS',          unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'shcg',        name:'SHCG',         unit:'', type:'select', options:['Negative','Positive']},
+  {key:'hb_genotype', name:'Hb Genotype',  unit:'', type:'select', options:['AA','AS','SS','AC','SC','CC']},
+  {key:'blood_group', name:'Blood Group',  unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']}
+];
+// Antenatal Panel — PCV, Hb Genotype, Blood Group, Protein, Glucose, HBsAg, HCV
+const ANTENATAL_PARAMS = [
+  {key:'pcv',         name:'PCV',              unit:'%',  low:33, high:47},
+  {key:'hb_genotype', name:'Hb Genotype',      unit:'', type:'select', options:['AA','AS','SS','AC','SC','CC']},
+  {key:'blood_group', name:'Blood Group',       unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']},
+  {key:'protein',     name:'Protein (Urine)',   unit:'', type:'select', options:['Negative','Trace','1+','2+','3+','4+']},
+  {key:'glucose',     name:'Glucose (Urine)',   unit:'', type:'select', options:['Negative','Trace','1+','2+','3+','4+']},
+  {key:'hbsag',       name:'HBsAg',             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'hcv',         name:'HCV',               unit:'', type:'select', options:['Non-Reactive','Reactive']}
+];
+// Blood Transfusion — Grouping & Crossmatch
+const BLOOD_TRANSFUSION_PARAMS = [
+  {key:'patient_blood_group', name:"Patient's Blood Group",   unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']},
+  {key:'patient_hbsag',       name:"Patient HBsAg",           unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'patient_hcv',         name:"Patient HCV",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'patient_rvs',         name:"Patient RVS",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'donor_blood_group',   name:"Donor's Blood Group",     unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']},
+  {key:'donor_hbsag',         name:"Donor HBsAg",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'donor_hcv',           name:"Donor HCV",               unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'donor_vdrl',          name:"Donor VDRL",              unit:'', type:'select', options:['Negative','Positive']},
+  {key:'donor_rvs',           name:"Donor RVS",               unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'blood_no',            name:'Blood No.',                unit:'', type:'text'},
+  {key:'crossmatch',          name:'Crossmatch Compatibility', unit:'', type:'select', options:['Compatible','Incompatible']},
+  {key:'time_issued',         name:'Time Issued',              unit:'', type:'text'},
+  {key:'time_return',         name:'Time Return',              unit:'', type:'text'},
+  {key:'time_reissued',       name:'Time Reissued',            unit:'', type:'text'}
+];
+
+// Backward-compatible RFT (full panel — for 'Renal Function Test' orders)
 const RFT_PARAMS_FULL = [
-  {key:'urea', name:'Urea', unit:'mg/dL', low:10, high:50},
-  {key:'creat', name:'Creatinine', unit:'mg/dL', low:0.6, high:1.2},
-  {key:'sodium', name:'Sodium', unit:'mmol/L', low:135, high:145},
-  {key:'potassium', name:'Potassium', unit:'mmol/L', low:3.5, high:5.1},
-  {key:'chloride', name:'Chloride', unit:'mmol/L', low:98, high:107},
-  {key:'bicarb', name:'Bicarbonate (HCO3)', unit:'mmol/L', low:22, high:29},
-  {key:'calcium', name:'Calcium', unit:'mg/dL', low:8.5, high:10.2},
-  {key:'phosphate', name:'Phosphate', unit:'mg/dL', low:2.5, high:4.5},
-  {key:'magnesium', name:'Magnesium', unit:'mg/dL', low:1.7, high:2.2}
+  {key:'sodium',    name:'Sodium (Na⁺)',            unit:'mmol/L', low:136,  high:150},
+  {key:'potassium', name:'Potassium (K⁺)',           unit:'mmol/L', low:3.5,  high:5.0},
+  {key:'bicarb',    name:'Bicarbonate (HCO₃⁻)',     unit:'mmol/L', low:22,   high:30},
+  {key:'chloride',  name:'Chloride (Cl⁻)',           unit:'mmol/L', low:96,   high:108},
+  {key:'urea',      name:'Urea',                     unit:'mmol/L', low:2.1,  high:7.0},
+  {key:'creat',     name:'Creatinine',               unit:'mg/dL',  low:0.9,  high:1.5},
+  {key:'calcium',   name:'Calcium',                  unit:'mmol/L', low:2.2,  high:2.7},
+  {key:'phosphate', name:'Inorganic Phosphate',      unit:'mmol/L', low:0.9,  high:1.6}
 ];
+// Thyroid Function Test — Kontagora GH form
 const THYROID_PARAMS = [
-  {key:'tsh', name:'TSH', unit:'µIU/mL', low:0.4, high:4.0},
-  {key:'ft3', name:'Free T3', unit:'pg/mL', low:2.3, high:4.2},
-  {key:'ft4', name:'Free T4', unit:'ng/dL', low:0.8, high:1.8}
+  {key:'tsh', name:'TSH', unit:'mIU/L',  low:0.3,  high:4.2},
+  {key:'t3',  name:'T3',  unit:'nmol/L', low:1.23, high:3.07},
+  {key:'t4',  name:'T4',  unit:'nmol/L', low:66,   high:181}
 ];
+// Panel 2 — Lipid Profile (mmol/L — Kontagora form units)
 const LIPID_PARAMS = [
-  {key:'chol', name:'Total Cholesterol', unit:'mg/dL', low:125, high:200},
-  {key:'hdl', name:'HDL Cholesterol', unit:'mg/dL', low:40, high:60},
-  {key:'ldl', name:'LDL Cholesterol', unit:'mg/dL', low:0, high:130},
-  {key:'tg', name:'Triglycerides', unit:'mg/dL', low:0, high:150},
-  {key:'vldl', name:'VLDL', unit:'mg/dL', low:5, high:40, calc:true},
-  {key:'ratio', name:'Total/HDL Ratio', unit:'', low:0, high:5, calc:true}
+  {key:'chol', name:'Total Cholesterol', unit:'mmol/L', low:2.5,  high:6.0},
+  {key:'hdl',  name:'HDL-C',            unit:'mmol/L', low:0.91, high:1.43},
+  {key:'ldl',  name:'LDL-C',            unit:'mmol/L', low:1.8,  high:4.4},
+  {key:'tg',   name:'Triglycerides',    unit:'mmol/L', low:1.8,  high:2.2},
+  {key:'vldl', name:'VLDL',            unit:'mmol/L', low:0.2,  high:0.8, calc:true},
+  {key:'ratio',name:'Total/HDL Ratio',  unit:'',       low:0,    high:5,   calc:true}
 ];
 const COAG_PARAMS = [
   {key:'pt', name:'Prothrombin Time', unit:'sec', low:11, high:13.5},
@@ -396,15 +518,9 @@ const URINALYSIS_MICRO_PARAMS = [
   {key:'blood', name:'Blood', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
   {key:'bilirubin', name:'Bilirubin', unit:'', type:'select', options:['Negative','+','++']},
   {key:'urobilinogen', name:'Urobilinogen', unit:'mg/dL', low:0.1, high:1.0, type:'number', step:0.1},
+  {key:'ascorbic_acid', name:'Ascorbic Acid', unit:'', type:'select', options:['Negative','Positive']},
   {key:'nitrite', name:'Nitrite', unit:'', type:'select', options:['Negative','Positive']},
-  {key:'leuko', name:'Leukocyte Esterase', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
-  {key:'wbc', name:'WBC', unit:'/HPF', low:0, high:5, type:'number'},
-  {key:'rbc', name:'RBC', unit:'/HPF', low:0, high:2, type:'number'},
-  {key:'epithelial', name:'Epithelial Cells', unit:'/HPF', type:'text'},
-  {key:'casts', name:'Casts', unit:'/LPF', type:'text'},
-  {key:'crystals', name:'Crystals', unit:'', type:'text'},
-  {key:'bacteria', name:'Bacteria', unit:'', type:'select', options:['None','Few','Moderate','Many']},
-  {key:'yeast', name:'Yeast', unit:'', type:'select', options:['None','Few','Moderate','Many']}
+  {key:'leuko', name:'Leukocyte Esterase', unit:'', type:'select', options:['Negative','Trace','+','++','+++']}
 ];
 const IRON_PARAMS = [
   {key:'iron', name:'Serum Iron', unit:'µg/dL', low:50, high:150},
@@ -468,32 +584,63 @@ const ABG_PARAMS = [
   {key:'lactate', name:'Lactate', unit:'mmol/L', low:0.5, high:2.0, type:'number'}
 ];
 const SEMEN_PARAMS = [
-  // Standard physical
+  // Semen Collection
+  {key:'time_produced', name:'Time Produced', type:'text'},
+  {key:'time_received', name:'Time Received', type:'text'},
+  {key:'time_analysed', name:'Time Analysed', type:'text'},
+  {key:'abstinence', name:'Abstinence', type:'text'},
+
+  // Macroscopy
+  {key:'appearance', name:'Appearance', type:'select', options:['Greyish-Opalescent','Yellowish','Reddish/Bloody','Clear','Brownish']},
   {key:'volume', name:'Volume', unit:'mL', low:1.5, high:6.0, type:'number', step:0.1},
-  {key:'liquefaction', name:'Liquefaction Time', type:'select', options:['Normal (<60 min)','Delayed (>60 min)']},
-  {key:'viscosity', name:'Viscosity', type:'select', options:['Normal','High']},
-  {key:'ph', name:'pH', unit:'', low:7.2, high:8.0, type:'number', step:0.1},
-  
-  // Microscopic
-  {key:'count', name:'Sperm Concentration', unit:'million/mL', low:15, high:200, type:'number'},
-  {key:'total_count', name:'Total Sperm Count', unit:'million/ejaculate', low:39, high:500, type:'number'}, // optional, calculate if needed
-  {key:'progressive_motility', name:'Progressive Motility (PR)', unit:'%', low:32, high:100, type:'number'},
-  {key:'non_progressive_motility', name:'Non-Progressive Motility (NP)', unit:'%', low:0, high:100, type:'number'},
-  {key:'immotile', name:'Immotile (IM)', unit:'%', low:0, high:100, type:'number'},
-  {key:'vitality', name:'Sperm Vitality (live)', unit:'%', low:58, high:100, type:'number'},
-  {key:'morphology_normal', name:'Normal Morphology (Kruger)', unit:'%', low:4, high:14, type:'number'},
-  {key:'morphology_strict', name:'Strict Morphology (Tygerberg)', unit:'%', low:4, high:14, type:'number'}, // alias
-  {key:'agglutination', name:'Agglutination', type:'select', options:['None','Mild','Moderate','Severe']},
-  {key:'round_cells', name:'Round Cells', unit:'x10⁶/mL', low:0, high:5, type:'number'},
-  {key:'wbc', name:'WBC (Peroxidase positive)', unit:'x10⁶/mL', low:0, high:1, type:'number'},
-  
-  // Advanced (optional)
-  {key:'mar_test', name:'MAR Test (IgG)', unit:'% bound', low:0, high:10, type:'number'}, // >50% positive
-  {key:'dna_fragmentation', name:'Sperm DNA Fragmentation', unit:'%', low:0, high:15, type:'number'},
-  {key:'fructose', name:'Seminal Fructose', unit:'µmol/ejaculate', low:13, high:35, type:'number'},
-  
+  {key:'viscosity', name:'Viscosity', type:'select', options:['Normal','High','Low']},
+  {key:'consistency', name:'Consistency', type:'select', options:['Normal','Watery','Thick']},
+  {key:'liquefaction', name:'Liquefaction', type:'select', options:['Normal (<60 min)','Delayed (>60 min)','Incomplete']},
+
+  // Microscopy — counts & vitality
+  {key:'sperm_count', name:'Sperm Count', unit:'x10⁶ Sperm Cells/mL of Semen', low:15, high:200, type:'number'},
+  {key:'viability', name:'Viability (%)', unit:'%', low:58, high:100, type:'number'},
+
+  // Motility
+  {key:'motility_a', name:'Grade A — Progressive Motility', unit:'%', low:32, high:100, type:'number'},
+  {key:'motility_b', name:'Grade B — Non-Progressive Motility', unit:'%', low:0, high:100, type:'number'},
+  {key:'motility_c', name:'Grade C — Non-Linear Motility', unit:'%', low:0, high:100, type:'number'},
+  {key:'motility_d', name:'Grade D — Immotile Sperm Cells', unit:'%', low:0, high:100, type:'number'},
+
+  // Morphology — Head defects
+  {key:'morph_microcephalic', name:'Microcephalic', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_macrocephalic', name:'Macrocephalic', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_pinhead', name:'Pin Head', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_pyriform', name:'Pyriform', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_double_head', name:'Double Head', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_acrosomal', name:'Acrosomal Condensation', unit:'%', low:0, high:100, type:'number'},
+
+  // Morphology — Tail defects
+  {key:'morph_tailless', name:'Tailless', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_short_tail', name:'Short Tail', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_long_tail', name:'Long Tail', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_double_tail', name:'Double Tail', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_coiled_tail', name:'Coiled Tail', unit:'%', low:0, high:100, type:'number'},
+
+  // Morphology — Others
+  {key:'morph_cytoplasmic_droplets', name:'Cytoplasmic Droplets', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_midpiece_abnormality', name:'Mid Piece Abnormality', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_neck_defect', name:'Neck Defect', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_normal', name:'Normal Morphology', unit:'%', low:4, high:14, type:'number'},
+
+  // Wet Preparation / Gram's Stain
+  // Wet Preparation (urine microscopy style)
+  {key:'wp_epithelial_cells', name:'Epithelial Cells', unit:'/HPF', type:'text'},
+  {key:'wp_pus_cells', name:'Pus Cells (WBC)', unit:'/HPF', type:'text'},
+  {key:'wp_rbc', name:'RBC', unit:'/HPF', type:'text'},
+  {key:'wp_parasite', name:'Parasite / Ova', type:'select', options:['None seen','Trichomonas vaginalis','Other — see comments']},
+  {key:'wp_other', name:'Other Findings', type:'text'},
+
+  // Gram's Stain
+  {key:'gram_stain', name:'Gram\'s Stain', type:'text'},
+
   // Comments
-  {key:'comments', name:'Microscopy Comments', type:'text'}
+  {key:'comments', name:'Comments', type:'text'}
 ];
 const SEROLOGY_PARAMS = [
   {key:'hbsag', name:'HBsAg', type:'select', options:['Non-reactive','Reactive']},
@@ -717,13 +864,25 @@ async function openResultModal(id) {
     if (testType === 'complex_cbc') {
       let data = {};
       try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
-      formsHtml += `<div class="param-grid">`;
-      CBC_PARAMS.forEach(p => {
+      const cbcMain  = CBC_PARAMS.slice(0, 12); // HB → Clotting Time
+      const cbcDiff  = CBC_PARAMS.slice(12);    // Differential Count
+      formsHtml += `<div class="mcs-section-label">🩸 Full Blood Count</div><div class="param-grid">`;
+      cbcMain.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        let flagCls = val !== '' ? getFlag(val, p) : '';
+        let noteHtml = p.note ? `<br><span style="color:var(--text3);font-size:0.7rem;">${esc(p.note)}</span>` : '';
+        formsHtml += `<div class="param-item">
+          <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+          <input type="number" step="0.1" id="cbc_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+        </div>`;
+      });
+      formsHtml += `</div><div class="mcs-section-label">🔬 Differential Count</div><div class="param-grid">`;
+      cbcDiff.forEach(p => {
         let val = data[p.key] !== undefined ? data[p.key] : '';
         let flagCls = val !== '' ? getFlag(val, p) : '';
         formsHtml += `<div class="param-item">
           <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span></label>
-          <input type="number" step="0.1" min="${p.low}" max="${p.high}" id="cbc_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          <input type="number" step="0.1" id="cbc_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
         </div>`;
       });
       formsHtml += `</div><div id="cbcInterp_${idx}" class="interp-box interp-normal">—</div>`;
@@ -786,6 +945,158 @@ async function openResultModal(id) {
       });
       formsHtml += `</div><div id="lftInterp_${idx}" class="interp-box interp-normal">—</div>`;
     }
+    else if (testType === 'complex_eucr') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      EUCR_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="eucr_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="eucr_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="eucrInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_calcium') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      CALCIUM_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="calc_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="calc_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="calcInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_phosphate') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      PHOSPHATE_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="phos_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="phos_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="phosInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_uric_acid') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      URIC_ACID_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="uric_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="uric_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="uricInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_total_protein') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      TOTAL_PROTEIN_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="tp_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="tp_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="tpInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_psa') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      PSA_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="psa_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="psa_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="psaInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_diabetes') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      DIABETES_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="diab_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="diab_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="diabInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_rf') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      RF_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="rf_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          let noteHtml = p.note ? ` <span style="color:var(--text3);font-size:0.72rem;">${esc(p.note)}</span>` : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span>${noteHtml}</label>
+            <input type="number" step="0.01" min="${p.low}" max="${p.high}" id="rf_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div><div id="rfInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
     else if (testType === 'complex_rft') {
       let data = {};
       try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
@@ -813,6 +1124,126 @@ async function openResultModal(id) {
         </div>`;
       });
       formsHtml += `</div><div id="thyroidInterp_${idx}" class="interp-box interp-normal">—</div>`;
+    }
+    else if (testType === 'complex_hormone') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div style="font-size:0.78rem;color:var(--text2);margin-bottom:6px;">⚠ Reference ranges are gender &amp; phase-dependent — see printed report form.</div>`;
+      formsHtml += `<div class="param-grid">`;
+      HORMONE_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        formsHtml += `<div class="param-item">
+          <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)})</span></label>
+          <input type="number" step="0.01" id="hormone_${idx}_${p.key}" value="${val}" placeholder="Enter value">
+        </div>`;
+      });
+      formsHtml += `</div>`;
+    }
+    else if (testType === 'complex_marry') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      MARRY_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)}</label>
+            <select id="marry_${idx}_${p.key}" class="filter-select">
+              <option value="">— Select —</option>
+              ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
+            </select>
+          </div>`;
+        } else {
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)})</span></label>
+            <input type="number" step="0.01" id="marry_${idx}_${p.key}" value="${val}" placeholder="Enter value">
+          </div>`;
+        }
+      });
+      formsHtml += `</div>`;
+    }
+    else if (testType === 'complex_antenatal') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div class="param-grid">`;
+      ANTENATAL_PARAMS.forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)}</label>
+            <select id="antenatal_${idx}_${p.key}" class="filter-select">
+              <option value="">— Select —</option>
+              ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
+            </select>
+          </div>`;
+        } else {
+          let flagCls = val !== '' ? getFlag(val, p) : '';
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)} <span style="color:var(--text3);font-weight:400;">(${esc(p.unit)}) Ref: ${p.low}–${p.high}</span></label>
+            <input type="number" step="0.1" id="antenatal_${idx}_${p.key}" value="${val}" placeholder="${p.low}–${p.high}" class="${flagCls}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div>`;
+    }
+    else if (testType === 'complex_blood') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border);">🩸 Patient Serological Screening</div>`;
+      formsHtml += `<div class="param-grid">`;
+      BLOOD_TRANSFUSION_PARAMS.filter(p => p.key.startsWith('patient_')).forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)}</label>
+            <select id="blood_${idx}_${p.key}" class="filter-select">
+              <option value="">— Select —</option>
+              ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
+            </select>
+          </div>`;
+        }
+      });
+      formsHtml += `</div>`;
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">🩸 Donor Serological Screening</div>`;
+      formsHtml += `<div class="param-grid">`;
+      BLOOD_TRANSFUSION_PARAMS.filter(p => p.key.startsWith('donor_')).forEach(p => {
+        let val = data[p.key] !== undefined ? data[p.key] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)}</label>
+            <select id="blood_${idx}_${p.key}" class="filter-select">
+              <option value="">— Select —</option>
+              ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
+            </select>
+          </div>`;
+        }
+      });
+      formsHtml += `</div>`;
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">📋 Crossmatch Details</div>`;
+      formsHtml += `<div class="param-grid">`;
+      ['blood_no','crossmatch','time_issued','time_return','time_reissued'].forEach(k => {
+        let p = BLOOD_TRANSFUSION_PARAMS.find(x => x.key === k);
+        let val = data[k] !== undefined ? data[k] : '';
+        if (p.type === 'select') {
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)}</label>
+            <select id="blood_${idx}_${p.key}" class="filter-select">
+              <option value="">— Select —</option>
+              ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
+            </select>
+          </div>`;
+        } else {
+          formsHtml += `<div class="param-item">
+            <label>${esc(p.name)}</label>
+            <input type="text" id="blood_${idx}_${p.key}" value="${esc(val)}" placeholder="${esc(p.name)}">
+          </div>`;
+        }
+      });
+      formsHtml += `</div>`;
+      formsHtml += `<div style="font-size:0.75rem;color:var(--text2);margin-top:10px;padding:8px;background:#f8fafb;border-radius:8px;">
+        ✍ <strong>Grouping & Crossmatch By:</strong> Name / Sign / Date — to be completed physically on printed form.<br>
+        ✍ <strong>Grouping & Crossmatch Checked By:</strong> Head of Unit / Sign / Date — to be completed physically on printed form.
+      </div>`;
     }
     else if (testType === 'complex_lipid') {
       let data = {};
@@ -997,13 +1428,46 @@ async function openResultModal(id) {
         if (p.type === 'select') {
           formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><select id="semen_${idx}_${p.key}">${p.options.map(opt => `<option value="${esc(opt)}" ${val === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select></div>`;
         } else if (p.type === 'text') {
-          formsHtml += `<div class="param-item" style="grid-column:span 2"><label>${esc(p.name)}</label><textarea id="semen_${idx}_${p.key}" rows="2" placeholder="e.g. Azoospermia, Teratospermia, Oligospermia…" style="width:100%;resize:vertical;">${esc(val)}</textarea></div>`;
+          if (['time_produced','time_received','time_analysed','abstinence','wp_epithelial_cells','wp_pus_cells','wp_rbc','wp_other','gram_stain'].includes(p.key)) {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label><input type="text" id="semen_${idx}_${p.key}" value="${esc(val)}"></div>`;
+          } else {
+            formsHtml += `<div class="param-item" style="grid-column:span 2"><label>${esc(p.name)}</label><textarea id="semen_${idx}_${p.key}" rows="2" placeholder="e.g. Azoospermia, Teratospermia, Oligospermia…" style="width:100%;resize:vertical;">${esc(val)}</textarea></div>`;
+          }
         } else {
           let flagCls = val !== '' ? getFlag(val, p) : '';
           formsHtml += `<div class="param-item"><label>${esc(p.name)} (${esc(p.unit)}) Ref: ${p.low}–${p.high}</label><input type="number" step="${p.step||0.1}" min="${p.low}" max="${p.high}" id="semen_${idx}_${p.key}" value="${val}" class="${flagCls}"></div>`;
         }
       });
-      formsHtml += `</div><div id="semenInterp_${idx}" class="interp-box interp-normal">—</div>`;
+      formsHtml += `</div>`;
+
+      // Culture & Sensitivity (organism + antibiotic sensitivities)
+      let semenOrganism = data.organism || '';
+      let semenSensitivities = data.sensitivities || [];
+      let semenSensContainerId = `semen_sens_${idx}`;
+      formsHtml += `
+        <div class="mcs-section-label">Culture &amp; Sensitivity</div>
+        <div class="param-item">
+          <label>Organism Grown</label>
+          <input type="text" id="semen_${idx}_organism" value="${esc(semenOrganism)}" placeholder="e.g. E. coli, Staphylococcus aureus, No growth after 48h">
+        </div>
+        <div class="param-item" style="margin-top:8px;">
+          <label>Antibiotic Sensitivities</label>
+          <div id="${semenSensContainerId}" style="margin-bottom:8px;">
+            ${semenSensitivities.map((s, si) => `
+              <div data-ab-row style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">
+                <input type="text" placeholder="Antibiotic" value="${esc(s.antibiotic)}" style="flex:2;" id="${semenSensContainerId}_ab_${si}_name">
+                <select style="flex:1;" id="${semenSensContainerId}_ab_${si}_result">
+                  <option value="S" ${s.result==='S'?'selected':''}>S (Sensitive)</option>
+                  <option value="I" ${s.result==='I'?'selected':''}>I (Intermediate)</option>
+                  <option value="R" ${s.result==='R'?'selected':''}>R (Resistant)</option>
+                </select>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeSensitivityRow('${semenSensContainerId}',this)">✖</button>
+              </div>`).join('')}
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addSensitivityRow('${semenSensContainerId}')">+ Add Antibiotic</button>
+        </div>`;
+
+      formsHtml += `<div id="semenInterp_${idx}" class="interp-box interp-normal">—</div>`;
     }
     else if (testType === 'complex_serology') {
       let data = {};
@@ -1350,6 +1814,62 @@ function collectSingleTestResult(idx) {
     let data = {};
     LFT_PARAMS_FULL.forEach(p => { let inp = document.getElementById(`lft_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
     test.result = JSON.stringify(data);
+  } else if (testType === 'complex_eucr') {
+    let data = {};
+    EUCR_PARAMS.forEach(p => {
+      let inp = document.getElementById(`eucr_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_calcium') {
+    let data = {};
+    CALCIUM_PARAMS.forEach(p => {
+      let inp = document.getElementById(`calc_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_phosphate') {
+    let data = {};
+    PHOSPHATE_PARAMS.forEach(p => {
+      let inp = document.getElementById(`phos_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_uric_acid') {
+    let data = {};
+    URIC_ACID_PARAMS.forEach(p => {
+      let inp = document.getElementById(`uric_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_total_protein') {
+    let data = {};
+    TOTAL_PROTEIN_PARAMS.forEach(p => {
+      let inp = document.getElementById(`tp_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_psa') {
+    let data = {};
+    PSA_PARAMS.forEach(p => {
+      let inp = document.getElementById(`psa_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_diabetes') {
+    let data = {};
+    DIABETES_PARAMS.forEach(p => {
+      let inp = document.getElementById(`diab_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_rf') {
+    let data = {};
+    RF_PARAMS.forEach(p => {
+      let inp = document.getElementById(`rf_${idx}_${p.key}`);
+      if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+    });
+    test.result = JSON.stringify(data);
   } else if (testType === 'complex_rft') {
     let data = {};
     RFT_PARAMS_FULL.forEach(p => { let inp = document.getElementById(`rft_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
@@ -1357,6 +1877,28 @@ function collectSingleTestResult(idx) {
   } else if (testType === 'complex_thyroid') {
     let data = {};
     THYROID_PARAMS.forEach(p => { let inp = document.getElementById(`thyroid_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_hormone') {
+    let data = {};
+    HORMONE_PARAMS.forEach(p => { let inp = document.getElementById(`hormone_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_marry') {
+    let data = {};
+    MARRY_PARAMS.forEach(p => { let inp = document.getElementById(`marry_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = inp.value; });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_antenatal') {
+    let data = {};
+    ANTENATAL_PARAMS.forEach(p => {
+      let inp = document.getElementById(`antenatal_${idx}_${p.key}`);
+      if (inp && inp.value !== '') data[p.key] = (p.type === 'select') ? inp.value : parseFloat(inp.value);
+    });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_blood') {
+    let data = {};
+    BLOOD_TRANSFUSION_PARAMS.forEach(p => {
+      let inp = document.getElementById(`blood_${idx}_${p.key}`);
+      if (inp && inp.value !== '') data[p.key] = inp.value;
+    });
     test.result = JSON.stringify(data);
   } else if (testType === 'complex_lipid') {
     let data = {};
@@ -1432,6 +1974,10 @@ function collectSingleTestResult(idx) {
   } else if (testType === 'complex_semen') {
     let data = {};
     SEMEN_PARAMS.forEach(p => { let inp = document.getElementById(`semen_${idx}_${p.key}`); if (inp) data[p.key] = p.type === 'number' ? parseFloat(inp.value) : inp.value; });
+    data.organism = document.getElementById(`semen_${idx}_organism`)?.value || '';
+    let semenSens = []; let semenSensC = document.getElementById(`semen_sens_${idx}`);
+    if (semenSensC) semenSensC.querySelectorAll('div[data-ab-row]').forEach(row => { let n = row.querySelector('input[type="text"]'), s = row.querySelector('select'); if (n && s && n.value.trim()) semenSens.push({ antibiotic: n.value.trim(), result: s.value }); });
+    data.sensitivities = semenSens;
     test.result = JSON.stringify(data);
   } else if (testType === 'complex_serology') {
     let data = {};
@@ -1475,6 +2021,63 @@ function collectResultsFromForms() {
       let data = {};
       LFT_PARAMS_FULL.forEach(p => { let inp = document.getElementById(`lft_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
       test.result = JSON.stringify(data);
+    } else if (testType === 'complex_eucr') {
+      let data = {};
+      EUCR_PARAMS.forEach(p => {
+        let inp = document.getElementById(`eucr_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_calcium') {
+      let data = {};
+      CALCIUM_PARAMS.forEach(p => {
+        let inp = document.getElementById(`calc_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_phosphate') {
+      let data = {};
+      PHOSPHATE_PARAMS.forEach(p => {
+        let inp = document.getElementById(`phos_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_uric_acid') {
+      let data = {};
+      URIC_ACID_PARAMS.forEach(p => {
+        let inp = document.getElementById(`uric_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_total_protein') {
+      let data = {};
+      TOTAL_PROTEIN_PARAMS.forEach(p => {
+        let inp = document.getElementById(`tp_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_psa') {
+      let data = {};
+      PSA_PARAMS.forEach(p => {
+        let inp = document.getElementById(`psa_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_diabetes') {
+      let data = {};
+      DIABETES_PARAMS.forEach(p => {
+        let inp = document.getElementById(`diab_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_rf') {
+      let data = {};
+      RF_PARAMS.forEach(p => {
+        let inp = document.getElementById(`rf_${idx}_${p.key}`);
+        if (inp) data[p.key] = (p.type === 'number' || !p.type) ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value;
+      });
+      test.result = JSON.stringify(data);
+
     } else if (testType === 'complex_rft') {
       let data = {};
       RFT_PARAMS_FULL.forEach(p => { let inp = document.getElementById(`rft_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
@@ -1482,6 +2085,28 @@ function collectResultsFromForms() {
     } else if (testType === 'complex_thyroid') {
       let data = {};
       THYROID_PARAMS.forEach(p => { let inp = document.getElementById(`thyroid_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_hormone') {
+      let data = {};
+      HORMONE_PARAMS.forEach(p => { let inp = document.getElementById(`hormone_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = parseFloat(inp.value); });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_marry') {
+      let data = {};
+      MARRY_PARAMS.forEach(p => { let inp = document.getElementById(`marry_${idx}_${p.key}`); if (inp && inp.value !== '') data[p.key] = inp.value; });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_antenatal') {
+      let data = {};
+      ANTENATAL_PARAMS.forEach(p => {
+        let inp = document.getElementById(`antenatal_${idx}_${p.key}`);
+        if (inp && inp.value !== '') data[p.key] = (p.type === 'select') ? inp.value : parseFloat(inp.value);
+      });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_blood') {
+      let data = {};
+      BLOOD_TRANSFUSION_PARAMS.forEach(p => {
+        let inp = document.getElementById(`blood_${idx}_${p.key}`);
+        if (inp && inp.value !== '') data[p.key] = inp.value;
+      });
       test.result = JSON.stringify(data);
     } else if (testType === 'complex_lipid') {
       let data = {};
@@ -1578,6 +2203,19 @@ function collectResultsFromForms() {
     } else if (testType === 'complex_semen') {
       let data = {};
       SEMEN_PARAMS.forEach(p => { let inp = document.getElementById(`semen_${idx}_${p.key}`); if (inp) data[p.key] = p.type === 'number' ? parseFloat(inp.value) : inp.value; });
+      data.organism = document.getElementById(`semen_${idx}_organism`)?.value || '';
+      let semenSensitivities = [];
+      let semenSensContainer = document.getElementById(`semen_sens_${idx}`);
+      if (semenSensContainer) {
+        semenSensContainer.querySelectorAll('div[data-ab-row]').forEach(row => {
+          let nameInput = row.querySelector('input[type="text"]');
+          let select = row.querySelector('select');
+          if (nameInput && select && nameInput.value.trim()) {
+            semenSensitivities.push({ antibiotic: nameInput.value.trim(), result: select.value });
+          }
+        });
+      }
+      data.sensitivities = semenSensitivities;
       test.result = JSON.stringify(data);
     } else if (testType === 'complex_serology') {
       let data = {};

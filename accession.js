@@ -434,6 +434,7 @@
       const el = document.getElementById(id); if (el) el.value = '';
     });
     const areaEl = document.getElementById('f-area'); if (areaEl) areaEl.value = '';
+    populateAreaSelect(_allAreas);
     document.getElementById('f-name')?.classList.remove('required-empty');
     document.getElementById('f-age').value = '';
     document.getElementById('f-gender').value = 'Male';
@@ -630,25 +631,38 @@
   // --------------------------------------------------------------
   //  REJECTED SAMPLES PANEL (with offline cache)
   // --------------------------------------------------------------
+  // Reliable online check — OQ's flag is set synchronously on network events,
+  // unlike navigator.onLine which can lag by 1-2 seconds after a drop.
+  function _acIsOnline() {
+    return typeof window._oqIsOnline !== 'undefined' ? window._oqIsOnline : navigator.onLine;
+  }
+
+  // Show cached rejected groups with a stale banner — used both for offline guard
+  // and catch fallback so the logic is never duplicated.
+  async function _showCachedRejected(container) {
+    const cached = (typeof window._oqGetCachedRejectedGroups === 'function')
+      ? await window._oqGetCachedRejectedGroups().catch(() => null) : null;
+    if (cached && cached.length) {
+      rejectedGroups = cached;
+      renderRejectedPanel();
+      // Prepend stale banner after render (renderRejectedPanel sets innerHTML so do it after)
+      const staleDiv = document.createElement('div');
+      staleDiv.style.cssText = 'font-size:0.72rem;color:var(--text2);text-align:center;padding:4px 0 8px;';
+      staleDiv.innerHTML = '<i class="fas fa-wifi" style="opacity:0.4;margin-right:4px;"></i>Offline — showing last cached data';
+      container.prepend(staleDiv);
+    } else {
+      container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text2);">
+        <i class="fas fa-wifi" style="opacity:0.4;"></i>&nbsp; Offline — no cached data yet.</div>`;
+    }
+  }
+
   async function loadRejectedSamples() {
     const container = document.getElementById('rejectedPanelBody');
     if (!container) return;
 
-    // Offline: serve from cache
-    if (!navigator.onLine) {
-      const cached = (typeof window._oqGetCachedRejectedGroups === 'function')
-        ? await window._oqGetCachedRejectedGroups() : null;
-      if (cached && cached.length) {
-        rejectedGroups = cached;
-        renderRejectedPanel();
-        const stale = document.createElement('div');
-        stale.style.cssText = 'font-size:0.72rem;color:var(--text2);text-align:center;padding:4px 0 8px;';
-        stale.innerHTML = '<i class="fas fa-wifi" style="opacity:0.4;margin-right:4px;"></i>Offline — showing last cached data';
-        container.prepend(stale);
-      } else {
-        container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text2);">
-          <i class="fas fa-wifi" style="opacity:0.4;"></i>&nbsp; Offline — no cached data yet.</div>`;
-      }
+    // Use OQ's reliable online flag — navigator.onLine can lag after a drop
+    if (!_acIsOnline()) {
+      await _showCachedRejected(container);
       return;
     }
 
@@ -691,6 +705,7 @@
         tests
       }));
 
+      // Always cache after a successful fetch
       if (typeof window._oqCacheRejectedGroups === 'function') {
         window._oqCacheRejectedGroups(rejectedGroups);
       }
@@ -698,23 +713,11 @@
       renderRejectedPanel();
     } catch (err) {
       console.error('loadRejectedSamples error:', err);
-      if (!navigator.onLine || (err?.message || '').match(/fetch|network/i)) {
-        const cached = (typeof window._oqGetCachedRejectedGroups === 'function')
-          ? await window._oqGetCachedRejectedGroups() : null;
-        if (cached && cached.length) {
-          rejectedGroups = cached;
-          renderRejectedPanel();
-          const stale = document.createElement('div');
-          stale.style.cssText = 'font-size:0.72rem;color:var(--text2);text-align:center;padding:4px 0 8px;';
-          stale.innerHTML = '<i class="fas fa-wifi" style="opacity:0.4;margin-right:4px;"></i>Offline — showing last cached data';
-          container.prepend(stale);
-        } else {
-          container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text2);">
-            <i class="fas fa-wifi" style="opacity:0.4;"></i>&nbsp; Offline — no cached data yet.</div>`;
-        }
-      } else {
-        container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--red-light);"><i class="fas fa-exclamation-circle"></i> Failed to load rejected samples. Please try again.</div>`;
-        toast('Failed to load rejected samples', 'error');
+      // On ANY network failure — always try cache, no online condition needed
+      await _showCachedRejected(container);
+      if (_acIsOnline()) {
+        // Only show error toast if we think we're online (real DB error, not connectivity)
+        toast('Failed to load rejected samples — showing cached data', 'warn');
       }
     }
   }
@@ -1020,13 +1023,30 @@
   let _allAreas = [];
 
   async function loadAreas() {
+    const AREA_CACHE_KEY = 'muujiza_areas_cache';
+    // Populate from cache immediately so dropdown is ready before DB responds
+    try {
+      const cached = localStorage.getItem(AREA_CACHE_KEY);
+      if (cached) {
+        _allAreas = JSON.parse(cached);
+        populateAreaSelect(_allAreas);
+      }
+    } catch (_) {}
+
+    if (!navigator.onLine && _allAreas.length) return;
+
     try {
       const { data, error } = await db.from('areas').select('name').order('name');
       if (error) throw error;
       _allAreas = (data || []).map(a => a.name);
       populateAreaSelect(_allAreas);
+      try { localStorage.setItem(AREA_CACHE_KEY, JSON.stringify(_allAreas)); } catch(_) {}
     } catch (e) {
       console.warn('Could not load areas:', e.message);
+      if (!_allAreas.length) {
+        const searchEl = document.getElementById('f-area-search');
+        if (searchEl) searchEl.placeholder = '⚠ Area list unavailable';
+      }
     }
   }
 
@@ -1047,12 +1067,15 @@
     const q = (document.getElementById('f-area-search')?.value || '').toLowerCase();
     const filtered = q ? _allAreas.filter(a => a.toLowerCase().includes(q)) : _allAreas;
     populateAreaSelect(filtered);
-    if (filtered.length === 1) document.getElementById('f-area').value = filtered[0];
+    if (filtered.length === 1) {
+      document.getElementById('f-area').value = filtered[0];
+      const searchEl = document.getElementById('f-area-search');
+      if (searchEl) searchEl.value = '';
+      populateAreaSelect(_allAreas);
+    }
   };
 
-  window.showAreaDropdown = function() {
-    document.getElementById('f-area')?.focus();
-  };
+
 
   loadAreas();
 

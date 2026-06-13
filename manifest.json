@@ -1,21 +1,50 @@
 {
-  "name": "MU'UJIZA LIS",
-  "short_name": "LIS",
-  "description": "Laboratory Information System for MU'UJIZA Diagnostics",
-  "start_url": "login.html",
+  "name": "MU'UJIZA DIAGNOSTICS – LIS",
+  "short_name": "MU'UJIZA LIS",
+  "description": "Laboratory Information System — sample tracking, result entry, verification, patient portal and audit trail",
+  "start_url": "./login.html",
+  "scope": "./",
   "display": "standalone",
+  "orientation": "any",
   "theme_color": "#1F6E43",
   "background_color": "#eef2f9",
+  "lang": "en",
+  "categories": ["medical", "productivity", "business"],
   "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
     {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
+      "name": "Accession",
+      "short_name": "Accession",
+      "description": "Register new patient samples",
+      "url": "./accession.html",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     },
     {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "name": "Result Entry",
+      "short_name": "Results",
+      "description": "Enter and verify test results",
+      "url": "./result_entry.html",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Pending Portal",
+      "short_name": "Pending",
+      "description": "View pending and released results",
+      "url": "./pending_portal.html",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Management",
+      "short_name": "Mgmt",
+      "description": "Verify and release results",
+      "url": "./management1.html",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     }
-  ]
+  ],
+  "prefer_related_applications": false
 }

@@ -8,14 +8,16 @@
    §1  CONSTANTS & STATE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const OQ_DB_NAME    = 'muujiza_offline';
-const OQ_DB_VERSION = 8;
-const STORE_OUTBOX  = 'outbox';
-const STORE_SAMPLES = 'samples_cache';
-const STORE_META    = 'meta';
-const STORE_TESTDEF = 'test_definitions';
-const STORE_REJECTED= 'rejected_groups';
-const STORE_PENDING = 'pending_samples';
+const OQ_DB_NAME         = 'muujiza_offline';
+const OQ_DB_VERSION      = 9;                    // bumped: added portal_cache + portal_rejected
+const STORE_OUTBOX       = 'outbox';
+const STORE_SAMPLES      = 'samples_cache';
+const STORE_META         = 'meta';
+const STORE_TESTDEF      = 'test_definitions';
+const STORE_REJECTED     = 'rejected_groups';     // accession rejected panel cache
+const STORE_PENDING      = 'pending_samples';
+const STORE_PORTAL_CACHE = 'portal_cache';        // pending_portal released samples
+const STORE_PORTAL_REJ   = 'portal_rejected';     // pending_portal rejected groups
 
 let _oqDB = null;
 let _isOnline = navigator.onLine;
@@ -25,6 +27,13 @@ let _flushing = false;
 // Uses a getter so it always reflects the live _isOnline state.
 Object.defineProperty(window, 'OFFLINE', {
   get: () => !_isOnline,
+  configurable: true
+});
+
+// Expose OQ's own reliable online flag — more trustworthy than navigator.onLine
+// because it's set synchronously on the 'online'/'offline' events.
+Object.defineProperty(window, '_oqIsOnline', {
+  get: () => _isOnline,
   configurable: true
 });
 
@@ -48,6 +57,8 @@ function _oqInit() {
       if (!db.objectStoreNames.contains(STORE_TESTDEF)) db.createObjectStore(STORE_TESTDEF, { keyPath: 'id', autoIncrement: true });
       if (!db.objectStoreNames.contains(STORE_REJECTED)) db.createObjectStore(STORE_REJECTED, { keyPath: 'key' });
       if (!db.objectStoreNames.contains(STORE_PENDING)) db.createObjectStore(STORE_PENDING, { keyPath: 'offline_ref' });
+      if (!db.objectStoreNames.contains(STORE_PORTAL_CACHE)) db.createObjectStore(STORE_PORTAL_CACHE, { keyPath: 'key' });
+      if (!db.objectStoreNames.contains(STORE_PORTAL_REJ)) db.createObjectStore(STORE_PORTAL_REJ, { keyPath: 'key' });
     };
 
     req.onsuccess = (e) => {
@@ -202,6 +213,20 @@ async function _oqFlush() {
   }
 }
 
+// Called after any rejection/resolution syncs to mark cached rejected groups as stale.
+// Accession and pending_portal will re-fetch on next load.
+async function _oqInvalidateRejectedCaches() {
+  for (const store of [STORE_REJECTED, STORE_PORTAL_REJ]) {
+    try {
+      const entry = await _idbGet(store, 'list');
+      if (entry) {
+        // Set a stale flag so loadRejectedSamples knows to re-fetch
+        await _idbPut(store, { ...entry, stale: true });
+      }
+    } catch(e) { /* silent */ }
+  }
+}
+
 async function _oqReplay(item) {
   // Reuse the existing authenticated client — do NOT call buildAuthClient on every
   // replay as that creates a new GoTrueClient instance each time (triggers warning
@@ -273,6 +298,9 @@ async function _oqReplay(item) {
       ts: new Date().toISOString(), user_name: userName, user_role: userRole,
       action: 'Sample Rejected', sample_id: sampleId, details: reason
     }]).catch(e => console.warn('[OQ] audit_log insert skipped:', e?.message || e));
+
+    // Invalidate cached rejected groups so next load reflects this rejection
+    await _oqInvalidateRejectedCaches();
     return;
   }
 
@@ -305,6 +333,8 @@ async function _oqReplay(item) {
       details: `${testName} rejected: ${reason}`
     }]).catch(e => console.warn('[OQ] audit_log insert skipped:', e?.message || e));
 
+    // Invalidate cached rejected groups so next load reflects this rejection
+    await _oqInvalidateRejectedCaches();
     return;
   }
 
@@ -390,6 +420,21 @@ async function _oqReplay(item) {
 
     if (offlineRef) {
       await _oqRemovePendingSample(offlineRef);
+      // Clean up any OFFLINE- entries from rejected caches that reference this sample
+      for (const store of [STORE_REJECTED, STORE_PORTAL_REJ]) {
+        try {
+          const entry = await _idbGet(store, 'list');
+          if (entry && Array.isArray(entry.value)) {
+            const cleaned = entry.value.filter(g => {
+              const sid = g.sample?.id || g.id || '';
+              return !String(sid).startsWith('OFFLINE-');
+            });
+            if (cleaned.length !== entry.value.length) {
+              await _idbPut(store, { ...entry, value: cleaned });
+            }
+          }
+        } catch(e) { /* silent — caches are best-effort */ }
+      }
       // Remove the stale OFFLINE- cache entry and replace with real sample
       const offlineFullId = `OFFLINE-${offlineRef}`;
       await _idbDelete(STORE_SAMPLES, offlineFullId).catch(() => {});
@@ -706,6 +751,32 @@ window._oqCacheRejectedGroups = async function(groups) {
 window._oqGetCachedRejectedGroups = async function() {
   const entry = await _idbGet(STORE_REJECTED, 'list');
   return entry ? entry.value : [];
+};
+
+// ── Pending portal: released samples cache ────────────────────────────────
+window._oqCachePortalSamples = async function(samples) {
+  await _idbPut(STORE_PORTAL_CACHE, {
+    key: 'released',
+    value: samples,
+    updated_at: new Date().toISOString()
+  });
+};
+window._oqGetCachedPortalSamples = async function() {
+  const entry = await _idbGet(STORE_PORTAL_CACHE, 'released');
+  return entry ? { samples: entry.value, updated_at: entry.updated_at } : null;
+};
+
+// ── Pending portal: rejected groups cache ────────────────────────────────
+window._oqCachePortalRejected = async function(groups) {
+  await _idbPut(STORE_PORTAL_REJ, {
+    key: 'list',
+    value: groups,
+    updated_at: new Date().toISOString()
+  });
+};
+window._oqGetCachedPortalRejected = async function() {
+  const entry = await _idbGet(STORE_PORTAL_REJ, 'list');
+  return entry ? { groups: entry.value, updated_at: entry.updated_at } : null;
 };
 
 async function _oqCacheSample(sample) {
