@@ -109,7 +109,7 @@ function buildMenu() {
               type: 'info',
               title: "About MU'UJIZA LIS",
               message: "MU'UJIZA DIAGNOSTICS\nLaboratory Information System",
-              detail: `Version: ${app.getVersion()}\nDeveloped by MU'UJIZA DATA\n© 2025 All rights reserved`,
+              detail: `Version: ${app.getVersion()}\nDeveloped by MU'UJIZA DATA\n© 2023-2026 All rights reserved`,
               icon: path.join(__dirname, 'icon-512.png'),
               buttons: ['OK'],
             })
