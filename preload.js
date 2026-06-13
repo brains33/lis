@@ -8,7 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronLIS', {
   // App version for About dialog
-  version: process.env.npm_package_version || '1.0.0',
+  version: process.env.npm_package_version || '2.0.0',
   // Platform detection (so app can adjust UI if needed)
   platform: process.platform,
   // Let renderer signal the main process (e.g. for logout confirm bypass)
