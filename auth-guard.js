@@ -92,7 +92,13 @@
    */
   function logout(reason) {
     sessionStorage.removeItem(SESSION_KEY);
-    window.location.replace(LOGIN_PAGE);
+    // Electron (Windows): use IPC so main process calls win.loadFile() + win.focus().
+    // Plain browser: location.replace() is fine — autofocus on the input handles focus.
+    if (window.electronLIS?.send) {
+      window.electronLIS.send('lis-logout');
+    } else {
+      window.location.replace(LOGIN_PAGE);
+    }
   }
 
   // ── Public API ───────────────────────────────────────────────
