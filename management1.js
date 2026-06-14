@@ -638,11 +638,16 @@ const RF_PARAMS = [
 ];
 // Hormone Panel — LH, FSH, Testosterone, Progesterone, Prolactin (Kontagora GH form)
 const HORMONE_PARAMS = [
-  {key:'lh',           name:'LH',           unit:'mIU/mL', low:null, high:null, note:'See reference ranges on report'},
-  {key:'fsh',          name:'FSH',          unit:'mIU/mL', low:null, high:null, note:'See reference ranges on report'},
-  {key:'testosterone', name:'Testosterone', unit:'ng/mL',  low:null, high:null, note:'See reference ranges on report'},
-  {key:'progesterone', name:'Progesterone', unit:'ng/mL',  low:null, high:null, note:'See reference ranges on report'},
-  {key:'prolactin',    name:'Prolactin',    unit:'ng/mL',  low:null, high:null, note:'See reference ranges on report'}
+  {key:'lh',           name:'LH',           unit:'mIU/mL', low:null, high:null,
+   note:'M: 1.70–8.60 | F Follicular: 2.95–13.65 | Ovulation: 13.65–95.75 | Luteal: 1.25–11.00 | Menopause: 8.24–55.23'},
+  {key:'fsh',          name:'FSH',          unit:'mIU/mL', low:null, high:null,
+   note:'M: 1.70–8.60 | F Follicular: 4.46–12.43 | Ovulation: 4.88–20.96 | Luteal: 1.96–7.70 | Menopause: 22.70–1300.00'},
+  {key:'testosterone', name:'Testosterone', unit:'ng/mL',  low:null, high:null,
+   note:'M: 0.2–1.5 | F 19–39yr: 2.64–9.16 | 40–59yr: 1.96–8.59 | 60+yr: 1.96–8.59'},
+  {key:'progesterone', name:'Progesterone', unit:'ng/Ml',  low:null, high:null,
+   note:'M: 3.45–17.42 | F Follicular: 0.2–2.0 | Ovulation: 0.7–3.5 | Luteal: 3.0–30 | Menopause: 0.1–0.9 | Preg 9–12wk: 17.5–31.5 | Preg >12wk: 25.0–51.0'},
+  {key:'prolactin',    name:'Prolactin',    unit:'ng/mL',  low:null, high:null,
+   note:'M: 3.45–17.42 | F: 4.60–25.07'}
 ];
 // Marry Panel — HBsAg, HCV, RVS, SHCG, Hb Genotype, Blood Group
 const MARRY_PARAMS = [
@@ -1826,8 +1831,8 @@ if (testType === 'complex_widal') {
       if (p.high !== null && n > p.high) flag = '↑';
       if (p.low !== null && n < p.low) flag = '↓';
     }
-    let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : (p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : '—');
-    return `<tr><td style="padding:5px;">${esc(p.name)}</td><td style="padding:5px;${flag?'font-weight:bold;':''}">${val} ${flag}</td><td style="padding:5px;">${esc(p.unit)}</td><td style="padding:5px;">${ref}</td></tr>`;
+    let ref = (p.low !== null && p.high !== null) ? `${p.low}–${p.high}` : (p.low !== null ? `≥${p.low}` : p.high !== null ? `≤${p.high}` : (p.note || '—'));
+    return `<tr><td style="padding:5px;">${esc(p.name)}</td><td style="padding:5px;${flag?'font-weight:bold;':''}">${val} ${flag}</td><td style="padding:5px;">${esc(p.unit)}</td><td style="padding:5px;">${esc(ref)}</td></tr>`;
   }).join('');
   return `<tr><td colspan="4" style="font-weight:bold;">${esc(testName)}</td></tr>${rows}`;
 }
