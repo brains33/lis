@@ -575,34 +575,34 @@ const SEMEN_PARAMS = [
   {key:'liquefaction', name:'Liquefaction', type:'select', options:['Normal (<60 min)','Delayed (>60 min)','Incomplete']},
 
   // Microscopy — counts & vitality
-  {key:'sperm_count', name:'Sperm Count', unit:'x10^6 Sperm Cells/mL of Semen', low:15, high:200, type:'number'},
+  {key:'sperm_count', name:'Sperm Count', unit:'\u00d710\u2076/mL', low:15, high:200, type:'number'},
   {key:'viability', name:'Viability (%)', unit:'%', low:58, high:100, type:'number'},
 
   // Motility
-  {key:'motility_a', name:'Grade A — Progressive Motility', unit:'%', low:32, high:100, type:'number'},
-  {key:'motility_b', name:'Grade B — Non-Progressive Motility', unit:'%', low:0, high:100, type:'number'},
-  {key:'motility_c', name:'Grade C — Non-Linear Motility', unit:'%', low:0, high:100, type:'number'},
-  {key:'motility_d', name:'Grade D — Immotile Sperm Cells', unit:'%', low:0, high:100, type:'number'},
+  {key:'motility_a', name:'Grade A — Progressive Motility', unit:'%', low:32, high:null, type:'number'},
+  {key:'motility_b', name:'Grade B — Non-Progressive Motility', unit:'%', low:null, high:null, type:'number'},
+  {key:'motility_c', name:'Grade C — Non-Linear Motility', unit:'%', low:null, high:null, type:'number'},
+  {key:'motility_d', name:'Grade D — Immotile Sperm Cells', unit:'%', low:null, high:null, type:'number'},
 
   // Morphology — Head defects
-  {key:'morph_microcephalic', name:'Microcephalic', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_macrocephalic', name:'Macrocephalic', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_pinhead', name:'Pin Head', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_pyriform', name:'Pyriform', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_double_head', name:'Double Head', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_acrosomal', name:'Acrosomal Condensation', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_microcephalic', name:'Microcephalic', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_macrocephalic', name:'Macrocephalic', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_pinhead', name:'Pin Head', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_pyriform', name:'Pyriform', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_double_head', name:'Double Head', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_acrosomal', name:'Acrosomal Condensation', unit:'%', low:null, high:null, type:'number'},
 
   // Morphology — Tail defects
-  {key:'morph_tailless', name:'Tailless', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_short_tail', name:'Short Tail', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_long_tail', name:'Long Tail', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_double_tail', name:'Double Tail', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_coiled_tail', name:'Coiled Tail', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_tailless', name:'Tailless', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_short_tail', name:'Short Tail', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_long_tail', name:'Long Tail', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_double_tail', name:'Double Tail', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_coiled_tail', name:'Coiled Tail', unit:'%', low:null, high:null, type:'number'},
 
   // Morphology — Others
-  {key:'morph_cytoplasmic_droplets', name:'Cytoplasmic Droplets', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_midpiece_abnormality', name:'Mid Piece Abnormality', unit:'%', low:0, high:100, type:'number'},
-  {key:'morph_neck_defect', name:'Neck Defect', unit:'%', low:0, high:100, type:'number'},
+  {key:'morph_cytoplasmic_droplets', name:'Cytoplasmic Droplets', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_midpiece_abnormality', name:'Mid Piece Abnormality', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_neck_defect', name:'Neck Defect', unit:'%', low:null, high:null, type:'number'},
   {key:'morph_normal', name:'Normal Morphology', unit:'%', low:4, high:14, type:'number'},
 
   // Wet Preparation / Gram's Stain
@@ -974,52 +974,83 @@ function buildParamTable(testName, data, testType, age, gender) {
     return `<table class="param-table"><tbody>${rows}</tbody></table>`;
   }
 
-  // Semen Analysis (with Culture & Sensitivity)
+  // Semen Analysis (with Culture & Sensitivity on separate visual section)
   if (testType === 'complex_semen') {
-    let rows = '';
-    for (let p of SEMEN_PARAMS) {
-      let val = data[p.key];
-      if (val === undefined || val === '') continue;
-      let displayVal = val;
-      let flag = '';
-      let unit = p.unit || '';
-      let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : '—';
-      if (p.type === 'number' || !p.type) {
-        let n = parseFloat(val);
-        if (!isNaN(n)) {
-          if (p.high != null && n > p.high) flag = '↑';
-          if (p.low != null && n < p.low) flag = '↓';
-          displayVal = flag ? `${n} ${flag}` : String(n);
-        }
-      }
-      let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
-      rows += `<tr>
-         <td>${esc(p.name)}</td>
-        <td class="${cls}">${esc(displayVal)}</td>
-        <td>${esc(unit)}</td>
-        <td>${esc(ref)}</td>
-       </tr>`;
-    }
-    let html = `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table>`;
+    // Section definitions matching the physical form
+    const SEMEN_HTML_SECTIONS = [
+      { label: 'Semen Collection', keys: ['time_produced','time_received','time_analysed','abstinence'] },
+      { label: 'Macroscopy',       keys: ['appearance','volume','viscosity','consistency','liquefaction'] },
+      { label: 'Microscopy',       keys: ['sperm_count','viability'] },
+      { label: 'Motility',         keys: ['motility_a','motility_b','motility_c','motility_d'] },
+      { label: 'Morphology — Head', keys: ['morph_microcephalic','morph_macrocephalic','morph_pinhead','morph_pyriform','morph_double_head','morph_acrosomal'] },
+      { label: 'Morphology — Tail', keys: ['morph_tailless','morph_short_tail','morph_long_tail','morph_double_tail','morph_coiled_tail'] },
+      { label: 'Morphology — Others', keys: ['morph_cytoplasmic_droplets','morph_midpiece_abnormality','morph_neck_defect','morph_normal'] },
+      { label: 'Wet Preparation',  keys: ['wp_epithelial_cells','wp_pus_cells','wp_rbc','wp_parasite','wp_other'] },
+      { label: "Gram's Stain",     keys: ['gram_stain'] },
+      { label: 'Comments',         keys: ['comments'] }
+    ];
+    const paramMap = {};
+    SEMEN_PARAMS.forEach(p => { paramMap[p.key] = p; });
 
-    // C&S section
+    let html = `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>`;
+
+    SEMEN_HTML_SECTIONS.forEach(sec => {
+      let secRows = '';
+      sec.keys.forEach(k => {
+        const p = paramMap[k];
+        if (!p) return;
+        let val = data[p.key];
+        if (val === undefined || val === '') return;
+        let displayVal = val;
+        let flag = '';
+        let unit = p.unit || '';
+        let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : (p.low != null ? `\u2265${p.low}` : p.high != null ? `\u2264${p.high}` : '—');
+        if (p.type === 'number' || !p.type) {
+          let n = parseFloat(val);
+          if (!isNaN(n)) {
+            if (p.high != null && n > p.high) flag = '↑';
+            if (p.low  != null && n < p.low)  flag = '↓';
+            displayVal = flag ? `${n} ${flag}` : String(n);
+          }
+        }
+        let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
+        secRows += `<tr><td>${esc(p.name)}</td><td class="${cls}">${esc(displayVal)}</td><td>${esc(unit)}</td><td>${esc(ref)}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<tr><td colspan="4" style="background:#e8f4ed;font-weight:700;font-size:0.72rem;text-transform:uppercase;letter-spacing:.5px;padding:5px 10px;color:#1a5c38;">${esc(sec.label)}</td></tr>`;
+      html += secRows;
+    });
+
+    html += `</tbody></table>`;
+
+    // C&S section — visually separated, styled as a distinct block
     const sensRows = (data.sensitivities || []).map(s => {
       const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
       const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
       const bg     = s.result==='S'?'#dcfce7':s.result==='R'?'#fee2e2':s.result==='I'?'#fef3c7':'#f3f4f6';
-      return `<tr><td>${esc(s.antibiotic)}</td><td style="font-weight:700;color:${colour};">${esc(s.result)}</td>
-        <td><span style="display:inline-block;padding:2px 10px;border-radius:20px;background:${bg};color:${colour};font-size:0.78rem;font-weight:600;">${label}</span></td><td></td></tr>`;
+      return `<tr>
+        <td>${esc(s.antibiotic)}</td>
+        <td style="font-weight:700;color:${colour};">${esc(s.result)}</td>
+        <td><span style="display:inline-block;padding:2px 10px;border-radius:20px;background:${bg};color:${colour};font-size:0.78rem;font-weight:600;">${label}</span></td>
+        <td></td>
+      </tr>`;
     }).join('');
-    if (data.organism || sensRows) {
-      html += `<table class="param-table">
-        <thead>
-          <tr><th colspan="4" style="background:#dbeafe; text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:1px;">Culture &amp; Sensitivity</th></tr>
-          <tr><th>Organism</th><th colspan="3" style="font-style:italic; font-weight:400;">${esc(data.organism || 'No growth / Not specified')}</th></tr>
-          ${sensRows ? '<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>' : ''}
-        </thead>
-        <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>'}</tbody>
-      </table>`;
-    }
+
+    html += `
+      <div style="margin-top:18px;border-top:2px solid #1d4ed8;padding-top:10px;">
+        <div style="font-weight:700;font-size:0.85rem;text-transform:uppercase;letter-spacing:.5px;color:#1d4ed8;margin-bottom:8px;">
+          <i class="fas fa-flask"></i> Culture &amp; Sensitivity
+        </div>
+        <table class="param-table">
+          <thead>
+            <tr><th colspan="4" style="background:#dbeafe;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#1e40af;">Culture &amp; Sensitivity Results</th></tr>
+            <tr><th>Organism</th><th colspan="3" style="font-style:italic;font-weight:400;">${esc(data.organism || 'No growth / Not specified')}</th></tr>
+            ${sensRows ? '<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>' : ''}
+          </thead>
+          <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+
     return html;
   }
 
@@ -1215,10 +1246,24 @@ async function generatePDF(id) {
 
   // ── build autoTable rows ──
   const tableBody = [];
-  const blockBoundaries = []; // [{start, end}] inclusive indices of each test's row-block (incl. unit header for first test in a group)
+  const blockBoundaries = [];
+  let semenPageData = null; // semen test handled separately as a form-style page
   const groups = groupTestsByUnit(s.tests);
 
   for (const [unitName, unitTests] of Object.entries(groups)) {
+    // Check if all tests in this unit are semen — if so skip the unit header entirely
+    const allSemen = unitTests.every(t => (testDefinitions.testTypes[t.test_name] || '') === 'complex_semen');
+    if (allSemen) {
+      unitTests.forEach(t => {
+        try {
+          if (t.result && t.result.startsWith('{')) {
+            semenPageData = JSON.parse(t.result);
+          }
+        } catch(e) {}
+      });
+      continue; // skip adding any rows for this group
+    }
+
     // section header row (spans all 4 cols via didParseCell)
     const unitHeaderIdx = tableBody.length;
     tableBody.push([{ content: unitName, colSpan: 4, styles: { fillColor: GREEN, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 } }]);
@@ -1252,15 +1297,18 @@ async function generatePDF(id) {
       } else {
         try {
           let data = JSON.parse(t.result);
-          collectAutoTableRows(tableBody, t.test_name, data, testType, s.age, s.gender);
+          if (testType === 'complex_semen') {
+            semenPageData = data; // drawn separately as form-style page
+          } else {
+            collectAutoTableRows(tableBody, t.test_name, data, testType, s.age, s.gender);
+          }
         } catch(e) {
           tableBody.push([t.test_name, t.result || '—', '', '']);
         }
       }
       const blockEnd = tableBody.length - 1;
-      // the first test in a unit group also carries the unit header with it
       const start = (ti === 0) ? unitHeaderIdx : blockStart;
-      blockBoundaries.push({ start, end: blockEnd, isSemen: testType === 'complex_semen' });
+      blockBoundaries.push({ start, end: blockEnd, isSemen: false });
     });
   }
 
@@ -1321,6 +1369,7 @@ async function generatePDF(id) {
     });
   }
 
+  if (tableBody.length > 0) {
   pdf.autoTable({
     startY: y,
     head: [[
@@ -1367,12 +1416,18 @@ async function generatePDF(id) {
       pdf.setFontSize(8);
       pdf.text('MEDICAL LABORATORY SCIENCE DEPARTMENT', PW / 2, 13, { align: 'center' });
     }
-  });
+  }); // end autoTable
+  } // end if tableBody.length > 0
+
+  // ── Semen Analysis — draw as physical-form-style page ──
+  if (semenPageData) {
+    drawSemenFormPage(pdf, semenPageData, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, tableBody.length > 0, y);
+  }
 
   // ── Authorising signature block ──
   const lastPage = pdf.getNumberOfPages();
   pdf.setPage(lastPage);
-  let sigY = pdf.lastAutoTable ? pdf.lastAutoTable.finalY + 10 : 200;
+  let sigY = pdf.lastAutoTable ? pdf.lastAutoTable.finalY + 10 : (y + 10);
 
   // If too close to footer, add a new page
   if (sigY > PH - 50) {
@@ -1407,6 +1462,357 @@ async function generatePDF(id) {
   pdf.save(`MU${s.id}_${(s.patient || 'patient').replace(/\s/g, '_')}.pdf`);
   await addAudit('PDF Downloaded', s.id, `Report downloaded by ${currentUser ? currentUser.name : 'Unknown'}`);
   toast('PDF downloaded');
+}
+
+// ── SEMEN ANALYSIS — physical form-style page renderer ──
+function drawSemenFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, hasOtherTests, startY) {
+  const paramMap = {};
+  SEMEN_PARAMS.forEach(p => { paramMap[p.key] = p; });
+
+  function val(key) {
+    const v = d[key];
+    return (v === undefined || v === null || v === '') ? '—' : String(v);
+  }
+  function numFlag(key) {
+    const p = paramMap[key]; if (!p) return '';
+    const n = parseFloat(d[key]); if (isNaN(n)) return '';
+    if (p.high != null && n > p.high) return ' ↑';
+    if (p.low  != null && n < p.low)  return ' ↓';
+    return '';
+  }
+  function flagColor(key) {
+    const f = numFlag(key);
+    if (f.includes('↑')) return [185, 28, 28];
+    if (f.includes('↓')) return [59, 130, 246];
+    return null;
+  }
+  function ref(key) {
+    const p = paramMap[key]; if (!p) return '—';
+    if (p.low != null && p.high != null) return `${p.low}–${p.high}`;
+    if (p.low != null) return `>=${p.low}`;
+    if (p.high != null) return `≤${p.high}`;
+    return '—';
+  }
+
+  // Helper: draw text with inline superscript (jsPDF built-in fonts can't render Unicode superscripts)
+  function drawWithSup(text, supText, afterText, x, yl, normalSize, supSize) {
+    pdf.setFontSize(normalSize);
+    pdf.text(text, x, yl);
+    const w1 = pdf.getTextWidth(text);
+    pdf.setFontSize(supSize);
+    pdf.text(supText, x + w1, yl - 1.5);
+    const w2 = pdf.getTextWidth(supText);
+    pdf.setFontSize(normalSize);
+    pdf.text(afterText, x + w1 + w2, yl);
+    return w1 + w2 + pdf.getTextWidth(afterText);
+  }
+  if (hasOtherTests) pdf.addPage();
+  const CW = PW - ML - MR;
+  let y = hasOtherTests ? 24 : (startY || 26);
+
+  // Title
+  pdf.setFillColor(...GREEN);
+  pdf.rect(ML, y, CW, 6, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9);
+  pdf.setTextColor(255, 255, 255);
+  pdf.text('SEMINAL FLUID ANALYSIS REPORT', PW / 2, y + 4.2, { align: 'center' });
+  y += 8.5;
+
+  // ── ROW 1: SEMEN COLLECTION (left) | MACROSCOPY (right) ──
+  const colL = ML, colR = ML + CW / 2 + 2, colW = CW / 2 - 2;
+  const rowH = 5.5;
+
+  // Section header bands
+  pdf.setFillColor(220, 237, 228);
+  pdf.rect(colL, y, colW, 5, 'F');
+  pdf.rect(colR, y, colW, 5, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(...DARK);
+  pdf.text('SEMEN COLLECTION', colL + 2, y + 3.6);
+  pdf.text('MACROSCOPY', colR + 2, y + 3.6);
+  y += 5;
+
+  // Draw left (collection) and right (macroscopy) rows in parallel
+  const collectionRows = [
+    ['Time Produced', val('time_produced')],
+    ['Time Received', val('time_received')],
+    ['Time Analysed', val('time_analysed')],
+    ['Abstinence',    val('abstinence')],
+  ];
+  const macroRows = [
+    ['Appearance',  val('appearance')],
+    ['Volume',      val('volume') !== '—' ? `${val('volume')} mL  (ref: 1.5–6)` : '—'],
+    ['Viscosity',   val('viscosity')],
+    ['Consistency', val('consistency')],
+    ['Liquefaction',val('liquefaction')],
+  ];
+  const maxR1 = Math.max(collectionRows.length, macroRows.length);
+  for (let i = 0; i < maxR1; i++) {
+    const bg = i % 2 === 0 ? [252, 253, 254] : [255, 255, 255];
+    pdf.setFillColor(...bg);
+    pdf.rect(colL, y, colW, rowH, 'F');
+    pdf.rect(colR, y, colW, rowH, 'F');
+    pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15);
+    pdf.rect(colL, y, colW, rowH);
+    pdf.rect(colR, y, colW, rowH);
+
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+    if (collectionRows[i]) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(collectionRows[i][0] + ':', colL + 2, y + rowH - 2);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(collectionRows[i][1], colL + 2 + pdf.getTextWidth(collectionRows[i][0] + ':') + 1, y + rowH - 2);
+    }
+    if (macroRows[i]) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(macroRows[i][0] + ':', colR + 2, y + rowH - 2);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(macroRows[i][1], colR + 2 + pdf.getTextWidth(macroRows[i][0] + ':') + 1, y + rowH - 2);
+    }
+    y += rowH;
+  }
+  y += 2;
+
+  // ── ROW 2: MICROSCOPY ── full width, viability left | sperm count right
+  pdf.setFillColor(220, 237, 228);
+  pdf.rect(ML, y, CW, 5, 'F');
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+  pdf.text('MICROSCOPY', PW / 2, y + 3.6, { align: 'center' });
+  y += 5;
+
+  // Viability | Sperm Count side by side
+  const spermFlag = numFlag('sperm_count');
+  const spermCol  = flagColor('sperm_count');
+  const viaFlag   = numFlag('viability');
+  const viaCol    = flagColor('viability');
+
+  pdf.setFillColor(...LGRAY); pdf.rect(ML, y, CW, rowH, 'F');
+  pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15); pdf.rect(ML, y, CW, rowH);
+  // Viability
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+  pdf.text('Viability (%):', colL + 2, y + rowH - 2);
+  const viaX = colL + 2 + pdf.getTextWidth('Viability (%):') + 1;
+  pdf.setFont('helvetica', 'normal');
+  if (viaCol) pdf.setTextColor(...viaCol); else pdf.setTextColor(...DARK);
+  pdf.text(`${val('viability')}${viaFlag}  %  (ref: 58–100)`, viaX, y + rowH - 2);
+  // Sperm Count
+  pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...DARK);
+  pdf.text('Sperm Count:', colR + 2, y + rowH - 2);
+  const scX = colR + 2 + pdf.getTextWidth('Sperm Count:') + 1;
+  pdf.setFont('helvetica', 'normal');
+  if (spermCol) pdf.setTextColor(...spermCol); else pdf.setTextColor(...DARK);
+  // Draw: "96 ↑  ×10" [superscript 6] "cells/mL  (ref: 15-200)"
+  const scValText = `${val('sperm_count')}${spermFlag}  \u00d710`;
+  pdf.setFontSize(7.5);
+  pdf.text(scValText, scX, y + rowH - 2);
+  const scW1 = pdf.getTextWidth(scValText);
+  pdf.setFontSize(5.5);
+  pdf.text('6', scX + scW1, y + rowH - 3.5);
+  const scW2 = pdf.getTextWidth('6');
+  pdf.setFontSize(7.5);
+  pdf.text(' cells/mL  (ref: 15-200)', scX + scW1 + scW2, y + rowH - 2);
+  pdf.setTextColor(...DARK);
+  y += rowH + 2;
+
+  // ── ROW 3: MORPHOLOGY (left tall block) | MOTILITY + WET PREP/GRAM'S (right) ──
+  const morphKeys = {
+    head:   ['morph_microcephalic','morph_macrocephalic','morph_pinhead','morph_pyriform','morph_double_head','morph_acrosomal'],
+    tail:   ['morph_tailless','morph_short_tail','morph_long_tail','morph_double_tail','morph_coiled_tail'],
+    others: ['morph_cytoplasmic_droplets','morph_midpiece_abnormality','morph_neck_defect','morph_normal'],
+  };
+  const motilityKeys = ['motility_a','motility_b','motility_c','motility_d'];
+
+  // MORPHOLOGY left header
+  pdf.setFillColor(220, 237, 228);
+  pdf.rect(colL, y, colW, 5, 'F');
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+  pdf.text('MORPHOLOGY', colL + colW / 2, y + 3.6, { align: 'center' });
+
+  // MOTILITY right header
+  pdf.rect(colR, y, colW, 5, 'F');
+  pdf.text('MOTILITY', colR + colW / 2, y + 3.6, { align: 'center' });
+  y += 5;
+
+  // Draw motility rows on the right
+  let rightY = y;
+  motilityKeys.forEach((k, i) => {
+    const p = paramMap[k];
+    const mVal = val(k);
+    const mFlag = numFlag(k);
+    const mCol = flagColor(k);
+    const bg = i % 2 === 0 ? [252, 253, 254] : [255, 255, 255];
+    pdf.setFillColor(...bg); pdf.rect(colR, rightY, colW, rowH, 'F');
+    pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15); pdf.rect(colR, rightY, colW, rowH);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    // Shorten grade label for space
+    const shortName = p.name.replace('Grade A — Progressive Motility', 'Grade A – Progressive')
+                           .replace('Grade B — Non-Progressive Motility', 'Grade B – Non-Progressive')
+                           .replace('Grade C — Non-Linear Motility', 'Grade C – Non-Linear')
+                           .replace('Grade D — Immotile Sperm Cells', 'Grade D – Immotile');
+    pdf.text(shortName, colR + 2, rightY + rowH - 2);
+    const resultX = colR + colW - 30;
+    if (mCol) pdf.setTextColor(...mCol); else pdf.setTextColor(...DARK);
+    pdf.setFont('helvetica', mFlag ? 'bold' : 'normal');
+    pdf.text(`${mVal}${mFlag}`, resultX, rightY + rowH - 2);
+    pdf.setTextColor(100, 100, 100); pdf.setFont('helvetica', 'normal');
+    pdf.text('%', resultX + 10, rightY + rowH - 2);
+    pdf.setTextColor(...DARK);
+    rightY += rowH;
+  });
+
+  // Draw morphology rows on the left, starting from same Y as motility
+  let morphY = y;
+  function drawMorphSub(label, keys) {
+    // sub-header
+    pdf.setFillColor(235, 245, 238);
+    pdf.rect(colL, morphY, colW, 5, 'F');
+    pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15); pdf.rect(colL, morphY, colW, 5);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    pdf.text(label, colL + colW / 2, morphY + 3.6, { align: 'center' });
+    morphY += 5;
+    keys.forEach((k, i) => {
+      const p = paramMap[k];
+      const mVal = val(k);
+      const mFlag = numFlag(k);
+      const mCol = flagColor(k);
+      const mRef = ref(k);
+      const bg = i % 2 === 0 ? [252, 253, 254] : [255, 255, 255];
+      pdf.setFillColor(...bg); pdf.rect(colL, morphY, colW, rowH, 'F');
+      pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15); pdf.rect(colL, morphY, colW, rowH);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+      pdf.text(p.name, colL + 2, morphY + rowH - 2);
+      const resultX = colL + colW - 28;
+      if (mCol) pdf.setTextColor(...mCol); else pdf.setTextColor(...DARK);
+      pdf.setFont('helvetica', mFlag ? 'bold' : 'normal');
+      pdf.text(`${mVal}${mFlag}`, resultX, morphY + rowH - 2);
+      pdf.setTextColor(100, 100, 100); pdf.setFont('helvetica', 'normal');
+      const refStr = mRef !== '—' ? `%  ref:${mRef}` : '%';
+      pdf.text(refStr, resultX + 10, morphY + rowH - 2);
+      pdf.setTextColor(...DARK);
+      morphY += rowH;
+    });
+  }
+  drawMorphSub('HEAD', morphKeys.head);
+  drawMorphSub('TAIL', morphKeys.tail);
+  drawMorphSub('OTHERS', morphKeys.others);
+
+  // Advance y below whichever column is taller
+  y = Math.max(rightY, morphY) + 2;
+
+  // ── WET PREP / GRAM'S STAIN ── full width, two columns (Wet Prep left | Gram's Stain right)
+  pdf.setFillColor(220, 237, 228);
+  pdf.rect(colL, y, colW, 5, 'F');
+  pdf.rect(colR, y, colW, 5, 'F');
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+  pdf.text('WET PREPARATION', colL + colW / 2, y + 3.6, { align: 'center' });
+  pdf.text("GRAM'S STAIN", colR + colW / 2, y + 3.6, { align: 'center' });
+  y += 5;
+
+  const wetRows = [
+    ['Epithelial Cells', val('wp_epithelial_cells'), '/HPF'],
+    ['Pus Cells (WBC)',  val('wp_pus_cells'),        '/HPF'],
+    ['RBC',             val('wp_rbc'),               '/HPF'],
+    ['Parasite / Ova',  val('wp_parasite'),          ''],
+    ['Other Findings',  val('wp_other'),             ''],
+  ].filter(r => r[1] !== '—');
+  if (!wetRows.length) wetRows.push(['Findings', '—', '']);
+
+  const gramVal = val('gram_stain');
+  const maxR4 = wetRows.length;
+
+  for (let i = 0; i < maxR4; i++) {
+    const bg = i % 2 === 0 ? [252, 253, 254] : [255, 255, 255];
+    pdf.setFillColor(...bg);
+    pdf.rect(colL, y, colW, rowH, 'F');
+    pdf.rect(colR, y, colW, rowH, 'F');
+    pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15);
+    pdf.rect(colL, y, colW, rowH);
+    pdf.rect(colR, y, colW, rowH);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+    pdf.text(wetRows[i][0] + ':', colL + 2, y + rowH - 2);
+    pdf.setFont('helvetica', 'normal');
+    const lx = colL + 2 + pdf.getTextWidth(wetRows[i][0] + ':') + 1;
+    pdf.text(`${wetRows[i][1]}  ${wetRows[i][2]}`.trim(), lx, y + rowH - 2);
+    if (i === 0) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text("Gram's Stain:", colR + 2, y + rowH - 2);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(gramVal, colR + 2 + pdf.getTextWidth("Gram's Stain:") + 1, y + rowH - 2);
+    }
+    y += rowH;
+  }
+  y += 2;
+
+  // ── COMMENTS ── full width
+  const commentsVal = val('comments');
+  if (commentsVal !== '—') {
+    pdf.setFillColor(220, 237, 228);
+    pdf.rect(ML, y, CW, 5, 'F');
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+    pdf.text('COMMENTS', ML + 3, y + 3.6);
+    y += 5;
+    const commentsH = rowH * 1.5;
+    pdf.setFillColor(...LGRAY); pdf.rect(ML, y, CW, commentsH, 'F');
+    pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15); pdf.rect(ML, y, CW, commentsH);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+    const lines = pdf.splitTextToSize(commentsVal, CW - 6);
+    pdf.text(lines, ML + 3, y + 4);
+    y += commentsH + 2;
+  }
+
+  // ── CULTURE & SENSITIVITY ── new page
+  if (d.organism || (d.sensitivities && d.sensitivities.length)) {
+    pdf.addPage();
+    let cy = 24;
+
+    pdf.setFillColor(...[30, 64, 175]);
+    pdf.rect(ML, cy, CW, 7, 'F');
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5); pdf.setTextColor(255, 255, 255);
+    pdf.text('CULTURE & SENSITIVITY', PW / 2, cy + 5, { align: 'center' });
+    cy += 10;
+
+    // Organism
+    pdf.setFillColor(219, 234, 254); pdf.rect(ML, cy, CW, rowH, 'F');
+    pdf.setDrawColor(180, 200, 230); pdf.setLineWidth(0.2); pdf.rect(ML, cy, CW, rowH);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...DARK);
+    pdf.text('Organism:', ML + 3, cy + rowH - 2);
+    pdf.setFont('helvetica', 'italic');
+    pdf.text(d.organism || 'No growth / Not specified', ML + 30, cy + rowH - 2);
+    cy += rowH + 3;
+
+    if (d.sensitivities && d.sensitivities.length) {
+      // Header row
+      const colW1 = 80, colW2 = 30, colW3 = CW - colW1 - colW2;
+      pdf.setFillColor(241, 245, 249); pdf.rect(ML, cy, CW, rowH, 'F');
+      pdf.setDrawColor(180, 200, 230); pdf.setLineWidth(0.2); pdf.rect(ML, cy, CW, rowH);
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...DARK);
+      pdf.text('Antibiotic', ML + 3, cy + rowH - 2);
+      pdf.text('Result', ML + colW1 + 3, cy + rowH - 2);
+      pdf.text('Interpretation', ML + colW1 + colW2 + 3, cy + rowH - 2);
+      cy += rowH;
+
+      d.sensitivities.forEach((sens, i) => {
+        const label = sens.result==='S'?'Sensitive':sens.result==='R'?'Resistant':sens.result==='I'?'Intermediate':sens.result||'—';
+        const col   = sens.result==='S'?[21,128,61]:sens.result==='R'?[185,28,28]:sens.result==='I'?[146,64,14]:[55,65,81];
+        const bg = i % 2 === 0 ? [252, 253, 254] : [255, 255, 255];
+        pdf.setFillColor(...bg); pdf.rect(ML, cy, CW, rowH, 'F');
+        pdf.setDrawColor(210, 220, 230); pdf.setLineWidth(0.15); pdf.rect(ML, cy, CW, rowH);
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...DARK);
+        pdf.text(sens.antibiotic || '—', ML + 3, cy + rowH - 2);
+        pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...col);
+        pdf.text(sens.result || '—', ML + colW1 + 3, cy + rowH - 2);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(label, ML + colW1 + colW2 + 3, cy + rowH - 2);
+        pdf.setTextColor(...DARK);
+        cy += rowH;
+      });
+    } else {
+      pdf.setFontSize(8); pdf.setTextColor(107, 114, 128);
+      pdf.text('No antibiotic sensitivities recorded.', ML + 3, cy + 5);
+    }
+  }
 }
 
 // ── collect rows for autoTable (mirrors generatePDFRows logic) ──
@@ -1532,23 +1938,106 @@ function collectAutoTableRows(body, testName, data, testType, age, gender) {
   }
 
   if (testType === 'complex_semen') {
-    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [240, 244, 249], fontStyle: 'bold' } }]);
-    for (let p of SEMEN_PARAMS) {
-      let val = data[p.key];
-      if (val === undefined || val === '') continue;
-      let flag = ''; let col = null;
-      let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : '—';
-      let n = parseFloat(val);
-      if (!isNaN(n)) {
-        if (p.high != null && n > p.high) { flag = ' ↑'; col = HIGH_COLOR; }
-        if (p.low  != null && n < p.low)  { flag = ' ↓'; col = LOW_COLOR; }
+    // ── Define section groupings matching the physical form layout ──
+    const SEMEN_SECTIONS = [
+      {
+        label: 'Semen Collection',
+        fillColor: [232, 244, 240],
+        keys: ['time_produced','time_received','time_analysed','abstinence']
+      },
+      {
+        label: 'Macroscopy',
+        fillColor: [232, 244, 240],
+        keys: ['appearance','volume','viscosity','consistency','liquefaction']
+      },
+      {
+        label: 'Microscopy',
+        fillColor: [232, 244, 240],
+        keys: ['sperm_count','viability']
+      },
+      {
+        label: 'Motility',
+        fillColor: [232, 244, 240],
+        keys: ['motility_a','motility_b','motility_c','motility_d']
+      },
+      {
+        label: 'Morphology — Head',
+        fillColor: [240, 248, 240],
+        isSubSection: false,
+        prependMorphHeader: true,
+        keys: ['morph_microcephalic','morph_macrocephalic','morph_pinhead','morph_pyriform','morph_double_head','morph_acrosomal']
+      },
+      {
+        label: 'Morphology — Tail',
+        fillColor: [240, 248, 240],
+        isSubSection: false,
+        keys: ['morph_tailless','morph_short_tail','morph_long_tail','morph_double_tail','morph_coiled_tail']
+      },
+      {
+        label: 'Morphology — Others',
+        fillColor: [240, 248, 240],
+        isSubSection: false,
+        keys: ['morph_cytoplasmic_droplets','morph_midpiece_abnormality','morph_neck_defect','morph_normal']
+      },
+      {
+        label: 'Wet Preparation',
+        fillColor: [232, 244, 240],
+        keys: ['wp_epithelial_cells','wp_pus_cells','wp_rbc','wp_parasite','wp_other']
+      },
+      {
+        label: "Gram's Stain",
+        fillColor: [232, 244, 240],
+        keys: ['gram_stain']
+      },
+      {
+        label: 'Comments',
+        fillColor: [248, 250, 252],
+        keys: ['comments']
       }
-      body.push([p.name, { content: String(val) + flag, styles: col ? { textColor: col, fontStyle: 'bold' } : {} }, p.unit || '', ref]);
-    }
-    // C&S
-    body.push([{ content: 'Culture & Sensitivity', colSpan: 4, styles: { fillColor: [239, 246, 255], fontStyle: 'bold', fontSize: 7 } }]);
+    ];
+
+    const paramMap = {};
+    SEMEN_PARAMS.forEach(p => { paramMap[p.key] = p; });
+
+    body.push([{ content: testName, colSpan: 4, styles: { fillColor: [31, 110, 67], textColor: [255,255,255], fontStyle: 'bold' } }]);
+
+    SEMEN_SECTIONS.forEach(sec => {
+      let secRows = [];
+      sec.keys.forEach(k => {
+        const p = paramMap[k];
+        if (!p) return;
+        let val = data[p.key];
+        if (val === undefined || val === '') return;
+        let flag = ''; let col = null;
+        let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : (p.low != null ? `\u2265${p.low}` : p.high != null ? `\u2264${p.high}` : '—');
+        let n = parseFloat(val);
+        if (!isNaN(n)) {
+          if (p.high != null && n > p.high) { flag = ' ↑'; col = HIGH_COLOR; }
+          if (p.low  != null && n < p.low)  { flag = ' ↓'; col = LOW_COLOR; }
+        }
+        secRows.push([p.name, { content: String(val) + flag, styles: col ? { textColor: col, fontStyle: 'bold' } : {} }, p.unit || '', ref]);
+      });
+      if (!secRows.length) return;
+      if (sec.prependMorphHeader) {
+        body.push([{ content: 'MORPHOLOGY', colSpan: 4, styles: { fillColor: [200, 230, 210], fontStyle: 'bold', fontSize: 8, textColor: [26,44,62] } }]);
+      }
+      body.push([{ content: sec.label, colSpan: 4, styles: { fillColor: sec.fillColor, fontStyle: 'bold', fontSize: 7.5, textColor: [26,44,62] } }]);
+      secRows.forEach(r => body.push(r));
+    });
+
+    // ── Culture & Sensitivity — force a new page ──
+    body.push([{
+      content: 'CULTURE & SENSITIVITY',
+      colSpan: 4,
+      styles: { fillColor: [219, 234, 254], fontStyle: 'bold', fontSize: 9, textColor: [30,64,175], pageBreak: 'before' }
+    }]);
     body.push(['Organism', { content: data.organism || 'No growth / Not specified', colSpan: 3, styles: { fontStyle: 'italic' } }]);
     if (data.sensitivities && data.sensitivities.length) {
+      body.push([
+        { content: 'Antibiotic', styles: { fontStyle: 'bold', fillColor: [241,245,249] } },
+        { content: 'Result',     styles: { fontStyle: 'bold', fillColor: [241,245,249] } },
+        { content: 'Interpretation', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [241,245,249] } }
+      ]);
       data.sensitivities.forEach(s => {
         const label = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
         const col   = s.result==='S'?[21,128,61]:s.result==='R'?HIGH_COLOR:s.result==='I'?[146,64,14]:[55,65,81];
