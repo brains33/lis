@@ -8,15 +8,28 @@ const { app, BrowserWindow, shell, dialog, Menu, ipcMain, nativeTheme } = requir
 const path = require('path')
 
 // ── Security: prevent navigation to external URLs ────────────────────────────
+const ALLOWED_ORIGINS = ['file://', 'supabase.co', 'paystack.co', 'paystack.com']
+function isAllowedUrl(url) {
+  return ALLOWED_ORIGINS.some(o => url.startsWith(o) || url.includes(o))
+}
+
 app.on('web-contents-created', (_, contents) => {
   contents.on('will-navigate', (event, url) => {
-    // Allow: local app files and supabase API calls
-    if (url.startsWith('file://') || url.includes('supabase.co')) return
+    if (isAllowedUrl(url)) return
     event.preventDefault()
-    shell.openExternal(url) // open external links in real browser
+    shell.openExternal(url)
   })
 
   contents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 620, height: 700, autoHideMenuBar: true,
+          webPreferences: { nodeIntegration: false, contextIsolation: true },
+        },
+      }
+    }
     shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -109,7 +122,7 @@ function buildMenu() {
               type: 'info',
               title: "About MU'UJIZA LIS",
               message: "MU'UJIZA DIAGNOSTICS\nLaboratory Information System",
-              detail: `Version: ${app.getVersion()}\nDeveloped by MU'UJIZA DATA\n© 2023-2026 All rights reserved`,
+              detail: `Version: ${app.getVersion()}\nDeveloped by MU'UJIZA DATA\n© 2025 All rights reserved`,
               icon: path.join(__dirname, 'icon-512.png'),
               buttons: ['OK'],
             })
@@ -124,7 +137,19 @@ function buildMenu() {
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
   buildMenu()
-  createWindow()
+  const win = createWindow()
+
+  // ── Logout: load login.html from main process then re-focus the window.
+  // On Windows, navigating via window.location in the renderer can leave the
+  // new page's inputs unresponsive because the window loses input focus.
+  // Doing it from main + calling focus() after did-finish-load fixes this.
+  ipcMain.on('lis-logout', () => {
+    win.loadFile(path.join(__dirname, 'login.html'))
+    win.webContents.once('did-finish-load', () => {
+      win.focus()
+      win.webContents.focus()
+    })
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
