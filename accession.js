@@ -5,7 +5,7 @@
   // --------------------------------------------------------------
   const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-  const PAYSTACK_PUBLIC_KEY = 'pk_live_061aa123199abd34122c17c3a8e02a102304b5e9';
+  const PAYSTACK_PUBLIC_KEY = 'pk_test_8564df5226f404c1952b77183cc611d283be1a0c';
 
   // Auth session from auth-guard.js
   const currentSession = window.currentSession || { name: 'Reception', role: 'reception' };
