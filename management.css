@@ -593,3 +593,28 @@
   padding: 2px 8px;
   border-radius: 20px;
 }
+
+/* ── CSV Export button ──────────────────────────────────────────────────── */
+.csv-btn {
+  background: #fff;
+  color: var(--green);
+  border: 1.5px solid var(--green);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-family: 'Sora', sans-serif;
+  font-size: .82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .2s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.csv-btn:hover {
+  background: var(--green);
+  color: #fff;
+}
+.csv-btn:active {
+  transform: scale(.97);
+}

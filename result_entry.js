@@ -454,21 +454,62 @@ const ANTENATAL_PARAMS = [
   {key:'hcv',         name:'HCV',               unit:'', type:'select', options:['Non-Reactive','Reactive']}
 ];
 // Blood Transfusion — Grouping & Crossmatch
+// Matches BTS-REQ-XM/v1 form exactly (Sections 2, 3, 5, 6, 7, 8)
 const BLOOD_TRANSFUSION_PARAMS = [
-  {key:'patient_blood_group', name:"Patient's Blood Group",   unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']},
+  // ── Section 2: Clinical Request Details ──
+  {key:'transfusion_reason',    name:'Reason for Transfusion',            unit:'', type:'text'},
+  {key:'inv_hb_electrophoresis',name:'Investigation: Hb Electrophoresis', unit:'', type:'select', options:['Requested','Not Requested']},
+  {key:'inv_type_screen',       name:'Investigation: Type & Screen',       unit:'', type:'select', options:['Requested','Not Requested']},
+  {key:'inv_full_crossmatch',   name:'Investigation: Full Crossmatch',     unit:'', type:'select', options:['Requested','Not Requested']},
+  {key:'result_hb',             name:'Result: HB',                         unit:'g/dL', type:'number', low:null, high:null},
+  {key:'result_pcv',            name:'Result: PCV',                        unit:'%',    type:'number', low:null, high:null},
+
+  // ── Section 3: Blood Products Required ──
+  {key:'bp_whole_blood',        name:'Blood Product: Whole Blood',         unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_packed_cells',       name:'Blood Product: Packed Cells',        unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_platelet_concentrate',name:'Blood Product: Platelet Concentrate',unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_ffp',                name:'Blood Product: Fresh Frozen Plasma (FFP)', unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_cryoprecipitate',    name:'Blood Product: Cryoprecipitate',     unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_retroviral_screening',name:'Blood Product: Retroviral Screening',unit:'', type:'select', options:['Yes','No']},
+  {key:'units_required',        name:'No. of Units Required',              unit:'', type:'number', low:null, high:null},
+  {key:'units_donated',         name:'No. of Units Donated',               unit:'', type:'number', low:null, high:null},
+  {key:'date_required',         name:'Date Required',                      unit:'', type:'text'},
+  {key:'time_required',         name:'Time Required',                      unit:'', type:'text'},
+
+  // ── Section 5: Autologous Blood (if applicable) ──
+  {key:'autologous_units',      name:'Autologous: No. of Units to be Collected', unit:'', type:'number', low:null, high:null},
+  {key:'type_of_surgery',       name:'Type of Surgery',                    unit:'', type:'text'},
+
+  // ── Section 6: Patient Blood Group & Serological Screening ──
+  {key:'patient_blood_group', name:"Patient Blood Group",     unit:'', type:'select', options:['A Rhesus "D" Positive','A Rhesus "D" Negative','B Rhesus "D" Positive','B Rhesus "D" Negative','AB Rhesus "D" Positive','AB Rhesus "D" Negative','O Rhesus "D" Positive','O Rhesus "D" Negative']},
   {key:'patient_hbsag',       name:"Patient HBsAg",           unit:'', type:'select', options:['Non-Reactive','Reactive']},
   {key:'patient_hcv',         name:"Patient HCV",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
   {key:'patient_rvs',         name:"Patient RVS",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
-  {key:'donor_blood_group',   name:"Donor's Blood Group",     unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']},
+
+  // ── Section 6: Donor Blood Group & Serological Screening ──
+  {key:'donor_blood_group',   name:"Donor Blood Group",       unit:'', type:'select', options:['A Rhesus "D" Positive','A Rhesus "D" Negative','B Rhesus "D" Positive','B Rhesus "D" Negative','AB Rhesus "D" Positive','AB Rhesus "D" Negative','O Rhesus "D" Positive','O Rhesus "D" Negative']},
+  {key:'donor_pcv',           name:"Donor PCV",               unit:'%', type:'number', low:35, high:54},
   {key:'donor_hbsag',         name:"Donor HBsAg",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
   {key:'donor_hcv',           name:"Donor HCV",               unit:'', type:'select', options:['Non-Reactive','Reactive']},
   {key:'donor_vdrl',          name:"Donor VDRL",              unit:'', type:'select', options:['Negative','Positive']},
   {key:'donor_rvs',           name:"Donor RVS",               unit:'', type:'select', options:['Non-Reactive','Reactive']},
-  {key:'blood_no',            name:'Blood No.',                unit:'', type:'text'},
-  {key:'crossmatch',          name:'Crossmatch Compatibility', unit:'', type:'select', options:['Compatible','Incompatible']},
-  {key:'time_issued',         name:'Time Issued',              unit:'', type:'text'},
-  {key:'time_return',         name:'Time Return',              unit:'', type:'text'},
-  {key:'time_reissued',       name:'Time Reissued',            unit:'', type:'text'}
+
+  // ── Section 7: Major Crossmatch (Phase / Result / Remarks) ──
+  {key:'xm_ns_result',        name:"Normal Saline (37°C) — Result",   unit:'', type:'select', options:['Compatible','Incompatible','Weakly Incompatible']},
+  {key:'xm_ns_remarks',       name:"Normal Saline (37°C) — Remarks",  unit:'', type:'text'},
+  {key:'xm_ba_result',        name:"Bovine Albumin — Result",          unit:'', type:'select', options:['Compatible','Incompatible','Weakly Incompatible']},
+  {key:'xm_ba_remarks',       name:"Bovine Albumin — Remarks",         unit:'', type:'text'},
+  {key:'xm_ahg_result',       name:"AHG (Anti-Human Globulin) — Result",  unit:'', type:'select', options:['Compatible','Incompatible','Weakly Incompatible']},
+  {key:'xm_ahg_remarks',      name:"AHG (Anti-Human Globulin) — Remarks", unit:'', type:'text'},
+
+  // ── Section 8: Compatibility / Crossmatch Outcome ──
+  {key:'blood_bag_no',        name:'Blood Unit / Bag No.',             unit:'', type:'text'},
+  {key:'crossmatch',          name:'Grouping & Crossmatch Result',     unit:'', type:'select', options:['Compatible with Patient','Incompatible with Patient']},
+
+  // ── Issue / Return times ──
+  {key:'time_issued',         name:'Time Issued',                      unit:'', type:'text'},
+  {key:'time_returned',       name:'Time Returned',                    unit:'', type:'text'},
+  {key:'time_reissued',       name:'Time Reissued',                    unit:'', type:'text'}
 ];
 
 // Backward-compatible RFT (full panel — for 'Renal Function Test' orders)
@@ -1189,60 +1230,82 @@ async function openResultModal(id) {
     else if (testType === 'complex_blood') {
       let data = {};
       try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
-      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border);">🩸 Patient Serological Screening</div>`;
-      formsHtml += `<div class="param-grid">`;
-      BLOOD_TRANSFUSION_PARAMS.filter(p => p.key.startsWith('patient_')).forEach(p => {
+
+      // Helper: render one param as input or select
+      const bloodField = (p) => {
+        if (!p) return '';
         let val = data[p.key] !== undefined ? data[p.key] : '';
         if (p.type === 'select') {
-          formsHtml += `<div class="param-item">
+          return `<div class="param-item">
             <label>${esc(p.name)}</label>
             <select id="blood_${idx}_${p.key}" class="filter-select">
               <option value="">— Select —</option>
               ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
             </select>
           </div>`;
-        }
-      });
-      formsHtml += `</div>`;
-      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">🩸 Donor Serological Screening</div>`;
-      formsHtml += `<div class="param-grid">`;
-      BLOOD_TRANSFUSION_PARAMS.filter(p => p.key.startsWith('donor_')).forEach(p => {
-        let val = data[p.key] !== undefined ? data[p.key] : '';
-        if (p.type === 'select') {
-          formsHtml += `<div class="param-item">
-            <label>${esc(p.name)}</label>
-            <select id="blood_${idx}_${p.key}" class="filter-select">
-              <option value="">— Select —</option>
-              ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
-            </select>
-          </div>`;
-        }
-      });
-      formsHtml += `</div>`;
-      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">📋 Crossmatch Details</div>`;
-      formsHtml += `<div class="param-grid">`;
-      ['blood_no','crossmatch','time_issued','time_return','time_reissued'].forEach(k => {
-        let p = BLOOD_TRANSFUSION_PARAMS.find(x => x.key === k);
-        let val = data[k] !== undefined ? data[k] : '';
-        if (p.type === 'select') {
-          formsHtml += `<div class="param-item">
-            <label>${esc(p.name)}</label>
-            <select id="blood_${idx}_${p.key}" class="filter-select">
-              <option value="">— Select —</option>
-              ${p.options.map(o => `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}
-            </select>
+        } else if (p.type === 'number') {
+          return `<div class="param-item">
+            <label>${esc(p.name)}${p.unit ? ` (${esc(p.unit)})` : ''}</label>
+            <input type="number" step="any" id="blood_${idx}_${p.key}" value="${esc(val)}" placeholder="${esc(p.name)}">
           </div>`;
         } else {
-          formsHtml += `<div class="param-item">
+          return `<div class="param-item">
             <label>${esc(p.name)}</label>
             <input type="text" id="blood_${idx}_${p.key}" value="${esc(val)}" placeholder="${esc(p.name)}">
           </div>`;
         }
-      });
+      };
+
+      // ── Section 2: Clinical Request Details ──
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border);">📋 Section 2 — Clinical Request Details</div>`;
+      formsHtml += `<div class="param-grid">`;
+      ['transfusion_reason','inv_hb_electrophoresis','inv_type_screen','inv_full_crossmatch','result_hb','result_pcv']
+        .forEach(k => { formsHtml += bloodField(BLOOD_TRANSFUSION_PARAMS.find(x => x.key === k)); });
       formsHtml += `</div>`;
+
+      // ── Section 3: Blood Products Required ──
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">🩸 Section 3 — Blood Products Required</div>`;
+      formsHtml += `<div class="param-grid">`;
+      ['bp_whole_blood','bp_packed_cells','bp_platelet_concentrate','bp_ffp','bp_cryoprecipitate','bp_retroviral_screening','units_required','units_donated','date_required','time_required']
+        .forEach(k => { formsHtml += bloodField(BLOOD_TRANSFUSION_PARAMS.find(x => x.key === k)); });
+      formsHtml += `</div>`;
+
+      // ── Section 5: Autologous Blood ──
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">🔬 Section 5 — Autologous Blood (if applicable)</div>`;
+      formsHtml += `<div class="param-grid">`;
+      ['autologous_units','type_of_surgery']
+        .forEach(k => { formsHtml += bloodField(BLOOD_TRANSFUSION_PARAMS.find(x => x.key === k)); });
+      formsHtml += `</div>`;
+
+      // ── Section 6: Patient Serology ──
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">🩸 Section 6 — Patient Blood Group &amp; Serology</div>`;
+      formsHtml += `<div class="param-grid">`;
+      BLOOD_TRANSFUSION_PARAMS.filter(p => p.key.startsWith('patient_')).forEach(p => { formsHtml += bloodField(p); });
+      formsHtml += `</div>`;
+
+      // ── Section 6: Donor Serology ──
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">🩸 Section 6 — Donor Blood Group &amp; Serology</div>`;
+      formsHtml += `<div class="param-grid">`;
+      BLOOD_TRANSFUSION_PARAMS.filter(p => p.key.startsWith('donor_')).forEach(p => { formsHtml += bloodField(p); });
+      formsHtml += `</div>`;
+
+      // ── Section 7: Major Crossmatch ──
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">🔬 Section 7 — Major Crossmatch</div>`;
+      formsHtml += `<div class="param-grid">`;
+      ['xm_ns_result','xm_ns_remarks','xm_ba_result','xm_ba_remarks','xm_ahg_result','xm_ahg_remarks']
+        .forEach(k => { formsHtml += bloodField(BLOOD_TRANSFUSION_PARAMS.find(x => x.key === k)); });
+      formsHtml += `</div>`;
+
+      // ── Section 8: Compatibility Outcome & Times ──
+      formsHtml += `<div style="font-size:0.78rem;font-weight:600;color:var(--primary);margin:10px 0 6px;padding:4px 0;border-bottom:1px solid var(--border);">✅ Section 8 — Compatibility Outcome</div>`;
+      formsHtml += `<div class="param-grid">`;
+      ['blood_bag_no','crossmatch','time_issued','time_returned','time_reissued']
+        .forEach(k => { formsHtml += bloodField(BLOOD_TRANSFUSION_PARAMS.find(x => x.key === k)); });
+      formsHtml += `</div>`;
+
       formsHtml += `<div style="font-size:0.75rem;color:var(--text2);margin-top:10px;padding:8px;background:#f8fafb;border-radius:8px;">
-        ✍ <strong>Grouping & Crossmatch By:</strong> Name / Sign / Date — to be completed physically on printed form.<br>
-        ✍ <strong>Grouping & Crossmatch Checked By:</strong> Head of Unit / Sign / Date — to be completed physically on printed form.
+        ✍ <strong>Grouping &amp; Crossmatch By:</strong> Name / Sign / Date — to be completed physically on printed form.<br>
+        ✍ <strong>Grouping &amp; Crossmatch Checked By:</strong> Head of Unit / Sign / Date — to be completed physically on printed form.
       </div>`;
     }
     else if (testType === 'complex_lipid') {

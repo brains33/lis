@@ -5,7 +5,7 @@
   // --------------------------------------------------------------
   const SUPABASE_URL = 'https://npdopywxemtwzvpummsn.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZG9weXd4ZW10d3p2cHVtbXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzY0MjksImV4cCI6MjA5NTQ1MjQyOX0.Mo5LfGdfSiHL6QHsPOaGkDmeaIRDqZTe8MGwz_6ou1c';
-  const PAYSTACK_PUBLIC_KEY = 'pk_test_8564df5226f404c1952b77183cc611d283be1a0c';
+  const PAYSTACK_PUBLIC_KEY = 'pk_live_061aa123199abd34122c17c3a8e02a102304b5e9';
 
   // Auth session from auth-guard.js
   const currentSession = window.currentSession || { name: 'Reception', role: 'reception' };
@@ -896,13 +896,22 @@
     const content = document.getElementById('labelContent');
     if (!modal || !content) return;
 
-    const testRows = (sample.tests || []).map(t => {
+    // Group tests by unit for organised receipt display
+    const receiptByUnit = {};
+    (sample.tests || []).forEach(t => {
       const tname = t.test_name || t.test || '';
-      return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee;">
-                <span>${esc(tname)}</span>
-                <span>${getTestPrice(tname).toFixed(2)} NGN</span>
-              </div>`;
-    }).join('');
+      const u = t.unit_name || 'General';
+      if (!receiptByUnit[u]) receiptByUnit[u] = [];
+      receiptByUnit[u].push({ name: tname, price: getTestPrice(tname) });
+    });
+    const testRows = Object.entries(receiptByUnit).map(([unit, tests]) => `
+      <div style="margin-bottom:6px;">
+        <div style="font-size:0.72rem;font-weight:700;color:var(--primary,#1a6b5a);text-transform:uppercase;letter-spacing:0.5px;padding:3px 0 2px;border-bottom:1px solid #e5e7eb;margin-bottom:3px;">${esc(unit)}</div>
+        ${tests.map(t => `<div style="display:flex;justify-content:space-between;padding:2px 0 2px 8px;border-bottom:1px solid #f3f4f6;">
+          <span>${esc(t.name)}</span>
+          <span>${t.price.toFixed(2)} NGN</span>
+        </div>`).join('')}
+      </div>`).join('');
 
     const payClass = sample.paystatus === 'Paid' ? 'pay-paid' : (sample.paystatus === 'Partial' ? 'pay-partial' : 'pay-unpaid');
     const paystackRefLine = sample.paystackRef ? `<p><strong>Paystack Ref:</strong> ${esc(sample.paystackRef)}</p>` : '';
@@ -941,11 +950,19 @@
     const content = document.getElementById('labelContent');
     if (!modal || !content) return;
 
-    const testRows = (sample.tests || []).map(t => {
+    // Group tests by unit for organised offline receipt display
+    const offlineByUnit = {};
+    (sample.tests || []).forEach(t => {
       const tname = t.test_name || t.test || '';
-      const price = getTestPrice(tname);
-      return `<div style="display:flex;justify-content:space-between;padding:3px 0;">${esc(tname)} <strong>${price.toFixed(2)} NGN</strong></div>`;
-    }).join('');
+      const u = t.unit_name || 'General';
+      if (!offlineByUnit[u]) offlineByUnit[u] = [];
+      offlineByUnit[u].push({ name: tname, price: getTestPrice(tname) });
+    });
+    const testRows = Object.entries(offlineByUnit).map(([unit, tests]) => `
+      <div style="margin-bottom:6px;">
+        <div style="font-size:0.72rem;font-weight:700;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.5px;padding:3px 0 2px;border-bottom:1px solid #e5e7eb;margin-bottom:3px;">${esc(unit)}</div>
+        ${tests.map(t => `<div style="display:flex;justify-content:space-between;padding:2px 0 2px 8px;">${esc(t.name)} <strong>${t.price.toFixed(2)} NGN</strong></div>`).join('')}
+      </div>`).join('');
 
     content.innerHTML = `
       <div style="text-align:left;">

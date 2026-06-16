@@ -384,6 +384,51 @@ if ('serviceWorker' in navigator) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// §  SHARED CSV UTILITY FUNCTIONS
+//    Available globally for all tab export buttons.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * _csvCell(value) — escapes a single cell value per RFC 4180.
+ * Wraps in double-quotes if the value contains comma, quote, or newline.
+ */
+function _csvCell(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  // Always quote so Excel/SPSS/Stata open cleanly without auto-type coercion
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
+/**
+ * _downloadCsv(filename, rows)
+ * rows: array of arrays. Each inner array is one row; values are auto-escaped.
+ * Prepends UTF-8 BOM so Excel opens with correct encoding (critical for
+ * names with diacritics, Arabic, or Swahili characters).
+ */
+function _downloadCsv(filename, rows) {
+  const BOM = '\uFEFF';
+  const csv = BOM + rows.map(r => (r || []).map(_csvCell).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * _csvDate() — compact ISO-style timestamp for filenames: 20250617_1432
+ */
+function _csvDate() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // §  CLINICAL ANALYTICS MODULE
 //    Reads released samples + test_definitions from Supabase.
 //    Unit filter and test selector are populated live from the DB.
@@ -399,7 +444,7 @@ if ('serviceWorker' in navigator) {
 
   // ── Analytics dataset cache ───────────────────────────────────────────────
   // renderAnalytics() is called on every filter change and tab click.
-  // Fetching 1000 released samples + their tests each time gets expensive fast.
+  // Fetching released samples + their tests each time gets expensive fast.
   // Cache the raw dataset for 5 minutes; filters and deep-dives run on the
   // cached copy so the DB is only hit when the data is actually stale.
   let _analyticsCache       = null;   // array of mapped sample objects
@@ -413,7 +458,7 @@ if ('serviceWorker' in navigator) {
     _analyticsCache     = null;
     _analyticsCacheTime = 0;
   }
-  // Expose so the "Refresh" button (if added later) can bust it from outside
+  // Expose so the "Refresh" button can bust it from outside
   window._analyticsInvalidateCache = _analyticsCacheInvalidate;
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -469,103 +514,314 @@ if ('serviceWorker' in navigator) {
   }
 
   // ── Reference ranges (gender/age aware) ──────────────────────────────────
+  // Used for single-value tests (PCV, Hb, ESR, RBS, FBS) where the range
+  // must be resolved dynamically per patient rather than from a fixed PARAM_DEF.
   function _refRange(testName, age, gender) {
     const isMale   = gender === 'Male';
     const isFemale = gender === 'Female';
     switch (testName) {
       case 'PCV': case 'Packed Cell Volume': case 'Hematocrit': case 'HCT':
-        return isMale ? {low:40,high:54,unit:'%'} : {low:36,high:46,unit:'%'};
-      case 'Hb': case 'Hemoglobin':
-        return isMale ? {low:13.5,high:17.5,unit:'g/dL'} : {low:12.0,high:15.5,unit:'g/dL'};
+        return isMale ? {low:40, high:54, unit:'%'} : {low:36, high:46, unit:'%'};
+      case 'Hb': case 'Haemoglobin': case 'Hemoglobin':
+        return isMale ? {low:13.5, high:17.5, unit:'g/dL'} : {low:12.0, high:15.5, unit:'g/dL'};
       case 'ESR': case 'Erythrocyte Sedimentation Rate':
-        return isMale ? {low:0,high:10,unit:'mm/hr'} : {low:0,high:20,unit:'mm/hr'};
-      case 'RBS': case 'Random Blood Sugar':  return {low:70,high:140,unit:'mg/dL'};
-      case 'FBS': case 'Fasting Blood Sugar': return {low:70,high:100,unit:'mg/dL'};
+        return isMale ? {low:0, high:10, unit:'mm/hr'} : {low:0, high:20, unit:'mm/hr'};
+      case 'RBS': case 'Random Blood Sugar':  return {low:70, high:140, unit:'mg/dL'};
+      case 'FBS': case 'Fasting Blood Sugar': return {low:70, high:100, unit:'mg/dL'};
       default: return null;
     }
   }
 
   // ── Parameter definitions for numeric panel tests ─────────────────────────
+  // Keys and units are kept in sync with pending_portal.js param definitions.
+  // Gender-aware ranges on CBC (Hb, HCT) are applied at extraction time.
   const PARAM_DEFS = {
+
+    // ── Full Blood Count ──────────────────────────────────────────────────
     complex_cbc: [
-      {key:'wbc', name:'WBC', unit:'×10³/µL', low:4.0, high:11.0},
-      {key:'rbc', name:'RBC', unit:'×10⁶/µL', low:4.2, high:5.8},
-      {key:'hb',  name:'Hemoglobin', unit:'g/dL', low:12.0, high:16.0},
-      {key:'hct', name:'Hematocrit', unit:'%', low:36, high:46},
-      {key:'mcv', name:'MCV', unit:'fL', low:80, high:100},
-      {key:'mch', name:'MCH', unit:'pg', low:27, high:32},
-      {key:'mchc',name:'MCHC', unit:'g/dL', low:32, high:36},
-      {key:'plt', name:'Platelets', unit:'×10³/µL', low:150, high:450},
-      {key:'neut',name:'Neutrophils', unit:'%', low:40, high:70},
-      {key:'lymph',name:'Lymphocytes', unit:'%', low:20, high:45},
+      {key:'wbc',   name:'WBC',         unit:'×10³/µL', low:4.0,  high:11.0},
+      {key:'rbc',   name:'RBC',         unit:'×10⁶/µL', low:4.2,  high:5.8},
+      {key:'hb',    name:'Haemoglobin', unit:'g/dL',    low:12.0, high:16.0},  // gender-override applied in _extractNumerics
+      {key:'hct',   name:'Haematocrit', unit:'%',       low:36,   high:46},    // gender-override applied in _extractNumerics
+      {key:'mcv',   name:'MCV',         unit:'fL',      low:80,   high:100},
+      {key:'mch',   name:'MCH',         unit:'pg',      low:27,   high:32},
+      {key:'mchc',  name:'MCHC',        unit:'g/dL',    low:32,   high:36},
+      {key:'plt',   name:'Platelets',   unit:'×10³/µL', low:150,  high:450},
+      {key:'neut',  name:'Neutrophils', unit:'%',       low:40,   high:70},
+      {key:'lymph', name:'Lymphocytes', unit:'%',       low:20,   high:45},
+      {key:'mono',  name:'Monocytes',   unit:'%',       low:2,    high:10},
+      {key:'eos',   name:'Eosinophils', unit:'%',       low:1,    high:6},
+      {key:'baso',  name:'Basophils',   unit:'%',       low:0,    high:1},
     ],
+
+    // ── Liver Function Test ───────────────────────────────────────────────
+    // Keys match pending_portal.js LFT_PARAMS exactly
     complex_lft: [
-      {key:'alt', name:'ALT', unit:'U/L', low:10, high:40},
-      {key:'ast', name:'AST', unit:'U/L', low:10, high:35},
-      {key:'alp', name:'ALP', unit:'U/L', low:30, high:120},
-      {key:'tbil',name:'Total Bilirubin', unit:'mg/dL', low:0.3, high:1.2},
-      {key:'prot',name:'Total Protein', unit:'g/dL', low:6.0, high:8.0},
-      {key:'alb', name:'Albumin', unit:'g/dL', low:3.5, high:5.0},
+      {key:'alt',   name:'ALT',             unit:'U/L',   low:10,  high:40},
+      {key:'ast',   name:'AST',             unit:'U/L',   low:10,  high:35},
+      {key:'alp',   name:'ALP',             unit:'U/L',   low:30,  high:120},
+      {key:'ggt',   name:'GGT',             unit:'U/L',   low:7,   high:50},
+      {key:'tbil',  name:'Total Bilirubin', unit:'mg/dL', low:0.3, high:1.2},
+      {key:'dbil',  name:'Direct Bilirubin',unit:'mg/dL', low:0.0, high:0.3},
+      {key:'ibil',  name:'Indirect Bilirubin',unit:'mg/dL',low:0.2,high:0.9},
+      {key:'prot',  name:'Total Protein',   unit:'g/dL',  low:6.0, high:8.0},
+      {key:'alb',   name:'Albumin',         unit:'g/dL',  low:3.5, high:5.0},
+      {key:'glob',  name:'Globulin',        unit:'g/dL',  low:2.0, high:3.5},
     ],
+
+    // ── Renal Function Test ───────────────────────────────────────────────
+    // Keys and units match pending_portal.js RFT_PARAMS_FULL exactly (mmol/L)
     complex_rft: [
-      {key:'urea',     name:'Urea', unit:'mg/dL', low:10, high:50},
-      {key:'creat',    name:'Creatinine', unit:'mg/dL', low:0.6, high:1.2},
-      {key:'sodium',   name:'Sodium', unit:'mmol/L', low:135, high:145},
-      {key:'potassium',name:'Potassium', unit:'mmol/L', low:3.5, high:5.1},
-      {key:'chloride', name:'Chloride', unit:'mmol/L', low:98, high:107},
+      {key:'sodium',    name:'Sodium (Na+)',           unit:'mmol/L', low:136,  high:150},
+      {key:'potassium', name:'Potassium (K+)',          unit:'mmol/L', low:3.5,  high:5.0},
+      {key:'bicarb',    name:'Bicarbonate (HCO3-)',     unit:'mmol/L', low:22,   high:30},
+      {key:'chloride',  name:'Chloride (Cl-)',          unit:'mmol/L', low:96,   high:108},
+      {key:'urea',      name:'Urea',                    unit:'mmol/L', low:2.1,  high:7.0},
+      {key:'creat',     name:'Creatinine',              unit:'mg/dL',  low:0.9,  high:1.5},
+      {key:'calcium',   name:'Calcium',                 unit:'mmol/L', low:2.2,  high:2.7},
+      {key:'phosphate', name:'Inorganic Phosphate',     unit:'mmol/L', low:0.9,  high:1.6},
     ],
+
+    // ── Thyroid Function Test ─────────────────────────────────────────────
+    // Keys match pending_portal.js THYROID_PARAMS (t3/t4, NOT ft3/ft4)
     complex_thyroid: [
-      {key:'tsh', name:'TSH', unit:'µIU/mL', low:0.4, high:4.0},
-      {key:'ft3', name:'Free T3', unit:'pg/mL', low:2.3, high:4.2},
-      {key:'ft4', name:'Free T4', unit:'ng/dL', low:0.8, high:1.8},
+      {key:'tsh', name:'TSH', unit:'mIU/L',  low:0.3,  high:4.2},
+      {key:'t3',  name:'T3',  unit:'nmol/L', low:1.23, high:3.07},
+      {key:'t4',  name:'T4',  unit:'nmol/L', low:66,   high:181},
     ],
+
+    // ── Lipid Profile ─────────────────────────────────────────────────────
+    // Keys match pending_portal.js LIPID_PARAMS (mmol/L)
     complex_lipid: [
-      {key:'chol',name:'Total Cholesterol', unit:'mg/dL', low:125, high:200},
-      {key:'hdl', name:'HDL', unit:'mg/dL', low:40, high:60},
-      {key:'ldl', name:'LDL', unit:'mg/dL', low:0, high:130},
-      {key:'tg',  name:'Triglycerides', unit:'mg/dL', low:0, high:150},
+      {key:'chol',  name:'Total Cholesterol', unit:'mmol/L', low:2.5,  high:6.0},
+      {key:'hdl',   name:'HDL-C',             unit:'mmol/L', low:0.91, high:1.43},
+      {key:'ldl',   name:'LDL-C',             unit:'mmol/L', low:1.8,  high:4.4},
+      {key:'tg',    name:'Triglycerides',      unit:'mmol/L', low:1.8,  high:2.2},
+      {key:'vldl',  name:'VLDL',              unit:'mmol/L', low:0.2,  high:0.8},
+      {key:'ratio', name:'Total/HDL Ratio',    unit:'',       low:0,    high:5},
     ],
+
+    // ── Coagulation Profile ───────────────────────────────────────────────
+    // Expanded to match pending_portal.js COAG_PARAMS
     complex_coag: [
-      {key:'pt',  name:'PT', unit:'sec', low:11, high:13.5},
-      {key:'inr', name:'INR', unit:'', low:0.8, high:1.2},
-      {key:'aptt',name:'APTT', unit:'sec', low:25, high:35},
+      {key:'pt',            name:'Prothrombin Time',              unit:'sec',   low:11,  high:13.5},
+      {key:'inr',           name:'INR',                           unit:'',      low:0.8, high:1.2},
+      {key:'aptt',          name:'APTT',                          unit:'sec',   low:25,  high:35},
+      {key:'tt',            name:'Thrombin Time',                 unit:'sec',   low:14,  high:21},
+      {key:'fibrinogen',    name:'Fibrinogen',                    unit:'mg/dL', low:200, high:400},
+      {key:'bleeding_time', name:'Bleeding Time (Ivy)',           unit:'min',   low:1,   high:9},
+      {key:'clotting_time', name:'Clotting Time (Lee-White)',     unit:'min',   low:5,   high:10},
+      {key:'d_dimer',       name:'D-Dimer',                       unit:'µg/mL', low:0,   high:0.5},
     ],
+
+    // ── Iron Studies ──────────────────────────────────────────────────────
+    // Expanded to match pending_portal.js IRON_PARAMS (added UIBC)
     complex_iron: [
-      {key:'iron',          name:'Serum Iron', unit:'µg/dL', low:50, high:150},
-      {key:'tibc',          name:'TIBC', unit:'µg/dL', low:250, high:400},
-      {key:'transferrinSat',name:'Transferrin Sat', unit:'%', low:20, high:50},
-      {key:'ferritin',      name:'Ferritin', unit:'ng/mL', low:20, high:300},
+      {key:'iron',          name:'Serum Iron',           unit:'µg/dL', low:50,  high:150},
+      {key:'tibc',          name:'TIBC',                 unit:'µg/dL', low:250, high:400},
+      {key:'uibc',          name:'UIBC',                 unit:'µg/dL', low:150, high:300},
+      {key:'transferrinSat',name:'Transferrin Saturation',unit:'%',    low:20,  high:50},
+      {key:'ferritin',      name:'Ferritin',             unit:'ng/mL', low:20,  high:300},
     ],
+
+    // ── Cardiac Markers ───────────────────────────────────────────────────
+    // Expanded to match pending_portal.js CARDIAC_PARAMS (added TropT, AST)
     complex_cardiac: [
-      {key:'ckmb',      name:'CK-MB', unit:'U/L', low:0, high:25},
-      {key:'troponinI', name:'Troponin I', unit:'ng/mL', low:0, high:0.04},
-      {key:'ldh',       name:'LDH', unit:'U/L', low:100, high:200},
+      {key:'ckmb',       name:'CK-MB',       unit:'U/L',   low:0,   high:25},
+      {key:'troponinI',  name:'Troponin I',  unit:'ng/mL', low:0,   high:0.04},
+      {key:'troponinT',  name:'Troponin T',  unit:'ng/mL', low:0,   high:0.01},
+      {key:'ldh',        name:'LDH',         unit:'U/L',   low:100, high:200},
+      {key:'ast_cardiac',name:'AST',         unit:'U/L',   low:10,  high:35},
     ],
+
+    // ── OGTT ─────────────────────────────────────────────────────────────
+    // Expanded to match pending_portal.js OGTT_PARAMS (added 3-hour point)
     complex_ogtt: [
-      {key:'fasting',   name:'Fasting', unit:'mg/dL', low:70, high:100},
-      {key:'one_hour',  name:'1 Hour', unit:'mg/dL', low:0, high:180},
-      {key:'two_hour',  name:'2 Hours', unit:'mg/dL', low:0, high:140},
+      {key:'fasting',    name:'Fasting',  unit:'mg/dL', low:70, high:100},
+      {key:'one_hour',   name:'1 Hour',   unit:'mg/dL', low:0,  high:180},
+      {key:'two_hour',   name:'2 Hours',  unit:'mg/dL', low:0,  high:140},
+      {key:'three_hour', name:'3 Hours',  unit:'mg/dL', low:0,  high:120},
     ],
+
+    // ── Diabetes Panel ────────────────────────────────────────────────────
+    // NEW — matches pending_portal.js DIABETES_PARAMS exactly
+    complex_diabetes: [
+      {key:'fbs',   name:'FBS (Fasting Blood Sugar)',   unit:'mmol/L', low:3.0, high:6.0},
+      {key:'rbs',   name:'RBS (Random Blood Sugar)',     unit:'mmol/L', low:3.0, high:9.0},
+      {key:'hpp2',  name:'2HPP (2-Hour Post-Prandial)', unit:'mmol/L', low:3.0, high:9.0},
+      {key:'ogtt',  name:'OGTT',                         unit:'mmol/L', low:3.0, high:7.8},
+      {key:'hba1c', name:'HbA1c',                        unit:'%',      low:3.0, high:6.0},
+    ],
+
+    // ── Bone Profile ─────────────────────────────────────────────────────
+    // NEW — matches pending_portal.js BONE_PARAMS exactly
+    complex_bone: [
+      {key:'calcium',             name:'Calcium',         unit:'mg/dL', low:8.5, high:10.2},
+      {key:'phosphate',           name:'Phosphate',       unit:'mg/dL', low:2.5, high:4.5},
+      {key:'alkaline_phosphatase',name:'ALP',             unit:'U/L',   low:30,  high:120},
+      {key:'albumin',             name:'Albumin',         unit:'g/dL',  low:3.5, high:5.0},
+      {key:'magnesium',           name:'Magnesium',       unit:'mg/dL', low:1.7, high:2.2},
+      {key:'vitaminD',            name:'Vitamin D (25-OH)',unit:'ng/mL',low:30,  high:80},
+    ],
+
+    // ── Arterial Blood Gas ────────────────────────────────────────────────
+    // NEW — matches pending_portal.js ABG_PARAMS exactly
+    complex_abg: [
+      {key:'ph',          name:'pH',            unit:'',      low:7.35, high:7.45},
+      {key:'pco2',        name:'pCO2',          unit:'mmHg',  low:35,   high:45},
+      {key:'po2',         name:'pO2',           unit:'mmHg',  low:80,   high:100},
+      {key:'hco3',        name:'HCO3',          unit:'mmol/L',low:22,   high:26},
+      {key:'base_excess', name:'Base Excess',   unit:'mmol/L',low:-2,   high:2},
+      {key:'o2sat',       name:'O2 Saturation', unit:'%',     low:95,   high:100},
+      {key:'lactate',     name:'Lactate',       unit:'mmol/L',low:0.5,  high:2.0},
+    ],
+
+    // ── Hormone Panel ─────────────────────────────────────────────────────
+    // NEW — matches pending_portal.js HORMONE_PARAMS.
+    // Ranges are context-dependent (cycle phase, sex); using broad numeric
+    // bounds here so values are still extracted and statistically analysed.
+    // The deep-dive outlier/histogram views remain useful even without tight ranges.
+    complex_hormone: [
+      {key:'lh',           name:'LH',           unit:'mIU/mL', low:1.7,  high:95.75},
+      {key:'fsh',          name:'FSH',           unit:'mIU/mL', low:1.7,  high:1300},
+      {key:'testosterone', name:'Testosterone',  unit:'ng/mL',  low:0.2,  high:9.16},
+      {key:'progesterone', name:'Progesterone',  unit:'ng/mL',  low:0.1,  high:51.0},
+      {key:'prolactin',    name:'Prolactin',     unit:'ng/mL',  low:3.45, high:25.07},
+    ],
+
+    // ── Total Protein ─────────────────────────────────────────────────────
+    // NEW — matches pending_portal.js TOTAL_PROTEIN_PARAMS (prot/alb/glob keys)
+    complex_total_protein: [
+      {key:'prot', name:'Total Protein', unit:'g/dL', low:6.0, high:8.0},
+      {key:'alb',  name:'Albumin',       unit:'g/dL', low:3.5, high:5.0},
+      {key:'glob', name:'Globulin',      unit:'g/dL', low:2.0, high:3.5},
+    ],
+
+    // ── CSF Analysis (numeric params only) ────────────────────────────────
+    // Qualitative fields (appearance, gram stain etc.) handled by qualitative path
+    complex_csf: [
+      {key:'wbc',     name:'WBC',     unit:'/mm³',  low:0,  high:5},
+      {key:'rbc',     name:'RBC',     unit:'/mm³',  low:0,  high:0},
+      {key:'protein', name:'Protein', unit:'mg/dL', low:15, high:45},
+      {key:'glucose', name:'Glucose', unit:'mg/dL', low:40, high:80},
+    ],
+
+    // ── Semen Analysis (numeric params only) ──────────────────────────────
+    // Qualitative fields (appearance, viscosity etc.) handled by qualitative path
+    complex_semen: [
+      {key:'volume',    name:'Volume',                     unit:'mL', low:1.5, high:6.0},
+      {key:'sperm_count',name:'Sperm Count',               unit:'×10⁶/mL', low:15, high:200},
+      {key:'viability', name:'Viability',                  unit:'%',  low:58, high:100},
+      {key:'motility_a',name:'Grade A — Progressive Motility', unit:'%', low:32, high:100},
+      {key:'motility_b',name:'Grade B — Non-Progressive Motility', unit:'%', low:0, high:100},
+      {key:'motility_c',name:'Grade C — Non-Linear Motility',     unit:'%', low:0, high:100},
+      {key:'motility_d',name:'Grade D — Immotile',               unit:'%', low:0, high:100},
+      {key:'morph_normal',name:'Normal Morphology',              unit:'%', low:4, high:100},
+    ],
+
+    // ── Malaria Microscopy (parasite density — numeric only) ──────────────
+    complex_malaria: [
+      {key:'density', name:'Parasite Density', unit:'parasites/µL', low:0, high:1000000},
+    ],
+
+    // ── Urinalysis (numeric params only) ──────────────────────────────────
+    // Qualitative dipstick fields handled by qualitative path
+    complex_urinalysis: [
+      {key:'ph',          name:'pH',              unit:'',    low:5.0,  high:8.0},
+      {key:'sg',          name:'Specific Gravity', unit:'',   low:1.005, high:1.030},
+      {key:'urobilinogen',name:'Urobilinogen',     unit:'mg/dL', low:0.1, high:1.0},
+    ],
+
+    // ── E/U/Cr (Electrolytes, Urea, Creatinine) ────────────────────────────
+    // NEW — matches pending_portal.js EUCR_PARAMS exactly (creat/creat_f split)
+    complex_eucr: [
+      {key:'sodium',    name:'Sodium (Na+)',          unit:'mmol/L', low:136,  high:150},
+      {key:'potassium', name:'Potassium (K+)',         unit:'mmol/L', low:3.5,  high:5.0},
+      {key:'bicarb',    name:'Bicarbonate (HCO3-)',    unit:'mmol/L', low:22,   high:30},
+      {key:'chloride',  name:'Chloride (Cl-)',         unit:'mmol/L', low:96,   high:108},
+      {key:'urea',      name:'Urea',                   unit:'mmol/L', low:2.1,  high:7.0},
+      {key:'creat',     name:'Creatinine (Male)',      unit:'mg/dL',  low:0.9,  high:1.50},
+      {key:'creat_f',   name:'Creatinine (Female)',    unit:'mg/dL',  low:0.7,  high:1.37},
+    ],
+
+    // ── Calcium (standalone) ───────────────────────────────────────────────
+    // NEW — matches pending_portal.js CALCIUM_PARAMS exactly
+    complex_calcium: [
+      {key:'calcium', name:'Calcium', unit:'mmol/L', low:2.2, high:2.7},
+    ],
+
+    // ── Inorganic Phosphate (standalone) ───────────────────────────────────
+    // NEW — matches pending_portal.js PHOSPHATE_PARAMS exactly (adult/children split)
+    complex_phosphate: [
+      {key:'phosphate_adult',    name:'Inorganic Phosphate (Adult)',    unit:'mmol/L', low:0.9, high:1.6},
+      {key:'phosphate_children', name:'Inorganic Phosphate (Children)', unit:'mmol/L', low:1.1, high:2.0},
+    ],
+
+    // ── Uric Acid (standalone) ──────────────────────────────────────────────
+    // NEW — matches pending_portal.js URIC_ACID_PARAMS exactly (gender split)
+    complex_uric_acid: [
+      {key:'uric_female', name:'Uric Acid (Female)', unit:'mmol/L', low:0.16, high:0.43},
+      {key:'uric_male',   name:'Uric Acid (Male)',   unit:'mmol/L', low:0.24, high:0.51},
+    ],
+
+    // ── Widal Test (titers — numeric, but flagged via 1:160+ cutoff) ────────
+    // NEW — keys match pending_portal.js widal renderer (o/h/ao/ah/bo/bh)
+    // Previously fell through to qualitative path, which discards pure
+    // numeric values, so Widal results never displayed in the deep dive.
+    complex_widal: [
+      {key:'o',  name:'S.Typhi O',         unit:'titer', low:0, high:80},
+      {key:'h',  name:'S.Typhi H',         unit:'titer', low:0, high:80},
+      {key:'ao', name:'S.Paratyphi A (O)', unit:'titer', low:0, high:80},
+      {key:'ah', name:'S.Paratyphi A (H)', unit:'titer', low:0, high:80},
+      {key:'bo', name:'S.Paratyphi B (O)', unit:'titer', low:0, high:80},
+      {key:'bh', name:'S.Paratyphi B (H)', unit:'titer', low:0, high:80},
+      {key:'co', name:'S.Paratyphi C (O)', unit:'titer', low:0, high:80},
+      {key:'ch', name:'S.Paratyphi C (H)', unit:'titer', low:0, high:80},
+    ],
+
   };
 
   // ── Resolve test type: live DB first, then fallback pattern matching ───────
+  // Patterns kept in sync with pending_portal.js resolveTestType() function.
   function _testType(name) {
+    // 1. DB-sourced type takes priority
     if (_testDefs.testTypes[name]) return _testDefs.testTypes[name];
+
     const n = (name || '').toLowerCase().trim();
-    if (/full\s*blood|complete\s*blood|cbc|fbc/.test(n))          return 'complex_cbc';
-    if (/liver\s*function|lft/.test(n))                           return 'complex_lft';
-    if (/renal\s*function|rft|kidney/.test(n))                    return 'complex_rft';
-    if (/thyroid|tsh/.test(n))                                    return 'complex_thyroid';
-    if (/lipid|cholesterol/.test(n))                              return 'complex_lipid';
-    if (/coagul|prothrombin|pt\/inr|coag/.test(n))               return 'complex_coag';
-    if (/iron\s*stud|iron\s*prof|serum\s*iron/.test(n))          return 'complex_iron';
-    if (/cardiac|troponin|ckmb/.test(n))                         return 'complex_cardiac';
-    if (/ogtt|glucose\s*tolerance/.test(n))                      return 'complex_ogtt';
-    if (/packed\s*cell|pcv/.test(n))                             return 'complex_pcv';
-    if (/haemoglobin|hemoglobin|\bhb\b/.test(n))                 return 'complex_hb';
-    if (/esr|sedimentation/.test(n))                             return 'complex_esr';
-    if (/random\s*blood\s*sugar|rbs/.test(n))                    return 'complex_rbs';
-    if (/fasting\s*blood\s*sugar|fbs/.test(n))                   return 'complex_fbs';
+
+    // 2. Named panel patterns
+    if (/full\s*blood|complete\s*blood|cbc|fbc/.test(n))              return 'complex_cbc';
+    if (/liver\s*function|lft/.test(n))                               return 'complex_lft';
+    if (/\be\/u\/cr\b|\beucr\b|\belectrolyte/.test(n))               return 'complex_eucr';
+    if (/\buric\s*acid\b/.test(n))                                    return 'complex_uric_acid';
+    if (/\binorganic\s*phosphate\b|\bphosphate\b/.test(n))           return 'complex_phosphate';
+    if (/\bcalcium\b/.test(n))                                        return 'complex_calcium';
+    if (/renal\s*function|rft|kidney/.test(n))                        return 'complex_rft';
+    if (/thyroid|tsh/.test(n))                                        return 'complex_thyroid';
+    if (/lipid|cholesterol/.test(n))                                  return 'complex_lipid';
+    if (/coagul|prothrombin|pt\/inr|coag/.test(n))                   return 'complex_coag';
+    if (/iron\s*stud|iron\s*prof|serum\s*iron/.test(n))              return 'complex_iron';
+    if (/cardiac|troponin|ckmb/.test(n))                              return 'complex_cardiac';
+    if (/ogtt|glucose\s*tolerance/.test(n))                           return 'complex_ogtt';
+    if (/\bdiabetes\b/.test(n))                                       return 'complex_diabetes';
+    if (/\bone\s*profile\b|\bbone\b/.test(n))                        return 'complex_bone';
+    if (/arterial\s*blood\s*gas|\babg\b/.test(n))                    return 'complex_abg';
+    if (/\bhormone\b|\bhormonal\b/.test(n))                          return 'complex_hormone';
+    if (/\btotal\s*protein\b/.test(n))                               return 'complex_total_protein';
+    if (/\bcsf\b/.test(n))                                           return 'complex_csf';
+    if (/semen\s*analysis|seminal/.test(n))                          return 'complex_semen';
+    if (/\bmalaria\s*microscopy\b/.test(n))                          return 'complex_malaria';
+    if (/\burinalysis\b|\burine\s*analysis\b/.test(n))               return 'complex_urinalysis';
+    if (/\bwidal\b/.test(n))                                         return 'complex_widal';
+    if (/\bserology\b|\bhbv\s*profile\b|\bhepatitis\b/.test(n))     return 'complex_serology';
+    if (/\bculture\b/.test(n))                                       return 'complex_culture';
+    if (/\btb\s*genexpert\b|\bgenexpert\b/.test(n))                 return 'complex_tb_genexpert';
+    if (/packed\s*cell|pcv/.test(n))                                 return 'complex_pcv';
+    if (/haemoglobin|hemoglobin|\bhb\b/.test(n))                    return 'complex_hb';
+    if (/esr|sedimentation/.test(n))                                 return 'complex_esr';
+    if (/random\s*blood\s*sugar|rbs/.test(n))                       return 'complex_rbs';
+    if (/fasting\s*blood\s*sugar|fbs/.test(n))                      return 'complex_fbs';
+
     return 'simple';
   }
 
@@ -577,13 +833,13 @@ if ('serviceWorker' in navigator) {
     const tt  = _testType(testName);
     const out = [];
 
-    // Single-value tests
+    // Single-value tests — gender/age-aware range from _refRange()
     const single = { complex_pcv:'pcv', complex_hb:'hb', complex_esr:'esr', complex_rbs:'rbs', complex_fbs:'fbs' };
     if (single[tt]) {
-      const key = tt.split('_')[1];
+      const key = single[tt];
       const val = parseFloat(d[key]);
       if (!isNaN(val)) {
-        const rr = _refRange(testName, age, gender) || {low:0,high:100,unit:''};
+        const rr = _refRange(testName, age, gender) || {low:0, high:100, unit:''};
         out.push({ param: testName, key, val, unit: rr.unit, low: rr.low, high: rr.high });
       }
       return out;
@@ -593,7 +849,19 @@ if ('serviceWorker' in navigator) {
     const params = PARAM_DEFS[tt] || [];
     params.forEach(p => {
       const val = parseFloat(d[p.key]);
-      if (!isNaN(val)) out.push({ param: p.name, key: p.key, val, unit: p.unit, low: p.low, high: p.high });
+      if (!isNaN(val)) {
+        // Gender-aware overrides for CBC Hb and HCT
+        let low = p.low, high = p.high;
+        if (tt === 'complex_cbc' && p.key === 'hb') {
+          low  = gender === 'Male' ? 13.5 : 12.0;
+          high = gender === 'Male' ? 17.5 : 15.5;
+        }
+        if (tt === 'complex_cbc' && p.key === 'hct') {
+          low  = gender === 'Male' ? 40 : 36;
+          high = gender === 'Male' ? 54 : 46;
+        }
+        out.push({ param: p.name, key: p.key, val, unit: p.unit, low, high });
+      }
     });
     return out;
   }
@@ -689,10 +957,8 @@ if ('serviceWorker' in navigator) {
     let samples = [];
     try {
       if (_analyticsCacheValid()) {
-        // Cache hit — re-use existing dataset, skip DB round-trip
         samples = _analyticsCache;
       } else {
-        // Cache miss or expired — fetch from DB and store
         const { data, error } = await _db
           .from('samples')
           .select('id,patient,age,gender,area,collection_date,status,sample_tests(id,test_name,status,result)')
@@ -946,13 +1212,18 @@ if ('serviceWorker' in navigator) {
           </tr>`;
         }).join('');
 
-        // Outliers table
-        const outliers = p.vals.filter(x=>x.val>p.high||x.val<p.low)
-          .sort((a,b)=>Math.abs(b.val-(b.val>p.high?p.high:p.low))-Math.abs(a.val-(a.val>p.high?p.high:p.low)))
-          .slice(0,5);
+        // Results table — every patient result for this parameter, normal and abnormal,
+        // sorted with the most abnormal (largest deviation) first
+        const outliers = [...p.vals]
+          .sort((a,b) => {
+            const da = a.val>p.high ? a.val-p.high : a.val<p.low ? p.low-a.val : 0;
+            const db = b.val>p.high ? b.val-p.high : b.val<p.low ? p.low-b.val : 0;
+            return db - da;
+          });
         const outlierRowsHtml = outliers.map(x => {
-          const flag = x.val > p.high ? '↑ HIGH' : '↓ LOW';
-          const col  = x.val > p.high ? '#b91c1c' : '#2563eb';
+          const isHigh = x.val > p.high, isLow = x.val < p.low;
+          const flag = isHigh ? '↑ HIGH' : isLow ? '↓ LOW' : 'Normal';
+          const col  = isHigh ? '#b91c1c' : isLow ? '#2563eb' : '#15803d';
           return `<tr>
             <td style="font-family:monospace;font-size:.75rem;">MU-${x.id}</td>
             <td style="font-size:.78rem;">${esc(x.patient)}</td>
@@ -1016,10 +1287,10 @@ if ('serviceWorker' in navigator) {
 
           ${outlierRowsHtml ? `
           <div>
-            <div class="analytics-inner-title">Notable Outliers (top 5)</div>
-            <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;overflow-x:auto;">
+            <div class="analytics-inner-title">All Results (${outliers.length})</div>
+            <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;overflow-x:auto;max-height:340px;overflow-y:auto;">
               <table class="analytics-age-table">
-                <thead><tr><th>Sample</th><th>Patient</th><th>Demographics</th><th>Value</th><th>Date</th></tr></thead>
+                <thead><tr style="position:sticky;top:0;background:#fff;z-index:1;"><th>Sample</th><th>Patient</th><th>Demographics</th><th>Value</th><th>Date</th></tr></thead>
                 <tbody>${outlierRowsHtml}</tbody>
               </table>
             </div>
@@ -1029,11 +1300,13 @@ if ('serviceWorker' in navigator) {
 
       // ── Qualitative deep dive (if no numeric params found) ────────────────
       if (!paramCards) {
-        // Collect all key-value pairs from the result JSON for this test
-        const qualMap = {}; // { paramKey: { name, values: { val: count } } }
+        const qualMap = {};
         const QUAL_PARAM_NAMES = {
           // Serology
           hbsag:'HBsAg', anti_hbs:'Anti-HBs', hbeag:'HBeAg', anti_hbe:'Anti-HBe', anti_hbc:'Anti-HBc',
+          hcv:'HCV', rvs:'RVS (HIV)', shcg:'SHCG (Pregnancy)',
+          // Blood group / genotype
+          hb_genotype:'Hb Genotype', blood_group:'Blood Group',
           // Malaria
           species:'Species', stage:'Stage',
           // Widal
@@ -1043,20 +1316,28 @@ if ('serviceWorker' in navigator) {
           mtb_detected:'MTB Detected', rif_resistance:'Rifampicin Resistance',
           // Culture
           organism:'Organism Isolated',
+          // Rheumatoid Factor
+          rf:'Rheumatoid Factor',
           // Urinalysis / MCS
           colour:'Colour', appearance:'Appearance', protein:'Protein', glucose:'Glucose',
           ketones:'Ketones', blood:'Blood', bilirubin:'Bilirubin', nitrite:'Nitrite',
-          leuko:'Leukocyte Esterase', bacteria:'Bacteria', yeast:'Yeast',
+          leuko:'Leukocyte Esterase', ascorbic_acid:'Ascorbic Acid',
+          bacteria:'Bacteria', yeast:'Yeast',
           gram_stain:'Gram Stain', india_ink:'India Ink', crypto_ag:'Cryptococcal Ag',
           // Stool
           consistency:'Consistency', colour_stool:'Colour', blood_stool:'Blood (Macroscopic)',
           mucus_stool:'Mucus', wbc_stool:'WBC (Pus Cells)', rbc_stool:'RBC',
           fat_globules:'Fat Globules', ova_parasite:'Ova/Parasites', yeast_stool:'Yeast',
-          occult_blood:'Occult Blood',
-          // Semen
-          viscosity:'Viscosity',
-          // CSF
-          gram_stain_csf:'Gram Stain',
+          occult_blood:'Occult Blood', micro_comment_stool:'Microscopy Comment',
+          // Semen qualitative
+          viscosity:'Viscosity', liquefaction:'Liquefaction',
+          // CSF qualitative
+          gram_stain_csf:'Gram Stain', india_ink_csf:'India Ink',
+          // Wet prep
+          wp_parasite:'Parasite / Ova',
+          // Blood transfusion
+          crossmatch:'Crossmatch Result', patient_blood_group:'Patient Blood Group',
+          donor_blood_group:'Donor Blood Group',
         };
 
         filtered.forEach(s => {
@@ -1073,7 +1354,7 @@ if ('serviceWorker' in navigator) {
             const strVal = String(v).trim();
             if (!strVal) return;
             const numV = parseFloat(strVal);
-            // Skip pure numbers (those are handled in quantitative section)
+            // Skip pure numbers (handled in quantitative section)
             if (!isNaN(numV) && String(numV) === strVal) return;
             // Skip probe Ct values, timestamps, long text
             if (strVal.length > 60) return;
@@ -1087,13 +1368,12 @@ if ('serviceWorker' in navigator) {
         const qualEntries = Object.values(qualMap).filter(p => Object.keys(p.values).length > 0);
 
         if (qualEntries.length) {
-          // Colour palette for frequency bars
           const BAR_COLOURS = ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316'];
-          // Decide if a value is a positive/reactive finding
           const POSITIVE_VALUES = new Set([
             'reactive','positive','detected','present','seen','growth','seen (incidental)',
             '+','++','+++','trace','few','moderate','many','turbid','cloudy','bloody',
-            'watery','loose','gram positive cocci','gram negative rods','fungi','other'
+            'watery','loose','gram positive cocci','gram negative rods','fungi','other',
+            'incompatible','weakly incompatible',
           ]);
 
           const qualCards = qualEntries.map(p => {
@@ -1144,7 +1424,6 @@ if ('serviceWorker' in navigator) {
           });
 
           if (textResults.length) {
-            // Frequency count of unique text results
             const freq = {};
             textResults.forEach(r => { freq[r.val] = (freq[r.val]||0)+1; });
             const sorted = Object.entries(freq).sort((a,b)=>b[1]-a[1]);
@@ -1225,11 +1504,310 @@ if ('serviceWorker' in navigator) {
 
   // ── Unit filter change re-populates test selector without full re-render ──
   document.getElementById('analyticsUnitFilter')?.addEventListener('change', () => {
-    // We need samples already cached; re-render if data is already showing
     const content = document.getElementById('analyticsContent');
     if (content && !content.querySelector('.analytics-empty')) {
       window.renderAnalytics();
     }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // §  CLINICAL ANALYTICS — CSV EXPORT
+  //
+  //  PURPOSE: Research-grade, wide-format export for use in SPSS, Stata, R,
+  //  Excel, Epi Info, DHIS2, WHO/UNICEF survey tools, and MoH reporting.
+  //
+  //  FORMAT: One row = one patient sample.
+  //  Columns:
+  //    Block A  — identifiers & demographics
+  //    Block B  — sample metadata (date, priority, area, unit)
+  //    Block C  — one column per numeric parameter across ALL panel tests
+  //               found in the filtered dataset (e.g. WBC, Hb, ALT, TSH …)
+  //               Value = actual numeric result; blank = not ordered / rejected
+  //    Block D  — one column per qualitative parameter found in the dataset
+  //               (HBsAg, Blood Group, Malaria species …)
+  //    Block E  — flag columns: "<param>_FLAG" = HIGH / LOW / NORMAL / blank
+  //    Block F  — meta: export timestamp, filter summary, app name
+  //
+  //  Why wide format?
+  //    - SPSS, Stata, R need one variable per column (not long/tidy).
+  //    - Allows immediate cross-tabulation, regression, survival analysis.
+  //    - WHO/UNICEF data templates are wide-format.
+  //    - MoH aggregate tools (Epi Info, DHIS2 import) expect flat rows.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  document.getElementById('exportAnalyticsBtn')?.addEventListener('click', async () => {
+    // Re-use the live cache — no extra DB call unless cache is stale
+    let samples = _analyticsCache;
+    if (!samples || !samples.length) {
+      window._showAnalyticsToast?.('Run analytics first, then export.');
+      return;
+    }
+
+    // Read current filter state (mirrors renderAnalytics filter logic exactly)
+    const dateFrom   = document.getElementById('analyticsDateFrom')?.value  || '';
+    const dateTo     = document.getElementById('analyticsDateTo')?.value    || '';
+    const genderFilt = document.getElementById('analyticsGender')?.value    || 'all';
+    const ageMin     = parseInt(document.getElementById('analyticsAgeMin')?.value)  || 0;
+    const ageMax     = parseInt(document.getElementById('analyticsAgeMax')?.value)  || 999;
+    const unitFilt   = document.getElementById('analyticsUnitFilter')?.value || '';
+    const areaFilt   = document.getElementById('analyticsAreaFilter')?.value || '';
+    const testFilt   = document.getElementById('analyticsTestSelect')?.value || '';
+
+    // Apply the same demographic + unit + area filters used in renderAnalytics
+    const withResults = samples.filter(s =>
+      (s.tests || []).some(t => t.result && t.result.trim() && t.status !== 'Rejected')
+    );
+
+    let filtered = withResults.filter(s => {
+      if (dateFrom && (s.collDate || '') < dateFrom) return false;
+      if (dateTo   && (s.collDate || '') > dateTo)   return false;
+      if (genderFilt !== 'all' && s.gender !== genderFilt) return false;
+      const a = parseInt(s.age);
+      if (!isNaN(a) && (a < ageMin || a > ageMax)) return false;
+      if (areaFilt && (s.area || '') !== areaFilt) return false;
+      if (unitFilt) {
+        const unitTests = new Set(_testDefs.units[unitFilt] || []);
+        const hasUnitTest = (s.tests || []).some(t => unitTests.has(t.test_name) && t.status !== 'Rejected' && t.result);
+        if (!hasUnitTest) return false;
+      }
+      // If a specific test is selected in the deep-dive, restrict to patients who have it
+      if (testFilt) {
+        const hasTest = (s.tests || []).some(t => t.test_name === testFilt && t.status !== 'Rejected' && t.result);
+        if (!hasTest) return false;
+      }
+      return true;
+    });
+
+    if (!filtered.length) {
+      alert('No data to export with current filters. Run analytics first.');
+      return;
+    }
+
+    // ── Pass 1: discover every numeric parameter and every qualitative key
+    //    present in the filtered dataset, maintaining insertion order ──────────
+    const numParamOrder  = [];   // display names, e.g. "WBC", "ALT"
+    const numParamKeyMap = {};   // displayName → { key, low, high, unit, testType }
+    const qualKeyOrder   = [];   // raw JSON keys, e.g. "hbsag", "blood_group"
+    const qualKeyNameMap = {};   // raw key → display name
+
+    // Qualitative display names (in sync with management.js QUAL_PARAM_NAMES)
+    const QUAL_DISPLAY = {
+      hbsag:'HBsAg', anti_hbs:'Anti-HBs', hbeag:'HBeAg', anti_hbe:'Anti-HBe',
+      anti_hbc:'Anti-HBc', hcv:'HCV', rvs:'RVS (HIV)', shcg:'SHCG (Pregnancy)',
+      hb_genotype:'Hb Genotype', blood_group:'Blood Group', species:'Malaria Species',
+      stage:'Malaria Stage', o:'Widal S.Typhi O', h:'Widal S.Typhi H',
+      ao:'Widal S.Paratyphi A(O)', ah:'Widal S.Paratyphi A(H)',
+      bo:'Widal S.Paratyphi B(O)', bh:'Widal S.Paratyphi B(H)',
+      co:'Widal S.Paratyphi C(O)', ch:'Widal S.Paratyphi C(H)',
+      mtb_detected:'TB MTB Detected', rif_resistance:'TB Rifampicin Resistance',
+      organism:'Culture Organism', rf:'Rheumatoid Factor',
+      colour:'Urine Colour', appearance:'Urine Appearance', protein:'Urine Protein',
+      glucose:'Urine Glucose', ketones:'Urine Ketones', blood:'Urine Blood',
+      bilirubin:'Urine Bilirubin', nitrite:'Urine Nitrite',
+      leuko:'Urine Leukocyte Esterase', ascorbic_acid:'Urine Ascorbic Acid',
+      bacteria:'Urine Bacteria', yeast:'Urine Yeast',
+      gram_stain:'Gram Stain', india_ink:'India Ink', crypto_ag:'Cryptococcal Ag',
+      consistency:'Stool Consistency', colour_stool:'Stool Colour',
+      blood_stool:'Stool Blood', mucus_stool:'Stool Mucus',
+      wbc_stool:'Stool WBC', rbc_stool:'Stool RBC', fat_globules:'Stool Fat Globules',
+      ova_parasite:'Stool Ova/Parasites', yeast_stool:'Stool Yeast',
+      occult_blood:'Stool Occult Blood', micro_comment_stool:'Stool Microscopy Comment',
+      viscosity:'Semen Viscosity', liquefaction:'Semen Liquefaction',
+      gram_stain_csf:'CSF Gram Stain', india_ink_csf:'CSF India Ink',
+      wp_parasite:'Wet Prep Parasite/Ova',
+      crossmatch:'Crossmatch Result', patient_blood_group:'Patient Blood Group',
+      donor_blood_group:'Donor Blood Group',
+    };
+
+    filtered.forEach(s => {
+      (s.tests || []).forEach(t => {
+        if (t.status === 'Rejected' || !t.result) return;
+        // If deep-dive filter is on, only scan that test
+        if (testFilt && t.test_name !== testFilt) return;
+
+        // Numeric parameters
+        const nums = _extractNumerics(t.test_name, t.result, s.age, s.gender);
+        nums.forEach(n => {
+          if (!numParamKeyMap[n.param]) {
+            numParamOrder.push(n.param);
+            numParamKeyMap[n.param] = { key: n.key, low: n.low, high: n.high, unit: n.unit, testName: t.test_name };
+          }
+        });
+
+        // Qualitative parameters
+        if (!t.result.startsWith('{')) return;
+        let d;
+        try { d = JSON.parse(t.result); } catch(e) { return; }
+        Object.entries(d).forEach(([k, v]) => {
+          if (v === null || v === undefined || v === '') return;
+          if (typeof v === 'object') return;
+          const strVal = String(v).trim();
+          if (!strVal || strVal.length > 80) return;
+          if (/^\d{4}-\d{2}-\d{2}/.test(strVal)) return;
+          const numV = parseFloat(strVal);
+          // Skip pure numbers (already in numeric block)
+          if (!isNaN(numV) && String(numV) === strVal) return;
+          if (!qualKeyNameMap[k]) {
+            qualKeyOrder.push(k);
+            qualKeyNameMap[k] = QUAL_DISPLAY[k] || k.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+          }
+        });
+      });
+    });
+
+    // ── Build metadata header block (rows before the data) ──────────────────
+    const filterDesc = [
+      dateFrom || dateTo ? `Date: ${dateFrom||'*'} → ${dateTo||'*'}` : null,
+      genderFilt !== 'all' ? `Gender: ${genderFilt}` : null,
+      (ageMin > 0 || ageMax < 999) ? `Age: ${ageMin}–${ageMax}` : null,
+      unitFilt ? `Unit: ${unitFilt}` : null,
+      areaFilt ? `Area: ${areaFilt}` : null,
+      testFilt ? `Test: ${testFilt}` : null,
+    ].filter(Boolean).join(' | ') || 'No filters applied';
+
+    const metaBlock = [
+      ['EXPORT INFORMATION'],
+      ['System:', "MU'UJIZA Laboratory Information System"],
+      ['Report:', 'Clinical Analytics Dataset — Research Export'],
+      ['Generated:', new Date().toLocaleString('en-GB', { dateStyle:'full', timeStyle:'medium' })],
+      ['Exported by:', `${(window._currentSession||{}).name||'—'} (${(window._currentSession||{}).role||'—'})`],
+      ['Active filters:', filterDesc],
+      ['Patients exported:', filtered.length],
+      ['Numeric parameters:', numParamOrder.length],
+      ['Qualitative parameters:', qualKeyOrder.length],
+      ['Cache age (min):', ((_analyticsCacheTime ? ((Date.now()-_analyticsCacheTime)/60000) : 0)).toFixed(1)],
+      ['NOTE:', 'Blank cell = test not ordered or result rejected. Not equivalent to zero.'],
+      ['NOTE:', 'Flag values: HIGH | LOW | NORMAL. Blank = not applicable or not numeric.'],
+      ['NOTE:', 'Numeric reference ranges are gender/age-adjusted where applicable (Hb, HCT).'],
+      [],
+    ];
+
+    // ── Build column header row ──────────────────────────────────────────────
+    // Block A — identifiers
+    const colsA = [
+      'Sample_ID',        // MU-{id}  — unique key for cross-referencing
+      'Patient_Name',
+      'Age_Years',
+      'Age_Group',        // 0–4, 5–12, 13–17, 18–29, 30–44, 45–59, 60–74, 75+
+      'Gender',
+      'Area_Locality',
+    ];
+    // Block B — sample metadata
+    const colsB = [
+      'Collection_Date',
+      'Priority',         // Routine / Urgent / STAT
+      'Sample_Status',    // Result Released (all rows in analytics are released)
+    ];
+    // Block C — numeric values
+    const colsC = numParamOrder.map(p => {
+      const info = numParamKeyMap[p];
+      return `${p.replace(/[\s/()+-]/g,'_')} (${info.unit||'–'})`;
+    });
+    // Block D — qualitative values
+    const colsD = qualKeyOrder.map(k => qualKeyNameMap[k].replace(/[\s/()]/g,'_'));
+    // Block E — flag columns for each numeric param
+    const colsE = numParamOrder.map(p => `${p.replace(/[\s/()+-]/g,'_')}_FLAG`);
+
+    const headerRow = [...colsA, ...colsB, ...colsC, ...colsD, ...colsE];
+
+    // ── Build data rows ──────────────────────────────────────────────────────
+    // Helper: age group (mirrors _ageGroup in the module)
+    const ageGrp = age => {
+      const a = parseInt(age);
+      if (isNaN(a)||a<0) return 'Unknown';
+      if (a<5) return '0–4'; if (a<13) return '5–12'; if (a<18) return '13–17';
+      if (a<30) return '18–29'; if (a<45) return '30–44'; if (a<60) return '45–59';
+      if (a<75) return '60–74'; return '75+';
+    };
+
+    const dataRows = filtered.map(s => {
+      // Block A
+      const rowA = [
+        `MU-${s.id}`,
+        s.patient || '',
+        s.age ?? '',
+        ageGrp(s.age),
+        s.gender || '',
+        s.area || '',
+      ];
+      // Block B
+      const rowB = [
+        s.collDate || s.collection_date || '',
+        s.priority || '',
+        s.status || 'Result Released',
+      ];
+
+      // Gather all numeric results for this patient across all their tests
+      const numVals  = {};  // param display name → { val, low, high }
+      const qualVals = {};  // raw key → string value
+
+      (s.tests || []).forEach(t => {
+        if (t.status === 'Rejected' || !t.result) return;
+        if (testFilt && t.test_name !== testFilt) return;
+
+        // Numeric
+        const nums = _extractNumerics(t.test_name, t.result, s.age, s.gender);
+        nums.forEach(n => {
+          if (numVals[n.param] === undefined) {
+            numVals[n.param] = { val: n.val, low: n.low, high: n.high };
+          }
+        });
+
+        // Qualitative
+        if (!t.result.startsWith('{')) return;
+        let d;
+        try { d = JSON.parse(t.result); } catch(e) { return; }
+        Object.entries(d).forEach(([k, v]) => {
+          if (v === null || v === undefined || v === '') return;
+          if (typeof v === 'object') return;
+          const strVal = String(v).trim();
+          if (!strVal || strVal.length > 80) return;
+          if (/^\d{4}-\d{2}-\d{2}/.test(strVal)) return;
+          const numV = parseFloat(strVal);
+          if (!isNaN(numV) && String(numV) === strVal) return;
+          if (qualVals[k] === undefined) qualVals[k] = strVal;
+        });
+      });
+
+      // Block C — numeric values (blank if not available for this patient)
+      const rowC = numParamOrder.map(p => {
+        const entry = numVals[p];
+        return entry !== undefined ? entry.val : '';
+      });
+      // Block D — qualitative values
+      const rowD = qualKeyOrder.map(k => qualVals[k] ?? '');
+      // Block E — flags
+      const rowE = numParamOrder.map(p => {
+        const entry = numVals[p];
+        if (entry === undefined) return '';
+        if (entry.val > entry.high) return 'HIGH';
+        if (entry.val < entry.low)  return 'LOW';
+        return 'NORMAL';
+      });
+
+      return [...rowA, ...rowB, ...rowC, ...rowD, ...rowE];
+    });
+
+    // ── Reference range legend block (appended after data) ──────────────────
+    const legendBlock = [
+      [],
+      ['NUMERIC REFERENCE RANGES (used for FLAG column)'],
+      ['Parameter', 'Units', 'Lower Limit', 'Upper Limit', 'Notes'],
+      ...numParamOrder.map(p => {
+        const info = numParamKeyMap[p];
+        const genderNote = ['Haemoglobin','Haematocrit'].includes(p)
+          ? 'Gender-adjusted per row (M/F differ)' : '';
+        return [p, info.unit || '', info.low, info.high, genderNote];
+      }),
+    ];
+
+    // ── Assemble final CSV ───────────────────────────────────────────────────
+    const allRows = [...metaBlock, headerRow, ...dataRows, ...legendBlock];
+    const filename = `muujiza_clinical_export_${_csvDate()}.csv`;
+    _downloadCsv(filename, allRows);
+
+    const msg = `Exported ${filtered.length} patients · ${numParamOrder.length} numeric + ${qualKeyOrder.length} qualitative parameters → ${filename}`;
+    (typeof showToast === 'function') ? showToast(msg, 'success') : alert(msg);
   });
 
 })();
