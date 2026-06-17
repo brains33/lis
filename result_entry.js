@@ -316,21 +316,21 @@ function getReferenceRange(testName, age, gender) {
   const isFemale = (gender === 'Female');
   switch (testName) {
     case 'PCV': case 'Packed Cell Volume': case 'Hematocrit': case 'HCT':
-      if (isMale) return { low: 40, high: 54, unit: '%' };
-      if (isFemale) return { low: 36, high: 46, unit: '%' };
+      if (isMale) return { low: 40, high: 45, unit: '%' };
+      if (isFemale) return { low: 35, high: 40, unit: '%' };
       return { low: 36, high: 46, unit: '%' };
     case 'Hb': case 'Hemoglobin':
       if (isMale) return { low: 13.5, high: 17.5, unit: 'g/dL' };
       if (isFemale) return { low: 12.0, high: 15.5, unit: 'g/dL' };
       return { low: 12.0, high: 15.5, unit: 'g/dL' };
     case 'ESR': case 'Erythrocyte Sedimentation Rate':
-      if (isMale) return { low: 0, high: 10, unit: 'mm/hr' };
-      if (isFemale) return { low: 0, high: 20, unit: 'mm/hr' };
+      if (isMale) return { low: 0, high: 5, unit: 'mm/hr' };
+      if (isFemale) return { low: 0, high: 10, unit: 'mm/hr' };
       return { low: 0, high: 15, unit: 'mm/hr' };
     case 'RBS': case 'Random Blood Sugar':
-      return { low: 70, high: 140, unit: 'mg/dL' };
+      return { low: 6.0, high: 9.0, unit: 'mmol/L' };
     case 'FBS': case 'Fasting Blood Sugar':
-      return { low: 70, high: 100, unit: 'mg/dL' };
+      return { low: 3.0, high: 6.0, unit: 'mmol/L' };
     default: return null;
   }
 }
