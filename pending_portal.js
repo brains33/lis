@@ -101,15 +101,15 @@ function getReferenceRange(testName, age, gender) {
       return { low: 12.0, high: 15.5, unit: 'g/dL' };
     case 'ESR':
     case 'Erythrocyte Sedimentation Rate':
-      if (isMale) return { low: 0, high: 10, unit: 'mm/hr' };
-      if (isFemale) return { low: 0, high: 20, unit: 'mm/hr' };
+      if (isMale) return { low: 0, high: 5, unit: 'mm/hr' };
+      if (isFemale) return { low: 0, high: 10, unit: 'mm/hr' };
       return { low: 0, high: 15, unit: 'mm/hr' };
     case 'RBS':
     case 'Random Blood Sugar':
-      return { low: 70, high: 140, unit: 'mg/dL' };
+      return { low: 6.0, high: 9.0, unit: 'mmol/L' };
     case 'FBS':
     case 'Fasting Blood Sugar':
-      return { low: 70, high: 100, unit: 'mg/dL' };
+      return { low: 3.0, high: 6.0, unit: 'mmol/L' };
     default:
       return null;
   }
@@ -1345,7 +1345,7 @@ async function generatePDF(id) {
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(10);
       pdf.setTextColor(255,255,255);
-      pdf.text("GENERAL HOSPITAL KONTAGORA", PW / 2, 7, { align: 'center' });
+      pdf.text("KOFAR AREWA PRIMARY HEALTH CARE HADEJIA LGA", PW / 2, 7, { align: 'center' });
       pdf.setFontSize(8);
       pdf.text('MEDICAL LABORATORY SCIENCE DEPARTMENT', PW / 2, 13, { align: 'center' });
       // Niger State logo left side
