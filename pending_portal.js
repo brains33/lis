@@ -680,6 +680,86 @@ const SEROLOGY_PARAMS = [
   {key:'anti_hbc', name:'Anti-HBc (Total)', type:'select', options:['Non-reactive','Reactive']},
 ];
 
+// ── HISTOPATHOLOGY (Biopsy / Surgical Pathology) ──
+const HISTOPATH_PARAMS = [
+  {key:'specimen_site',   name:'Specimen / Site',              unit:'', type:'text',   section:'Request'},
+  {key:'clinical_info',   name:'Clinical History',             unit:'', type:'text',   section:'Request'},
+  {key:'nature_specimen', name:'Nature of Specimen',           unit:'', type:'select', section:'Request',
+   options:['Incision Biopsy','Excision Biopsy','Core Needle Biopsy',
+            'Wide Local Excision','Radical Resection','Endoscopic Biopsy',
+            'Curettage','Amputation Specimen','Polypectomy','Other']},
+  {key:'fixative',        name:'Fixative Used',                unit:'', type:'select', section:'Request',
+   options:["10% Formalin","Formal Saline","Bouin's Solution","Fresh (Unfixed)","Other"]},
+  {key:'macro_desc',      name:'Macroscopic Description',      unit:'', type:'textarea', section:'Report'},
+  {key:'micro_desc',      name:'Microscopic Description',      unit:'', type:'textarea', section:'Report'},
+  {key:'special_stains',  name:'Special Stains',               unit:'', type:'text',   section:'Report'},
+  {key:'diagnosis',       name:'Histopathological Diagnosis',  unit:'', type:'textarea', section:'Report'},
+  {key:'grade',           name:'Tumour Grade (if applicable)', unit:'', type:'select', section:'Report',
+   options:['Not Applicable','Grade I — Well Differentiated','Grade II — Moderately Differentiated',
+            'Grade III — Poorly Differentiated','Grade IV — Undifferentiated']},
+  {key:'margins',         name:'Surgical Margins',             unit:'', type:'select', section:'Report',
+   options:['Not Applicable','Clear (>1mm)','Close (<1mm)','Involved','Cannot Assess']},
+  {key:'lymph_nodes',     name:'Lymph Node Status',            unit:'', type:'text',   section:'Report'},
+  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'},
+  {key:'comments',        name:'Comments / Recommendation',    unit:'', type:'textarea', section:'Report'}
+];
+
+// ── FNAC — Fine Needle Aspiration Cytology ──
+const FNAC_PARAMS = [
+  {key:'site',          name:'Site of Aspiration',         unit:'', type:'text',   section:'Request'},
+  {key:'laterality',    name:'Laterality',                 unit:'', type:'select', section:'Request',
+   options:['Right','Left','Bilateral','Midline','Not Applicable']},
+  {key:'lesion_size',   name:'Lesion Size (cm)',            unit:'cm', type:'number', low:0, high:30, section:'Request'},
+  {key:'clinical_info', name:'Clinical Information',        unit:'', type:'text',   section:'Request'},
+  {key:'adequacy',      name:'Adequacy of Sample',         unit:'', type:'select', section:'Report',
+   options:['Adequate for Diagnosis','Inadequate — Scanty Cellularity',
+            'Inadequate — Haemorrhagic','Repeat Aspiration Advised']},
+  {key:'stain',         name:'Stain Used',                 unit:'', type:'select', section:'Report',
+   options:['Papanicolaou (Pap)','Diff-Quik (DQ)','Both Pap and DQ','H&E','MGG']},
+  {key:'cytology',      name:'Cytological Diagnosis',      unit:'', type:'select', section:'Report',
+   options:['Benign / Reactive','Inflammatory / Infective — See Comments',
+            'Colloid Goitre (Thyroid)','Follicular Neoplasm (Thyroid)',
+            'Papillary Thyroid Carcinoma','Reactive Lymphadenopathy',
+            'Granulomatous Lymphadenitis (? TB)','Suspicious for Lymphoma',
+            'Fibrocystic Disease (Breast)','Fibroadenoma (Breast)',
+            'Suspicious for Malignancy','Malignant — See Microscopic Description',
+            'Abscess / Necrotic Material','No Diagnostic Material — Repeat']},
+  {key:'micro_desc',    name:'Microscopic Description',    unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
+  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'}
+];
+
+// ── PAP Smear — Bethesda 2014 system ──
+const PAP_SMEAR_PARAMS = [
+  {key:'specimen_type', name:'Specimen Type',              unit:'', type:'select', section:'Request',
+   options:['Conventional Pap Smear','Liquid-Based Cytology (LBC)',
+            'Endocervical Brush','Cervical Scrape + ECS']},
+  {key:'lmp',           name:'LMP (Last Menstrual Period)',unit:'', type:'text',   section:'Request'},
+  {key:'clinical_info', name:'Clinical Information',       unit:'', type:'text',   section:'Request'},
+  {key:'adequacy',      name:'Specimen Adequacy',          unit:'', type:'select', section:'Report',
+   options:['Satisfactory for Evaluation','Unsatisfactory — Insufficient Squamous Cells',
+            'Unsatisfactory — Obscuring Blood','Unsatisfactory — Obscuring Inflammation',
+            'Unsatisfactory — Broken / Unfixed Slide']},
+  {key:'cytology',      name:'Cytological Findings (Bethesda)', unit:'', type:'select', section:'Report',
+   options:['Negative for Intraepithelial Lesion or Malignancy (NILM)',
+            'ASC-US','ASC-H','LSIL (CIN I)','HSIL (CIN II / CIN III)',
+            'Squamous Cell Carcinoma','Atypical Glandular Cells (AGC)',
+            'Adenocarcinoma In Situ (AIS)','Endocervical Adenocarcinoma',
+            'Endometrial Cells (patient ≥45 yrs)']},
+  {key:'organisms',     name:'Organisms / Infection',      unit:'', type:'select', section:'Report',
+   options:['None Identified','Trichomonas vaginalis','Bacterial Vaginosis',
+            'Candida spp.','HSV Cytopathic Effect','Actinomyces spp.']},
+  {key:'hormonal',      name:'Hormonal Assessment',        unit:'', type:'select', section:'Report',
+   options:['Compatible with Age and History','Atrophic Pattern',
+            'Estrogenic Effect','Incompatible — See Comments']},
+  {key:'recommendation',name:'Recommendation',             unit:'', type:'select', section:'Report',
+   options:['Routine Repeat in 3 Years','Repeat in 6 Months',
+            'Colposcopy Recommended','Biopsy Recommended',
+            'HPV Testing Recommended','Refer to Gynaecologist — Urgent']},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
+  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'}
+];
+
 const URINE_MICRO_PARAMS = [
   {key:'colour',      name:'Colour',             unit:'', section:'Physical',  type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown']},
   {key:'appearance',  name:'Appearance',          unit:'', section:'Physical',  type:'select', options:['Clear','Turbid','Cloudy']},
@@ -730,6 +810,8 @@ function getFlag(val, param) {
 // ========== TEST TYPE RESOLUTION (top-level so all functions can access) ==========
 function resolveTestType(testName, resultJson) {
   const fromDef = testDefinitions.testTypes[testName] || '';
+  // Return simple types immediately — they don't need name/key sniffing
+  if (fromDef === 'simple_numeric' || fromDef === 'simple_select') return fromDef;
   // Only trust fromDef if it's a known complex type; otherwise fall through to name/key sniffing
   const KNOWN_COMPLEX = ['complex_cbc','complex_eucr','complex_calcium','complex_phosphate','complex_uric_acid',
     'complex_lft','complex_total_protein','complex_psa','complex_diabetes','complex_rf','complex_hormone',
@@ -737,7 +819,8 @@ function resolveTestType(testName, resultJson) {
     'complex_coag','complex_urinalysis','complex_iron','complex_bone','complex_cardiac','complex_ogtt',
     'complex_csf','complex_abg','complex_semen','complex_culture','complex_stool_cs','complex_urine_mcs',
     'complex_stool_mcs','complex_malaria','complex_widal','complex_serology','complex_tb_genexpert',
-    'complex_pcv','complex_hb','complex_esr','complex_rbs','complex_fbs'];
+    'complex_pcv','complex_hb','complex_esr','complex_rbs','complex_fbs',
+    'complex_histopath','complex_fnac','complex_pap_smear'];
   if (fromDef && KNOWN_COMPLEX.includes(fromDef)) return fromDef;
   const n = (testName || '').toLowerCase();
   // Hard-coded name patterns (always reliable)
@@ -772,6 +855,9 @@ function resolveTestType(testName, resultJson) {
   if (/\bserology\b|\bhbv\s*profile\b|\bhepatitis\b/.test(n)) return 'complex_serology';
   if (/\bculture\b/.test(n)) return 'complex_culture';
   if (/\btb\s*genexpert\b|\bgenexpert\b/.test(n)) return 'complex_tb_genexpert';
+  if (/histopath|biopsy|histology|surgical\s*path|tissue/.test(n)) return 'complex_histopath';
+  if (/fnac|fine\s*needle|aspiration\s*cytol/.test(n)) return 'complex_fnac';
+  if (/pap\s*smear|cervical\s*cytol|papanicolaou/.test(n)) return 'complex_pap_smear';
 
   // Last resort: sniff JSON keys to identify the param set
   if (resultJson && typeof resultJson === 'object') {
@@ -805,6 +891,9 @@ function resolveTestType(testName, resultJson) {
     if (keys.some(k => ['mtb_detected','rif_resistance'].includes(k))) return 'complex_tb_genexpert';
     if (keys.some(k => ['species','stage','density'].includes(k))) return 'complex_malaria';
     if (keys.some(k => ['o','h','ao','ah'].includes(k))) return 'complex_widal';
+    if (keys.some(k => ['macro_desc','micro_desc','diagnosis','nature_specimen'].includes(k))) return 'complex_histopath';
+    if (keys.some(k => ['site','laterality','cytology','adequacy'].includes(k)) && keys.some(k => ['stain','lesion_size'].includes(k))) return 'complex_fnac';
+    if (keys.some(k => ['specimen_type','lmp','organisms','recommendation'].includes(k))) return 'complex_pap_smear';
   }
   return '';
 }
@@ -1134,6 +1223,74 @@ function buildParamTable(testName, data, testType, age, gender) {
     return `<table class="param-table"><tbody>${rows}</tbody></table>`;
   }
 
+  // Histopathology
+  if (testType === 'complex_histopath') {
+    const sections = ['Request', 'Report'];
+    let html = '';
+    sections.forEach(sec => {
+      const secParams = HISTOPATH_PARAMS.filter(p => p.section === sec);
+      let secRows = '';
+      secParams.forEach(p => {
+        let v = data[p.key];
+        if (v === undefined || v === null || v === '') return;
+        secRows += `<tr><td style="font-weight:500;width:38%;">${esc(p.name)}</td><td colspan="3" style="white-space:pre-wrap;">${esc(v)}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<table class="param-table">
+        <thead><tr><th colspan="4" style="background:#f3e8ff;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#6b21a8;">${sec === 'Request' ? 'Request Details' : 'Pathology Report'}</th></tr></thead>
+        <tbody>${secRows}</tbody>
+      </table>`;
+    });
+    return html || `<table class="param-table"><tbody><tr><td colspan="4" style="color:#6b7280;">No histopathology data recorded.</td></tr></tbody></table>`;
+  }
+
+  // FNAC
+  if (testType === 'complex_fnac') {
+    const sections = ['Request', 'Report'];
+    let html = '';
+    sections.forEach(sec => {
+      const secParams = FNAC_PARAMS.filter(p => p.section === sec);
+      let secRows = '';
+      secParams.forEach(p => {
+        let v = data[p.key];
+        if (v === undefined || v === null || v === '') return;
+        let flag = ''; let cls = '';
+        if (p.type === 'number' && p.low !== undefined) {
+          let n = parseFloat(v);
+          if (!isNaN(n)) { if (n > p.high) { flag = '↑'; cls = 'flag-high'; } else if (n < p.low) { flag = '↓'; cls = 'flag-low'; } }
+        }
+        secRows += `<tr><td style="font-weight:500;width:38%;">${esc(p.name)}</td><td class="${cls}" colspan="3" style="white-space:pre-wrap;">${esc(String(v))} ${flag}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<table class="param-table">
+        <thead><tr><th colspan="4" style="background:#fef9c3;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#854d0e;">${sec === 'Request' ? 'FNAC Request Details' : 'Cytology Report'}</th></tr></thead>
+        <tbody>${secRows}</tbody>
+      </table>`;
+    });
+    return html || `<table class="param-table"><tbody><tr><td colspan="4" style="color:#6b7280;">No FNAC data recorded.</td></tr></tbody></table>`;
+  }
+
+  // PAP Smear
+  if (testType === 'complex_pap_smear') {
+    const sections = ['Request', 'Report'];
+    let html = '';
+    sections.forEach(sec => {
+      const secParams = PAP_SMEAR_PARAMS.filter(p => p.section === sec);
+      let secRows = '';
+      secParams.forEach(p => {
+        let v = data[p.key];
+        if (v === undefined || v === null || v === '') return;
+        secRows += `<tr><td style="font-weight:500;width:38%;">${esc(p.name)}</td><td colspan="3" style="white-space:pre-wrap;">${esc(String(v))}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<table class="param-table">
+        <thead><tr><th colspan="4" style="background:#fce7f3;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#9d174d;">${sec === 'Request' ? 'Request Details' : 'PAP Smear Report (Bethesda)'}</th></tr></thead>
+        <tbody>${secRows}</tbody>
+      </table>`;
+    });
+    return html || `<table class="param-table"><tbody><tr><td colspan="4" style="color:#6b7280;">No PAP smear data recorded.</td></tr></tbody></table>`;
+  }
+
   // Semen Analysis (with Culture & Sensitivity on separate visual section)
   if (testType === 'complex_semen') {
     // Section definitions matching the physical form
@@ -1434,6 +1591,9 @@ async function generatePDF(id) {
   let semenPageData = null;            // semen test handled separately as a form-style page
   let bloodTransfusionPageData = null; // blood transfusion rendered as BTS-REQ-XM/v1 form page
   let mcsPageData = null;              // urine/stool MCS rendered as a dedicated single-page form
+  let histopathPageData = null;        // histopathology biopsy rendered as a dedicated single-page form
+  let fnacPageData = null;             // FNAC rendered as a dedicated single-page form
+  let papSmearPageData = null;         // PAP smear rendered as a dedicated single-page form
   const groups = groupTestsByUnit(s.tests);
 
 
@@ -1466,6 +1626,14 @@ async function generatePDF(id) {
       });
       continue; // skip adding any rows for this group
     }
+
+    // Check if all tests in this unit are histopath / FNAC / PAP smear — render as dedicated form pages
+    const allHistopath = unitTests.every(t => { let d=null; try{if(t.result?.startsWith('{'))d=JSON.parse(t.result);}catch(e){} return resolveTestType(t.test_name,d)==='complex_histopath'; });
+    if (allHistopath) { unitTests.forEach(t => { try{if(t.result?.startsWith('{'))histopathPageData=JSON.parse(t.result);}catch(e){} }); continue; }
+    const allFNAC = unitTests.every(t => { let d=null; try{if(t.result?.startsWith('{'))d=JSON.parse(t.result);}catch(e){} return resolveTestType(t.test_name,d)==='complex_fnac'; });
+    if (allFNAC) { unitTests.forEach(t => { try{if(t.result?.startsWith('{'))fnacPageData=JSON.parse(t.result);}catch(e){} }); continue; }
+    const allPAP = unitTests.every(t => { let d=null; try{if(t.result?.startsWith('{'))d=JSON.parse(t.result);}catch(e){} return resolveTestType(t.test_name,d)==='complex_pap_smear'; });
+    if (allPAP) { unitTests.forEach(t => { try{if(t.result?.startsWith('{'))papSmearPageData=JSON.parse(t.result);}catch(e){} }); continue; }
 
     // section header row (spans all 4 cols via didParseCell)
     const unitHeaderIdx = tableBody.length;
@@ -1508,6 +1676,12 @@ async function generatePDF(id) {
             bloodTransfusionPageData = data; // drawn separately as BTS-REQ-XM/v1 form page
           } else if (testType === 'complex_urine_mcs' || testType === 'complex_stool_mcs') {
             mcsPageData = { data, testType, testName: t.test_name }; // drawn as dedicated MCS page — no tableBody rows
+          } else if (testType === 'complex_histopath') {
+            histopathPageData = data;
+          } else if (testType === 'complex_fnac') {
+            fnacPageData = data;
+          } else if (testType === 'complex_pap_smear') {
+            papSmearPageData = data;
           } else {
             collectAutoTableRows(tableBody, t.test_name, data, testType, s.age, s.gender);
           }
@@ -1651,10 +1825,26 @@ async function generatePDF(id) {
     drawBloodTransfusionFormPage(pdf, bloodTransfusionPageData, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, tableBody.length > 0, y);
   }
 
+  // ── Histopathology — draw as dedicated single-page narrative form ──
+  if (histopathPageData) {
+    drawHistopathFormPage(pdf, histopathPageData, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, tableBody.length > 0 || semenPageData || mcsPageData || bloodTransfusionPageData, y);
+  }
+
+  // ── FNAC — draw as dedicated single-page cytology form ──
+  if (fnacPageData) {
+    drawFNACFormPage(pdf, fnacPageData, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, tableBody.length > 0 || semenPageData || mcsPageData || bloodTransfusionPageData || histopathPageData, y);
+  }
+
+  // ── PAP Smear — draw as dedicated single-page Bethesda form ──
+  if (papSmearPageData) {
+    drawPAPSmearFormPage(pdf, papSmearPageData, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, tableBody.length > 0 || semenPageData || mcsPageData || bloodTransfusionPageData || histopathPageData || fnacPageData, y);
+  }
+
   // ── Authorising signature block ──
   // Skipped for Blood Transfusion: Section 9 of the BTS-REQ-XM/v1 form already
   // contains the Laboratory Authorisation block (Performed By / Checked By).
-  if (!bloodTransfusionPageData) {
+  // Also skipped for Histopath/FNAC/PAP: the form page includes the Reporting Pathologist field.
+  if (!bloodTransfusionPageData && !histopathPageData && !fnacPageData && !papSmearPageData) {
     const lastPage = pdf.getNumberOfPages();
     pdf.setPage(lastPage);
     let sigY = pdf.lastAutoTable ? pdf.lastAutoTable.finalY + 10 : (y + 10);
@@ -1826,6 +2016,231 @@ function drawMCSFormPage(pdf, d, testType, testName, s, PW, PH, ML, MR, GREEN, D
     pdf.text('No antibiotic sensitivities recorded.', ML + 2, y + rowH - 1.5);
     y += rowH;
   }
+}
+
+// ── HISTOPATHOLOGY — dedicated single-page narrative form renderer ──
+function drawHistopathFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, hasOtherTests, startY) {
+  function val(key) { const v = d[key]; return (v === undefined || v === null || v === '') ? '—' : String(v); }
+  if (hasOtherTests) pdf.addPage();
+  const CW = PW - ML - MR;
+  let y = hasOtherTests ? 24 : (startY || 26);
+  const PURPLE = [109, 40, 217];
+  const PURPLE_LIGHT = [243, 232, 255];
+  const rowH = 5.5;
+
+  // Title bar
+  pdf.setFillColor(...PURPLE);
+  pdf.rect(ML, y, CW, 6, 'F');
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(255,255,255);
+  pdf.text('HISTOPATHOLOGY REPORT', PW / 2, y + 4.2, { align: 'center' });
+  y += 8;
+
+  // Helper: draw a labelled row
+  function drawRow(label, value, yPos, stripe) {
+    if (stripe) { pdf.setFillColor(...LGRAY); pdf.rect(ML, yPos, CW, rowH, 'F'); }
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    pdf.text(label, ML + 2, yPos + 3.8);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    // wrap long text across remaining width
+    const lines = pdf.splitTextToSize(value, CW - 60);
+    pdf.text(lines[0] || value, ML + 58, yPos + 3.8);
+    return rowH * Math.max(1, lines.length);
+  }
+
+  // Section header
+  function sectionHeader(title, yPos, color) {
+    pdf.setFillColor(...color); pdf.rect(ML, yPos, CW, 5, 'F');
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+    pdf.text(title, ML + 2, yPos + 3.6);
+    return 6.5;
+  }
+
+  // ── REQUEST DETAILS ──
+  y += sectionHeader('REQUEST DETAILS', y, PURPLE_LIGHT);
+  const reqKeys = ['specimen_site','clinical_info','nature_specimen','fixative'];
+  reqKeys.forEach((k, i) => {
+    const p = HISTOPATH_PARAMS.find(x => x.key === k);
+    if (!p) return;
+    y += drawRow(p.name, val(k), y, i % 2 === 0);
+  });
+  y += 3;
+
+  // ── PATHOLOGY REPORT ──
+  y += sectionHeader('PATHOLOGY REPORT', y, PURPLE_LIGHT);
+  const rptKeys = ['macro_desc','micro_desc','special_stains','diagnosis','grade','margins','lymph_nodes','pathologist','comments'];
+  rptKeys.forEach((k, i) => {
+    const p = HISTOPATH_PARAMS.find(x => x.key === k);
+    if (!p) return;
+    const v = val(k);
+    if (v === '—') return;
+    // Textarea fields get multi-line treatment
+    if (p.type === 'textarea') {
+      y += sectionHeader(p.name.toUpperCase(), y, [232, 244, 240]);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+      const lines = pdf.splitTextToSize(v, CW - 4);
+      lines.forEach(line => {
+        pdf.text(line, ML + 2, y + 4);
+        y += 5.5;
+        if (y > PH - 25) { pdf.addPage(); y = 24; }
+      });
+      y += 2;
+    } else {
+      y += drawRow(p.name, v, y, i % 2 === 0);
+      if (y > PH - 25) { pdf.addPage(); y = 24; }
+    }
+  });
+}
+
+// ── FNAC — dedicated single-page cytology form renderer ──
+function drawFNACFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, hasOtherTests, startY) {
+  function val(key) { const v = d[key]; return (v === undefined || v === null || v === '') ? '—' : String(v); }
+  if (hasOtherTests) pdf.addPage();
+  const CW = PW - ML - MR;
+  let y = hasOtherTests ? 24 : (startY || 26);
+  const AMBER = [146, 64, 14];
+  const AMBER_LIGHT = [254, 249, 195];
+  const rowH = 5.5;
+
+  // Title bar
+  pdf.setFillColor(...AMBER);
+  pdf.rect(ML, y, CW, 6, 'F');
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(255,255,255);
+  pdf.text('FINE NEEDLE ASPIRATION CYTOLOGY (FNAC)', PW / 2, y + 4.2, { align: 'center' });
+  y += 8;
+
+  function drawRow(label, value, yPos, stripe) {
+    if (stripe) { pdf.setFillColor(...LGRAY); pdf.rect(ML, yPos, CW, rowH, 'F'); }
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    pdf.text(label, ML + 2, yPos + 3.8);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    const lines = pdf.splitTextToSize(value, CW - 60);
+    pdf.text(lines[0] || value, ML + 58, yPos + 3.8);
+    return rowH;
+  }
+
+  function sectionHeader(title, yPos, color) {
+    pdf.setFillColor(...color); pdf.rect(ML, yPos, CW, 5, 'F');
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+    pdf.text(title, ML + 2, yPos + 3.6);
+    return 6.5;
+  }
+
+  // ── REQUEST DETAILS ──
+  y += sectionHeader('FNAC REQUEST DETAILS', y, AMBER_LIGHT);
+  const reqKeys = ['site','laterality','lesion_size','clinical_info'];
+  reqKeys.forEach((k, i) => {
+    const p = FNAC_PARAMS.find(x => x.key === k);
+    if (!p) return;
+    y += drawRow(p.name, val(k), y, i % 2 === 0);
+  });
+  y += 3;
+
+  // ── CYTOLOGY REPORT ──
+  y += sectionHeader('CYTOLOGY REPORT', y, AMBER_LIGHT);
+  const rptKeys = ['adequacy','stain','cytology','micro_desc','pathologist','comments'];
+  rptKeys.forEach((k, i) => {
+    const p = FNAC_PARAMS.find(x => x.key === k);
+    if (!p) return;
+    const v = val(k);
+    if (v === '—') return;
+    if (p.type === 'textarea') {
+      y += sectionHeader(p.name.toUpperCase(), y, [232, 244, 240]);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+      const lines = pdf.splitTextToSize(v, CW - 4);
+      lines.forEach(line => { pdf.text(line, ML + 2, y + 4); y += 5.5; if (y > PH - 25) { pdf.addPage(); y = 24; } });
+      y += 2;
+    } else {
+      // Cytological Diagnosis gets highlighted
+      if (k === 'cytology') {
+        pdf.setFillColor(254, 249, 195); pdf.rect(ML, y, CW, rowH + 1, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...AMBER);
+        pdf.text('Cytological Diagnosis:', ML + 2, y + 4.2);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...DARK);
+        const diagLines = pdf.splitTextToSize(v, CW - 62);
+        pdf.text(diagLines[0] || v, ML + 62, y + 4.2);
+        y += rowH + 2;
+      } else {
+        y += drawRow(p.name, v, y, i % 2 === 0);
+      }
+      if (y > PH - 25) { pdf.addPage(); y = 24; }
+    }
+  });
+}
+
+// ── PAP SMEAR — dedicated single-page Bethesda 2014 form renderer ──
+function drawPAPSmearFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, hasOtherTests, startY) {
+  function val(key) { const v = d[key]; return (v === undefined || v === null || v === '') ? '—' : String(v); }
+  if (hasOtherTests) pdf.addPage();
+  const CW = PW - ML - MR;
+  let y = hasOtherTests ? 24 : (startY || 26);
+  const PINK = [157, 23, 77];
+  const PINK_LIGHT = [252, 231, 243];
+  const rowH = 5.5;
+
+  // Title bar
+  pdf.setFillColor(...PINK);
+  pdf.rect(ML, y, CW, 6, 'F');
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(255,255,255);
+  pdf.text('CERVICAL / PAP SMEAR CYTOLOGY REPORT (BETHESDA 2014)', PW / 2, y + 4.2, { align: 'center' });
+  y += 8;
+
+  function drawRow(label, value, yPos, stripe) {
+    if (stripe) { pdf.setFillColor(...LGRAY); pdf.rect(ML, yPos, CW, rowH, 'F'); }
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    pdf.text(label, ML + 2, yPos + 3.8);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    const lines = pdf.splitTextToSize(value, CW - 60);
+    pdf.text(lines[0] || value, ML + 58, yPos + 3.8);
+    return rowH;
+  }
+
+  function sectionHeader(title, yPos, color) {
+    pdf.setFillColor(...color); pdf.rect(ML, yPos, CW, 5, 'F');
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+    pdf.text(title, ML + 2, yPos + 3.6);
+    return 6.5;
+  }
+
+  // ── REQUEST DETAILS ──
+  y += sectionHeader('REQUEST DETAILS', y, PINK_LIGHT);
+  const reqKeys = ['specimen_type','lmp','clinical_info'];
+  reqKeys.forEach((k, i) => {
+    const p = PAP_SMEAR_PARAMS.find(x => x.key === k);
+    if (!p) return;
+    y += drawRow(p.name, val(k), y, i % 2 === 0);
+  });
+  y += 3;
+
+  // ── CYTOLOGY REPORT ──
+  y += sectionHeader('CYTOLOGY REPORT — BETHESDA 2014', y, PINK_LIGHT);
+  const rptKeys = ['adequacy','cytology','organisms','hormonal','recommendation','pathologist','comments'];
+  rptKeys.forEach((k, i) => {
+    const p = PAP_SMEAR_PARAMS.find(x => x.key === k);
+    if (!p) return;
+    const v = val(k);
+    if (v === '—') return;
+    if (p.type === 'textarea') {
+      y += sectionHeader(p.name.toUpperCase(), y, [232, 244, 240]);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+      const lines = pdf.splitTextToSize(v, CW - 4);
+      lines.forEach(line => { pdf.text(line, ML + 2, y + 4); y += 5.5; if (y > PH - 25) { pdf.addPage(); y = 24; } });
+      y += 2;
+    } else {
+      if (k === 'cytology') {
+        // Bethesda category highlighted
+        pdf.setFillColor(...PINK_LIGHT); pdf.rect(ML, y, CW, rowH + 1, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...PINK);
+        pdf.text('Bethesda Category:', ML + 2, y + 4.2);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+        const diagLines = pdf.splitTextToSize(v, CW - 54);
+        pdf.text(diagLines[0] || v, ML + 54, y + 4.2);
+        y += rowH + 2;
+      } else {
+        y += drawRow(p.name, v, y, i % 2 === 0);
+      }
+      if (y > PH - 25) { pdf.addPage(); y = 24; }
+    }
+  });
 }
 
 // ── SEMEN ANALYSIS — physical form-style page renderer ──
@@ -2636,6 +3051,12 @@ function collectAutoTableRows(body, testName, data, testType, age, gender) {
     // Nothing is added to tableBody — drawMCSFormPage() handles all rendering.
     // Pushing rows here would inflate tableBody.length and wrongly trigger a new
     // page even when MCS is the only test, putting the report on page 2.
+    return;
+  }
+
+  if (testType === 'complex_histopath' || testType === 'complex_fnac' || testType === 'complex_pap_smear') {
+    // Histopath/FNAC/PAP are rendered as dedicated single-page forms.
+    // Nothing is added to tableBody — the drawXxxFormPage() functions handle rendering.
     return;
   }
 

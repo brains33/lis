@@ -306,6 +306,9 @@ function getTestType(testName) {
   if (/esr\b|sedimentation/.test(n)) return 'complex_esr';
   if (/random\s*blood\s*sugar|rbs\b/.test(n)) return 'complex_rbs';
   if (/fasting\s*blood\s*sugar|fbs\b/.test(n)) return 'complex_fbs';
+  if (/histopath|biopsy|histology|surgical\s*path|tissue/.test(n)) return 'complex_histopath';
+  if (/fnac|fine\s*needle|aspiration\s*cytol/.test(n))              return 'complex_fnac';
+  if (/pap\s*smear|cervical\s*cytol|papanicolaou/.test(n))          return 'complex_pap_smear';
   return 'simple';
 }
 
@@ -689,6 +692,117 @@ const SEROLOGY_PARAMS = [
   {key:'hbeag', name:'HBeAg', type:'select', options:['Non-reactive','Reactive']},
   {key:'anti_hbe', name:'Anti-HBe', type:'select', options:['Non-reactive','Reactive']},
   {key:'anti_hbc', name:'Anti-HBc (Total)', type:'select', options:['Non-reactive','Reactive']}
+];
+
+// ========== HISTOPATHOLOGY PARAMS ==========
+// Biopsy / Surgical Pathology — narrative report capture (Nigerian teaching hospital standard)
+const HISTOPATH_PARAMS = [
+  // Request side (filled at reception / sample login)
+  {key:'specimen_site',   name:'Specimen / Site',              unit:'', type:'text',   section:'Request'},
+  {key:'clinical_info',   name:'Clinical History',             unit:'', type:'text',   section:'Request'},
+  {key:'nature_specimen', name:'Nature of Specimen',           unit:'', type:'select', section:'Request',
+   options:['Incision Biopsy','Excision Biopsy','Core Needle Biopsy',
+            'Wide Local Excision','Radical Resection','Endoscopic Biopsy',
+            'Curettage','Amputation Specimen','Polypectomy','Other']},
+  {key:'fixative',        name:'Fixative Used',                unit:'', type:'select', section:'Request',
+   options:['10% Formalin','Formal Saline','Bouin\'s Solution','Fresh (Unfixed)','Other']},
+  // Report side (entered from pathologist's typed/dictated report)
+  {key:'macro_desc',      name:'Macroscopic Description',      unit:'', type:'textarea', section:'Report'},
+  {key:'micro_desc',      name:'Microscopic Description',      unit:'', type:'textarea', section:'Report'},
+  {key:'special_stains',  name:'Special Stains',               unit:'', type:'text',   section:'Report'},
+  {key:'diagnosis',       name:'Histopathological Diagnosis',  unit:'', type:'textarea', section:'Report'},
+  {key:'grade',           name:'Tumour Grade (if applicable)', unit:'', type:'select', section:'Report',
+   options:['Not Applicable',
+            'Grade I — Well Differentiated',
+            'Grade II — Moderately Differentiated',
+            'Grade III — Poorly Differentiated',
+            'Grade IV — Undifferentiated']},
+  {key:'margins',         name:'Surgical Margins',             unit:'', type:'select', section:'Report',
+   options:['Not Applicable','Clear (>1mm)','Close (<1mm)','Involved','Cannot Assess']},
+  {key:'lymph_nodes',     name:'Lymph Node Status',            unit:'', type:'text',   section:'Report'},
+  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'},
+  {key:'comments',        name:'Comments / Recommendation',   unit:'', type:'textarea', section:'Report'}
+];
+
+// FNAC — Fine Needle Aspiration Cytology
+const FNAC_PARAMS = [
+  {key:'site',          name:'Site of Aspiration',         unit:'', type:'text',   section:'Request'},
+  {key:'laterality',    name:'Laterality',                 unit:'', type:'select', section:'Request',
+   options:['Right','Left','Bilateral','Midline','Not Applicable']},
+  {key:'lesion_size',   name:'Lesion Size (cm)',            unit:'cm', type:'number', low:0, high:30, section:'Request'},
+  {key:'clinical_info', name:'Clinical Information',        unit:'', type:'text',   section:'Request'},
+  {key:'adequacy',      name:'Adequacy of Sample',         unit:'', type:'select', section:'Report',
+   options:['Adequate for Diagnosis',
+            'Inadequate — Scanty Cellularity',
+            'Inadequate — Haemorrhagic',
+            'Repeat Aspiration Advised']},
+  {key:'stain',         name:'Stain Used',                 unit:'', type:'select', section:'Report',
+   options:['Papanicolaou (Pap)','Diff-Quik (DQ)','Both Pap and DQ','H&E','MGG']},
+  {key:'cytology',      name:'Cytological Diagnosis',      unit:'', type:'select', section:'Report',
+   options:['Benign / Reactive',
+            'Inflammatory / Infective — See Comments',
+            'Colloid Goitre (Thyroid)',
+            'Follicular Neoplasm (Thyroid)',
+            'Papillary Thyroid Carcinoma',
+            'Reactive Lymphadenopathy',
+            'Granulomatous Lymphadenitis (? TB)',
+            'Suspicious for Lymphoma',
+            'Fibrocystic Disease (Breast)',
+            'Fibroadenoma (Breast)',
+            'Suspicious for Malignancy',
+            'Malignant — See Microscopic Description',
+            'Abscess / Necrotic Material',
+            'No Diagnostic Material — Repeat']},
+  {key:'micro_desc',    name:'Microscopic Description',    unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
+  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'}
+];
+
+// PAP Smear — Bethesda 2014 system (used in Nigerian government hospitals)
+const PAP_SMEAR_PARAMS = [
+  {key:'specimen_type', name:'Specimen Type',              unit:'', type:'select', section:'Request',
+   options:['Conventional Pap Smear','Liquid-Based Cytology (LBC)',
+            'Endocervical Brush','Cervical Scrape + ECS']},
+  {key:'lmp',           name:'LMP (Last Menstrual Period)',unit:'', type:'text',   section:'Request'},
+  {key:'clinical_info', name:'Clinical Information',       unit:'', type:'text',   section:'Request'},
+  {key:'adequacy',      name:'Specimen Adequacy',          unit:'', type:'select', section:'Report',
+   options:['Satisfactory for Evaluation',
+            'Unsatisfactory — Insufficient Squamous Cells',
+            'Unsatisfactory — Obscuring Blood',
+            'Unsatisfactory — Obscuring Inflammation',
+            'Unsatisfactory — Broken / Unfixed Slide']},
+  {key:'cytology',      name:'Cytological Findings (Bethesda)',unit:'', type:'select', section:'Report',
+   options:['Negative for Intraepithelial Lesion or Malignancy (NILM)',
+            'ASC-US',
+            'ASC-H',
+            'LSIL (CIN I)',
+            'HSIL (CIN II / CIN III)',
+            'Squamous Cell Carcinoma',
+            'Atypical Glandular Cells (AGC)',
+            'Adenocarcinoma In Situ (AIS)',
+            'Endocervical Adenocarcinoma',
+            'Endometrial Cells (patient ≥45 yrs)']},
+  {key:'organisms',     name:'Organisms / Infection',      unit:'', type:'select', section:'Report',
+   options:['None Identified',
+            'Trichomonas vaginalis',
+            'Bacterial Vaginosis',
+            'Candida spp.',
+            'HSV Cytopathic Effect',
+            'Actinomyces spp.']},
+  {key:'hormonal',      name:'Hormonal Assessment',        unit:'', type:'select', section:'Report',
+   options:['Compatible with Age and History',
+            'Atrophic Pattern',
+            'Estrogenic Effect',
+            'Incompatible — See Comments']},
+  {key:'recommendation',name:'Recommendation',             unit:'', type:'select', section:'Report',
+   options:['Routine Repeat in 3 Years',
+            'Repeat in 6 Months',
+            'Colposcopy Recommended',
+            'Biopsy Recommended',
+            'HPV Testing Recommended',
+            'Refer to Gynaecologist — Urgent']},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
+  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'}
 ];
 
 // ========== MCS MICROSCOPY PARAMS ==========
@@ -1643,21 +1757,89 @@ async function openResultModal(id) {
           <button type="button" class="btn btn-secondary btn-sm" onclick="addSensitivityRow('${containerId}')">+ Add Antibiotic</button>
         </div>`;
     }
-    else if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
-             testType === 'complex_rbs' || testType === 'complex_fbs') {
-      let key = testType.split('_')[1];
+    // ── HISTOPATHOLOGY FORMS ─────────────────────────────────────────────────
+    else if (testType === 'complex_histopath') {
       let data = {};
       try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
-      let val = data[key] !== undefined ? data[key] : '';
-      let range = getReferenceRange(test.test_name, currentSample.age, currentSample.gender);
-      if (!range) range = { low: 0, high: 100, unit: '' };
-      let flagCls = val !== '' ? getFlag(val, { low: range.low, high: range.high }) : '';
-      formsHtml += `<div class="param-item">
-        <label>${esc(test.test_name)} (${esc(range.unit)}) Ref: ${range.low}–${range.high}</label>
-        <input type="number" step="0.1" min="${range.low}" max="${range.high}" id="${key}_${idx}" value="${val}" class="${flagCls}">
-      </div>`;
+      const hpSections = ['Request','Report'];
+      hpSections.forEach(sec => {
+        const secLabel = sec === 'Request' ? '📋 Request Details' : '🔬 Pathologist\'s Report';
+        formsHtml += `<div class="mcs-section-label">${secLabel}</div><div class="param-grid">`;
+        HISTOPATH_PARAMS.filter(p => p.section === sec).forEach(p => {
+          let val = data[p.key] !== undefined ? data[p.key] : '';
+          if (p.type === 'select') {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
+              <select id="hp_${idx}_${p.key}">
+                ${p.options.map(opt => `<option value="${esc(opt)}" ${val===opt?'selected':''}>${esc(opt)}</option>`).join('')}
+              </select></div>`;
+          } else if (p.type === 'textarea') {
+            formsHtml += `<div class="param-item param-item-full"><label>${esc(p.name)}${p.key==='diagnosis'||p.key==='clinical_info'?' <span style="color:#b91c1c;font-size:0.72rem;">(required)</span>':''}</label>
+              <textarea id="hp_${idx}_${p.key}" rows="3" style="width:100%;resize:vertical;" placeholder="${p.key==='macro_desc'?'Describe gross appearance, dimensions, colour, consistency…':p.key==='micro_desc'?'Describe microscopic findings, cell types, patterns…':p.key==='diagnosis'?'Enter the final histopathological diagnosis…':'Enter comments or recommendations…'}">${esc(val)}</textarea></div>`;
+          } else {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
+              <input type="text" id="hp_${idx}_${p.key}" value="${esc(val)}" placeholder="${p.key==='pathologist'?'Full name and qualifications':p.key==='lymph_nodes'?'e.g. 0/12 nodes positive':''}"></div>`;
+          }
+        });
+        formsHtml += `</div>`;
+      });
     }
-    else if (testType === 'simple_numeric') {
+    else if (testType === 'complex_fnac') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      const fnacSections = ['Request','Report'];
+      fnacSections.forEach(sec => {
+        const secLabel = sec === 'Request' ? '📋 Request Details' : '🔬 Cytological Report';
+        formsHtml += `<div class="mcs-section-label">${secLabel}</div><div class="param-grid">`;
+        FNAC_PARAMS.filter(p => p.section === sec).forEach(p => {
+          let val = data[p.key] !== undefined ? data[p.key] : '';
+          if (p.type === 'select') {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
+              <select id="fnac_${idx}_${p.key}">
+                ${p.options.map(opt => `<option value="${esc(opt)}" ${val===opt?'selected':''}>${esc(opt)}</option>`).join('')}
+              </select></div>`;
+          } else if (p.type === 'textarea') {
+            formsHtml += `<div class="param-item param-item-full"><label>${esc(p.name)}</label>
+              <textarea id="fnac_${idx}_${p.key}" rows="3" style="width:100%;resize:vertical;" placeholder="${p.key==='micro_desc'?'Describe cellular morphology and findings…':'Enter comments…'}">${esc(val)}</textarea></div>`;
+          } else if (p.type === 'number') {
+            let flagCls = val !== '' ? getFlag(val, p) : '';
+            formsHtml += `<div class="param-item"><label>${esc(p.name)} ${p.unit ? `(${p.unit})` : ''}</label>
+              <input type="number" step="0.1" id="fnac_${idx}_${p.key}" value="${val}" class="${flagCls}"></div>`;
+          } else {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
+              <input type="text" id="fnac_${idx}_${p.key}" value="${esc(val)}" placeholder="${p.key==='site'?'e.g. Right thyroid lobe, Left breast mass':p.key==='pathologist'?'Full name and qualifications':''}"></div>`;
+          }
+        });
+        formsHtml += `</div>`;
+      });
+    }
+    else if (testType === 'complex_pap_smear') {
+      let data = {};
+      try { if (test.result?.startsWith('{')) data = JSON.parse(test.result); } catch(e){}
+      const papSections = ['Request','Report'];
+      papSections.forEach(sec => {
+        const secLabel = sec === 'Request' ? '📋 Request Details' : '🔬 Cytological Report (Bethesda 2014)';
+        formsHtml += `<div class="mcs-section-label">${secLabel}</div><div class="param-grid">`;
+        PAP_SMEAR_PARAMS.filter(p => p.section === sec).forEach(p => {
+          let val = data[p.key] !== undefined ? data[p.key] : '';
+          if (p.type === 'select') {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
+              <select id="pap_${idx}_${p.key}">
+                ${p.options.map(opt => `<option value="${esc(opt)}" ${val===opt?'selected':''}>${esc(opt)}</option>`).join('')}
+              </select></div>`;
+          } else if (p.type === 'textarea') {
+            formsHtml += `<div class="param-item param-item-full"><label>${esc(p.name)}</label>
+              <textarea id="pap_${idx}_${p.key}" rows="3" style="width:100%;resize:vertical;" placeholder="Enter additional comments…">${esc(val)}</textarea></div>`;
+          } else {
+            formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
+              <input type="text" id="pap_${idx}_${p.key}" value="${esc(val)}" placeholder="${p.key==='lmp'?'e.g. 01/06/2026 or Unknown':p.key==='pathologist'?'Full name and qualifications':p.key==='clinical_info'?'e.g. Post-coital bleeding, routine screening':''}"></div>`;
+          }
+        });
+        formsHtml += `</div>`;
+      });
+    }
+    // ── END HISTOPATHOLOGY FORMS ──────────────────────────────────────────────
+    else if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
+             testType === 'complex_rbs' || testType === 'complex_fbs') {
       let val = test.result || '';
       let range = testDefinitions.refRanges[test.test_name];
       let label = 'Result (numeric)';
@@ -2046,6 +2228,18 @@ function collectSingleTestResult(idx) {
     let data = {};
     SEROLOGY_PARAMS.forEach(p => { let inp = document.getElementById(`sero_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
     test.result = JSON.stringify(data);
+  } else if (testType === 'complex_histopath') {
+    let data = {};
+    HISTOPATH_PARAMS.forEach(p => { let inp = document.getElementById(`hp_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_fnac') {
+    let data = {};
+    FNAC_PARAMS.forEach(p => { let inp = document.getElementById(`fnac_${idx}_${p.key}`); if (inp) data[p.key] = p.type === 'number' ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value; });
+    test.result = JSON.stringify(data);
+  } else if (testType === 'complex_pap_smear') {
+    let data = {};
+    PAP_SMEAR_PARAMS.forEach(p => { let inp = document.getElementById(`pap_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
+    test.result = JSON.stringify(data);
   } else if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
              testType === 'complex_rbs' || testType === 'complex_fbs') {
     let key = testType.split('_')[1];
@@ -2283,6 +2477,18 @@ function collectResultsFromForms() {
     } else if (testType === 'complex_serology') {
       let data = {};
       SEROLOGY_PARAMS.forEach(p => { let inp = document.getElementById(`sero_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_histopath') {
+      let data = {};
+      HISTOPATH_PARAMS.forEach(p => { let inp = document.getElementById(`hp_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_fnac') {
+      let data = {};
+      FNAC_PARAMS.forEach(p => { let inp = document.getElementById(`fnac_${idx}_${p.key}`); if (inp) data[p.key] = p.type === 'number' ? (inp.value !== '' ? parseFloat(inp.value) : '') : inp.value; });
+      test.result = JSON.stringify(data);
+    } else if (testType === 'complex_pap_smear') {
+      let data = {};
+      PAP_SMEAR_PARAMS.forEach(p => { let inp = document.getElementById(`pap_${idx}_${p.key}`); if (inp) data[p.key] = inp.value; });
       test.result = JSON.stringify(data);
     } else if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
                testType === 'complex_rbs' || testType === 'complex_fbs') {
