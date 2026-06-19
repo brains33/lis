@@ -407,29 +407,14 @@
             { display_name: 'Patient', variable_name: 'patient_name', value: name },
             { display_name: 'Registered By', variable_name: 'registered_by', value: currentSession.name }
           ] },
-          callback: async function (response) {
-            const ctx = window._pendingPaystack;
-            toast(`Payment received, verifying with Paystack…`, 'warn');
-            const result = await verifyPaystackPayment({
-              reference: response.reference,
-              sampleId: ctx.sampleId,
-              expectedAmount: ctx.totalAmount,
-              purpose: 'registration'
-            });
-            if (!result.ok) {
-              toast(`Payment verification failed: ${result.error}. Sample MU-${ctx.sampleId} remains Unpaid — use "Settle Balance" once resolved. Ref: ${response.reference}`, 'error');
-              clearForm();
-              return;
-            }
-            const payNow = new Date().toISOString();
-            toast(`Payment confirmed ✓ Ref: ${response.reference}`);
-            showReceiptModal({
-              id: ctx.sampleId, patient: ctx.patient, priority: ctx.priority, tests: ctx.tests,
-              totalAmount: ctx.totalAmount, amountPaid: ctx.totalAmount, balanceDue: 0,
-              paystatus: 'Paid', paymode: 'Paystack', receiptNo: response.reference, paymentDate: payNow,
-              paystackRef: response.reference
-            });
-            clearForm();
+          // NOTE: this must be a plain (non-async) function. Some builds of
+          // Paystack's inline.js validate `callback` by checking that its
+          // string representation starts with "function" — an `async
+          // function` callback fails that check and throws "Attribute
+          // callback must be a valid function". The async work is done in
+          // a separate named async function instead, called from here.
+          callback: function (response) {
+            handlePaystackRegistrationCallback(response);
           },
           onClose: function () {
             toast(`Payment window closed. Sample MU-${window._pendingPaystack?.sampleId} saved as Unpaid. Use "Settle Balance" later.`, 'warn');
@@ -469,6 +454,34 @@
     }
   }
   window.registerSample = registerSample;
+
+  // Async logic for the registration Paystack callback, pulled out of the
+  // PaystackPop.setup() options object — see the comment at the `callback`
+  // key above for why this can't be an inline async function.
+  async function handlePaystackRegistrationCallback(response) {
+    const ctx = window._pendingPaystack;
+    toast(`Payment received, verifying with Paystack…`, 'warn');
+    const result = await verifyPaystackPayment({
+      reference: response.reference,
+      sampleId: ctx.sampleId,
+      expectedAmount: ctx.totalAmount,
+      purpose: 'registration'
+    });
+    if (!result.ok) {
+      toast(`Payment verification failed: ${result.error}. Sample MU-${ctx.sampleId} remains Unpaid — use "Settle Balance" once resolved. Ref: ${response.reference}`, 'error');
+      clearForm();
+      return;
+    }
+    const payNow = new Date().toISOString();
+    toast(`Payment confirmed ✓ Ref: ${response.reference}`);
+    showReceiptModal({
+      id: ctx.sampleId, patient: ctx.patient, priority: ctx.priority, tests: ctx.tests,
+      totalAmount: ctx.totalAmount, amountPaid: ctx.totalAmount, balanceDue: 0,
+      paystatus: 'Paid', paymode: 'Paystack', receiptNo: response.reference, paymentDate: payNow,
+      paystackRef: response.reference
+    });
+    clearForm();
+  }
 
   // --------------------------------------------------------------
   //  CLEAR FORM
@@ -631,7 +644,9 @@
           { display_name: 'Patient', variable_name: 'patient_name', value: patient },
           { display_name: 'Type', variable_name: 'type', value: 'Balance Settlement' }
         ] },
-        callback: async function (response) { await markSettlementPaidPaystack(sampleId, balance, total, patient, response.reference); },
+        // Same fix as the registration flow above: keep this a plain
+        // function, do the async work in markSettlementPaidPaystack.
+        callback: function (response) { markSettlementPaidPaystack(sampleId, balance, total, patient, response.reference); },
         onClose: () => toast('Paystack window closed. Balance still outstanding.', 'warn')
       });
       handler.openIframe();

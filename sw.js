@@ -23,7 +23,7 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-const CACHE_VERSION = 'lis-v8';
+const CACHE_VERSION = 'lis-v9';
 
 // ── Pre-cache on install ─────────────────────────────────────────
 // All shared assets + every page shell so they're available from
@@ -63,7 +63,12 @@ const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-  'https://js.paystack.co/v1/inline.js',
+  // NOTE: Paystack's inline.js is intentionally NOT pre-cached here.
+  // It's a third-party payment SDK that can change at any time; pinning
+  // an old cached copy via stale-while-revalidate caused intermittent
+  // "Attribute callback must be a valid function" failures that didn't
+  // reproduce locally (no service worker there). It's now excluded from
+  // caching entirely — see the network-only rule in the fetch handler.
   // Font Awesome webfonts (needed for icons to render offline)
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2',
@@ -106,7 +111,10 @@ self.addEventListener('fetch', event => {
 
   // Supabase API — always network, never cache.
   // offline_queue.js handles write buffering for result_entry.
-  if (url.hostname.includes('supabase.co')) {
+  // Paystack's inline.js — also always network. It's a live payment SDK;
+  // serving a stale cached copy caused "Attribute callback must be a
+  // valid function" errors that only showed up on deployed devices.
+  if (url.hostname.includes('supabase.co') || url.hostname.includes('paystack')) {
     event.respondWith(fetch(event.request));
     return;
   }
