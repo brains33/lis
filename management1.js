@@ -910,6 +910,8 @@ const SEROLOGY_PARAMS = [
 // ========== HISTOPATHOLOGY PARAMS ==========
 const HISTOPATH_PARAMS = [
   {key:'specimen_site',   name:'Specimen / Site',              unit:'', type:'text',   section:'Request'},
+  {key:'laterality',      name:'Laterality',                   unit:'', type:'select', section:'Request',
+   options:['Right','Left','Bilateral','Midline','Not Applicable']},
   {key:'clinical_info',   name:'Clinical History',             unit:'', type:'text',   section:'Request'},
   {key:'nature_specimen', name:'Nature of Specimen',           unit:'', type:'select', section:'Request',
    options:['Incision Biopsy','Excision Biopsy','Core Needle Biopsy','Wide Local Excision','Radical Resection','Endoscopic Biopsy','Curettage','Amputation Specimen','Polypectomy','Other']},
@@ -921,11 +923,13 @@ const HISTOPATH_PARAMS = [
   {key:'diagnosis',       name:'Histopathological Diagnosis',  unit:'', type:'textarea', section:'Report'},
   {key:'grade',           name:'Tumour Grade (if applicable)', unit:'', type:'select', section:'Report',
    options:['Not Applicable','Grade I — Well Differentiated','Grade II — Moderately Differentiated','Grade III — Poorly Differentiated','Grade IV — Undifferentiated']},
-  {key:'margins',         name:'Surgical Margins',             unit:'', type:'select', section:'Report',
+  {key:'margins',         name:'Surgical Margins — Status',    unit:'', type:'select', section:'Report',
    options:['Not Applicable','Clear (>1mm)','Close (<1mm)','Involved','Cannot Assess']},
+  {key:'margin_distance', name:'Closest Margin (specify site & distance)', unit:'', type:'text', section:'Report'},
   {key:'lymph_nodes',     name:'Lymph Node Status',            unit:'', type:'text',   section:'Report'},
-  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'},
-  {key:'comments',        name:'Comments / Recommendation',   unit:'', type:'textarea', section:'Report'}
+  {key:'staging',         name:'Pathologic Staging (pTNM, if applicable)', unit:'', type:'text', section:'Report'},
+  {key:'comments',        name:'Comments / Recommendation',   unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'}
 ];
 const FNAC_PARAMS = [
   {key:'site',          name:'Site of Aspiration',         unit:'', type:'text',   section:'Request'},
@@ -940,8 +944,8 @@ const FNAC_PARAMS = [
   {key:'cytology',      name:'Cytological Diagnosis',      unit:'', type:'select', section:'Report',
    options:['Benign / Reactive','Inflammatory / Infective — See Comments','Colloid Goitre (Thyroid)','Follicular Neoplasm (Thyroid)','Papillary Thyroid Carcinoma','Reactive Lymphadenopathy','Granulomatous Lymphadenitis (? TB)','Suspicious for Lymphoma','Fibrocystic Disease (Breast)','Fibroadenoma (Breast)','Suspicious for Malignancy','Malignant — See Microscopic Description','Abscess / Necrotic Material','No Diagnostic Material — Repeat']},
   {key:'micro_desc',    name:'Microscopic Description',    unit:'', type:'textarea', section:'Report'},
-  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
-  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'}
+  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
 ];
 const PAP_SMEAR_PARAMS = [
   {key:'specimen_type', name:'Specimen Type',              unit:'', type:'select', section:'Request',
@@ -951,15 +955,15 @@ const PAP_SMEAR_PARAMS = [
   {key:'adequacy',      name:'Specimen Adequacy',          unit:'', type:'select', section:'Report',
    options:['Satisfactory for Evaluation','Unsatisfactory — Insufficient Squamous Cells','Unsatisfactory — Obscuring Blood','Unsatisfactory — Obscuring Inflammation','Unsatisfactory — Broken / Unfixed Slide']},
   {key:'cytology',      name:'Cytological Findings (Bethesda)',unit:'', type:'select', section:'Report',
-   options:['Negative for Intraepithelial Lesion or Malignancy (NILM)','ASC-US','ASC-H','LSIL (CIN I)','HSIL (CIN II / CIN III)','Squamous Cell Carcinoma','Atypical Glandular Cells (AGC)','Adenocarcinoma In Situ (AIS)','Endocervical Adenocarcinoma','Endometrial Cells (patient ≥45 yrs)']},
+   options:['Negative for Intraepithelial Lesion or Malignancy (NILM)','Atypical cells of unknown significance (ASC-US)','Atypical squamous cells cannot exclude HSIL (ASC-H)','Low-grade squamous intraepithelial lesion LSIL (CIN I)','High-grade squamous intraepithelial lesion HSIL (CIN II / CIN III)','Squamous Cell Carcinoma','Atypical Glandular Cells (AGC)','Adenocarcinoma In Situ (AIS)','Endocervical Adenocarcinoma','Endometrial Cells (patient ≥45 yrs)']},
   {key:'organisms',     name:'Organisms / Infection',      unit:'', type:'select', section:'Report',
    options:['None Identified','Trichomonas vaginalis','Bacterial Vaginosis','Candida spp.','HSV Cytopathic Effect','Actinomyces spp.']},
   {key:'hormonal',      name:'Hormonal Assessment',        unit:'', type:'select', section:'Report',
    options:['Compatible with Age and History','Atrophic Pattern','Estrogenic Effect','Incompatible — See Comments']},
   {key:'recommendation',name:'Recommendation',             unit:'', type:'select', section:'Report',
    options:['Routine Repeat in 3 Years','Repeat in 6 Months','Colposcopy Recommended','Biopsy Recommended','HPV Testing Recommended','Refer to Gynaecologist — Urgent']},
-  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
-  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'}
+  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
 ];
 
 // ========== MCS PARAMS ==========

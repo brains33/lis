@@ -11,6 +11,46 @@
   const currentSession = window.currentSession || { name: 'Reception', role: 'reception' };
   const db = window._supabaseClient;    // token-authenticated client
 
+  // --------------------------------------------------------------
+  //  SERVER-SIDE PAYSTACK VERIFICATION
+  // --------------------------------------------------------------
+  // Never trust the Paystack inline `callback` alone — it fires in the
+  // browser and proves nothing about whether money actually moved. This
+  // calls a Supabase Edge Function that re-checks the transaction directly
+  // with Paystack's servers (using the secret key, which never reaches this
+  // file) and only then writes pay_status: 'Paid' to the database, using
+  // the service role so the write itself can't be raced or spoofed either.
+  //
+  // purpose: 'registration' | 'settlement'
+  // expectedAmount: the exact naira amount Paystack was charged for this
+  //                 transaction (total for registration, balance for settlement)
+  // fullTotal: only needed for 'settlement' — the sample's full bill total,
+  //            so amount_paid is recorded correctly once the balance clears
+  async function verifyPaystackPayment({ reference, sampleId, expectedAmount, purpose, fullTotal }) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-paystack-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'x-lis-token': currentSession.token || ''
+        },
+        body: JSON.stringify({
+          reference, sampleId, expectedAmount, purpose, fullTotal,
+          actorName: currentSession.name || 'Reception'
+        })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        return { ok: false, error: json.error || `Verification failed (HTTP ${res.status})` };
+      }
+      return json;
+    } catch (err) {
+      return { ok: false, error: `Could not reach verification server: ${err.message}` };
+    }
+  }
+
   // Test definitions storage
   let testDefinitions = { units: {}, testPrices: {}, testTypes: {} };
   let tempTests = [];                   // cart
@@ -367,25 +407,29 @@
             { display_name: 'Patient', variable_name: 'patient_name', value: name },
             { display_name: 'Registered By', variable_name: 'registered_by', value: currentSession.name }
           ] },
-          callback: function (response) {
+          callback: async function (response) {
             const ctx = window._pendingPaystack;
-            const payNow = new Date().toISOString();
-            db.from('samples').update({
-              pay_status: 'Paid', amount_paid: ctx.totalAmount, balance_due: 0,
-              receipt_no: response.reference, payment_date: payNow, pay_mode: 'Paystack'
-            }).eq('id', ctx.sampleId)
-            .then(() => addAudit('Payment Confirmed (Paystack)', ctx.sampleId, `Ref: ${response.reference} | Amount: ${ctx.totalAmount} NGN`))
-            .then(() => {
-              toast(`Payment confirmed ✓ Ref: ${response.reference}`);
-              showReceiptModal({
-                id: ctx.sampleId, patient: ctx.patient, priority: ctx.priority, tests: ctx.tests,
-                totalAmount: ctx.totalAmount, amountPaid: ctx.totalAmount, balanceDue: 0,
-                paystatus: 'Paid', paymode: 'Paystack', receiptNo: response.reference, paymentDate: payNow,
-                paystackRef: response.reference
-              });
+            toast(`Payment received, verifying with Paystack…`, 'warn');
+            const result = await verifyPaystackPayment({
+              reference: response.reference,
+              sampleId: ctx.sampleId,
+              expectedAmount: ctx.totalAmount,
+              purpose: 'registration'
+            });
+            if (!result.ok) {
+              toast(`Payment verification failed: ${result.error}. Sample MU-${ctx.sampleId} remains Unpaid — use "Settle Balance" once resolved. Ref: ${response.reference}`, 'error');
               clearForm();
-            })
-            .catch(err => toast(`Payment captured but DB update failed: ${err.message}. Ref: ${response.reference}`, 'error'));
+              return;
+            }
+            const payNow = new Date().toISOString();
+            toast(`Payment confirmed ✓ Ref: ${response.reference}`);
+            showReceiptModal({
+              id: ctx.sampleId, patient: ctx.patient, priority: ctx.priority, tests: ctx.tests,
+              totalAmount: ctx.totalAmount, amountPaid: ctx.totalAmount, balanceDue: 0,
+              paystatus: 'Paid', paymode: 'Paystack', receiptNo: response.reference, paymentDate: payNow,
+              paystackRef: response.reference
+            });
+            clearForm();
           },
           onClose: function () {
             toast(`Payment window closed. Sample MU-${window._pendingPaystack?.sampleId} saved as Unpaid. Use "Settle Balance" later.`, 'warn');
@@ -587,7 +631,7 @@
           { display_name: 'Patient', variable_name: 'patient_name', value: patient },
           { display_name: 'Type', variable_name: 'type', value: 'Balance Settlement' }
         ] },
-        callback: function (response) { markSettlementPaid(sampleId, balance, total, patient, 'Paystack', response.reference); },
+        callback: async function (response) { await markSettlementPaidPaystack(sampleId, balance, total, patient, response.reference); },
         onClose: () => toast('Paystack window closed. Balance still outstanding.', 'warn')
       });
       handler.openIframe();
@@ -596,6 +640,34 @@
     markSettlementPaid(sampleId, balance, total, patient, _settleMode, `MANUAL-${Date.now()}`);
   };
 
+  // Paystack settlement only — goes through server-side verification since
+  // it's a real Paystack transaction that must be confirmed against
+  // Paystack's own records before the balance is cleared in the database.
+  async function markSettlementPaidPaystack(sampleId, balance, total, patient, reference) {
+    const btn = document.getElementById('settleConfirmBtn');
+    if (btn) btn.disabled = true;
+    toast(`Payment received, verifying with Paystack…`, 'warn');
+
+    const result = await verifyPaystackPayment({
+      reference, sampleId, expectedAmount: balance, purpose: 'settlement', fullTotal: total
+    });
+
+    if (!result.ok) {
+      toast(`Settlement verification failed: ${result.error}. Balance for MU-${sampleId} remains outstanding. Ref: ${reference}`, 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+
+    document.getElementById('settle-sample-id').value = '';
+    document.getElementById('settleResultBox').style.display = 'none';
+    toast(`✓ MU-${sampleId} balance settled – marked as Paid`);
+    if (btn) btn.disabled = false;
+  }
+
+  // Manual / cash / offline settlement only. There is no Paystack
+  // transaction to verify here — a staff member is directly attesting to
+  // having received the payment, so the direct DB write stays trusted, same
+  // as the rest of this codebase's cash-handling flows.
   function markSettlementPaid(sampleId, balance, total, patient, mode, ref) {
     const btn = document.getElementById('settleConfirmBtn');
     if (btn) btn.disabled = true;

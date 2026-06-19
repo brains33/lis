@@ -683,6 +683,8 @@ const SEROLOGY_PARAMS = [
 // ── HISTOPATHOLOGY (Biopsy / Surgical Pathology) ──
 const HISTOPATH_PARAMS = [
   {key:'specimen_site',   name:'Specimen / Site',              unit:'', type:'text',   section:'Request'},
+  {key:'laterality',      name:'Laterality',                   unit:'', type:'select', section:'Request',
+   options:['Right','Left','Bilateral','Midline','Not Applicable']},
   {key:'clinical_info',   name:'Clinical History',             unit:'', type:'text',   section:'Request'},
   {key:'nature_specimen', name:'Nature of Specimen',           unit:'', type:'select', section:'Request',
    options:['Incision Biopsy','Excision Biopsy','Core Needle Biopsy',
@@ -697,11 +699,13 @@ const HISTOPATH_PARAMS = [
   {key:'grade',           name:'Tumour Grade (if applicable)', unit:'', type:'select', section:'Report',
    options:['Not Applicable','Grade I — Well Differentiated','Grade II — Moderately Differentiated',
             'Grade III — Poorly Differentiated','Grade IV — Undifferentiated']},
-  {key:'margins',         name:'Surgical Margins',             unit:'', type:'select', section:'Report',
+  {key:'margins',         name:'Surgical Margins — Status',    unit:'', type:'select', section:'Report',
    options:['Not Applicable','Clear (>1mm)','Close (<1mm)','Involved','Cannot Assess']},
+  {key:'margin_distance', name:'Closest Margin (specify site & distance)', unit:'', type:'text', section:'Report'},
   {key:'lymph_nodes',     name:'Lymph Node Status',            unit:'', type:'text',   section:'Report'},
-  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'},
-  {key:'comments',        name:'Comments / Recommendation',    unit:'', type:'textarea', section:'Report'}
+  {key:'staging',         name:'Pathologic Staging (pTNM, if applicable)', unit:'', type:'text', section:'Report'},
+  {key:'comments',        name:'Comments / Recommendation',    unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'}
 ];
 
 // ── FNAC — Fine Needle Aspiration Cytology ──
@@ -725,8 +729,8 @@ const FNAC_PARAMS = [
             'Suspicious for Malignancy','Malignant — See Microscopic Description',
             'Abscess / Necrotic Material','No Diagnostic Material — Repeat']},
   {key:'micro_desc',    name:'Microscopic Description',    unit:'', type:'textarea', section:'Report'},
-  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
-  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'}
+  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
 ];
 
 // ── PAP Smear — Bethesda 2014 system ──
@@ -742,7 +746,10 @@ const PAP_SMEAR_PARAMS = [
             'Unsatisfactory — Broken / Unfixed Slide']},
   {key:'cytology',      name:'Cytological Findings (Bethesda)', unit:'', type:'select', section:'Report',
    options:['Negative for Intraepithelial Lesion or Malignancy (NILM)',
-            'ASC-US','ASC-H','LSIL (CIN I)','HSIL (CIN II / CIN III)',
+            'Atypical cells of unknown significance (ASC-US)',
+            'Atypical squamous cells cannot exclude HSIL (ASC-H)',
+            'Low-grade squamous intraepithelial lesion LSIL (CIN I)',
+            'High-grade squamous intraepithelial lesion HSIL (CIN II / CIN III)',
             'Squamous Cell Carcinoma','Atypical Glandular Cells (AGC)',
             'Adenocarcinoma In Situ (AIS)','Endocervical Adenocarcinoma',
             'Endometrial Cells (patient ≥45 yrs)']},
@@ -756,8 +763,8 @@ const PAP_SMEAR_PARAMS = [
    options:['Routine Repeat in 3 Years','Repeat in 6 Months',
             'Colposcopy Recommended','Biopsy Recommended',
             'HPV Testing Recommended','Refer to Gynaecologist — Urgent']},
-  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
-  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'}
+  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
 ];
 
 const URINE_MICRO_PARAMS = [
@@ -2057,7 +2064,7 @@ function drawHistopathFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGR
 
   // ── REQUEST DETAILS ──
   y += sectionHeader('REQUEST DETAILS', y, PURPLE_LIGHT);
-  const reqKeys = ['specimen_site','clinical_info','nature_specimen','fixative'];
+  const reqKeys = ['specimen_site','laterality','clinical_info','nature_specimen','fixative'];
   reqKeys.forEach((k, i) => {
     const p = HISTOPATH_PARAMS.find(x => x.key === k);
     if (!p) return;
@@ -2067,7 +2074,7 @@ function drawHistopathFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGR
 
   // ── PATHOLOGY REPORT ──
   y += sectionHeader('PATHOLOGY REPORT', y, PURPLE_LIGHT);
-  const rptKeys = ['macro_desc','micro_desc','special_stains','diagnosis','grade','margins','lymph_nodes','pathologist','comments'];
+  const rptKeys = ['macro_desc','micro_desc','special_stains','diagnosis','grade','margins','margin_distance','lymph_nodes','staging','comments','pathologist'];
   rptKeys.forEach((k, i) => {
     const p = HISTOPATH_PARAMS.find(x => x.key === k);
     if (!p) return;
@@ -2137,7 +2144,7 @@ function drawFNACFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, h
 
   // ── CYTOLOGY REPORT ──
   y += sectionHeader('CYTOLOGY REPORT', y, AMBER_LIGHT);
-  const rptKeys = ['adequacy','stain','cytology','micro_desc','pathologist','comments'];
+  const rptKeys = ['adequacy','stain','cytology','micro_desc','comments','pathologist'];
   rptKeys.forEach((k, i) => {
     const p = FNAC_PARAMS.find(x => x.key === k);
     if (!p) return;
@@ -2152,13 +2159,15 @@ function drawFNACFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRAY, h
     } else {
       // Cytological Diagnosis gets highlighted
       if (k === 'cytology') {
-        pdf.setFillColor(254, 249, 195); pdf.rect(ML, y, CW, rowH + 1, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...DARK);
+        const diagLines = pdf.splitTextToSize(v, CW - 62);
+        const boxH = Math.max(rowH + 1, diagLines.length * 4.2 + 2.5);
+        pdf.setFillColor(254, 249, 195); pdf.rect(ML, y, CW, boxH, 'F');
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...AMBER);
         pdf.text('Cytological Diagnosis:', ML + 2, y + 4.2);
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...DARK);
-        const diagLines = pdf.splitTextToSize(v, CW - 62);
-        pdf.text(diagLines[0] || v, ML + 62, y + 4.2);
-        y += rowH + 2;
+        diagLines.forEach((line, li) => { pdf.text(line, ML + 62, y + 4.2 + (li * 4.2)); });
+        y += boxH + 1.5;
       } else {
         y += drawRow(p.name, v, y, i % 2 === 0);
       }
@@ -2213,7 +2222,7 @@ function drawPAPSmearFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRA
 
   // ── CYTOLOGY REPORT ──
   y += sectionHeader('CYTOLOGY REPORT — BETHESDA 2014', y, PINK_LIGHT);
-  const rptKeys = ['adequacy','cytology','organisms','hormonal','recommendation','pathologist','comments'];
+  const rptKeys = ['adequacy','cytology','organisms','hormonal','recommendation','comments','pathologist'];
   rptKeys.forEach((k, i) => {
     const p = PAP_SMEAR_PARAMS.find(x => x.key === k);
     if (!p) return;
@@ -2228,13 +2237,15 @@ function drawPAPSmearFormPage(pdf, d, s, PW, PH, ML, MR, GREEN, DARK, GRAY, LGRA
     } else {
       if (k === 'cytology') {
         // Bethesda category highlighted
-        pdf.setFillColor(...PINK_LIGHT); pdf.rect(ML, y, CW, rowH + 1, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
+        const diagLines = pdf.splitTextToSize(v, CW - 54);
+        const boxH = Math.max(rowH + 1, diagLines.length * 4.2 + 2.5);
+        pdf.setFillColor(...PINK_LIGHT); pdf.rect(ML, y, CW, boxH, 'F');
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(...PINK);
         pdf.text('Bethesda Category:', ML + 2, y + 4.2);
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(...DARK);
-        const diagLines = pdf.splitTextToSize(v, CW - 54);
-        pdf.text(diagLines[0] || v, ML + 54, y + 4.2);
-        y += rowH + 2;
+        diagLines.forEach((line, li) => { pdf.text(line, ML + 54, y + 4.2 + (li * 4.2)); });
+        y += boxH + 1.5;
       } else {
         y += drawRow(p.name, v, y, i % 2 === 0);
       }

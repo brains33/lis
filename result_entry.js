@@ -699,6 +699,8 @@ const SEROLOGY_PARAMS = [
 const HISTOPATH_PARAMS = [
   // Request side (filled at reception / sample login)
   {key:'specimen_site',   name:'Specimen / Site',              unit:'', type:'text',   section:'Request'},
+  {key:'laterality',      name:'Laterality',                   unit:'', type:'select', section:'Request',
+   options:['Right','Left','Bilateral','Midline','Not Applicable']},
   {key:'clinical_info',   name:'Clinical History',             unit:'', type:'text',   section:'Request'},
   {key:'nature_specimen', name:'Nature of Specimen',           unit:'', type:'select', section:'Request',
    options:['Incision Biopsy','Excision Biopsy','Core Needle Biopsy',
@@ -717,11 +719,13 @@ const HISTOPATH_PARAMS = [
             'Grade II — Moderately Differentiated',
             'Grade III — Poorly Differentiated',
             'Grade IV — Undifferentiated']},
-  {key:'margins',         name:'Surgical Margins',             unit:'', type:'select', section:'Report',
+  {key:'margins',         name:'Surgical Margins — Status',    unit:'', type:'select', section:'Report',
    options:['Not Applicable','Clear (>1mm)','Close (<1mm)','Involved','Cannot Assess']},
+  {key:'margin_distance', name:'Closest Margin (specify site & distance)', unit:'', type:'text', section:'Report'},
   {key:'lymph_nodes',     name:'Lymph Node Status',            unit:'', type:'text',   section:'Report'},
-  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'},
-  {key:'comments',        name:'Comments / Recommendation',   unit:'', type:'textarea', section:'Report'}
+  {key:'staging',         name:'Pathologic Staging (pTNM, if applicable)', unit:'', type:'text', section:'Report'},
+  {key:'comments',        name:'Comments / Recommendation',   unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'}
 ];
 
 // FNAC — Fine Needle Aspiration Cytology
@@ -754,8 +758,8 @@ const FNAC_PARAMS = [
             'Abscess / Necrotic Material',
             'No Diagnostic Material — Repeat']},
   {key:'micro_desc',    name:'Microscopic Description',    unit:'', type:'textarea', section:'Report'},
-  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
-  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'}
+  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
 ];
 
 // PAP Smear — Bethesda 2014 system (used in Nigerian government hospitals)
@@ -773,10 +777,10 @@ const PAP_SMEAR_PARAMS = [
             'Unsatisfactory — Broken / Unfixed Slide']},
   {key:'cytology',      name:'Cytological Findings (Bethesda)',unit:'', type:'select', section:'Report',
    options:['Negative for Intraepithelial Lesion or Malignancy (NILM)',
-            'ASC-US',
-            'ASC-H',
-            'LSIL (CIN I)',
-            'HSIL (CIN II / CIN III)',
+            'Atypical cells of unknown significance (ASC-US)',
+            'Atypical squamous cells cannot exclude HSIL (ASC-H)',
+            'Low-grade squamous intraepithelial lesion LSIL (CIN I)',
+            'High-grade squamous intraepithelial lesion HSIL (CIN II / CIN III)',
             'Squamous Cell Carcinoma',
             'Atypical Glandular Cells (AGC)',
             'Adenocarcinoma In Situ (AIS)',
@@ -801,8 +805,8 @@ const PAP_SMEAR_PARAMS = [
             'Biopsy Recommended',
             'HPV Testing Recommended',
             'Refer to Gynaecologist — Urgent']},
-  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'},
-  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'}
+  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
 ];
 
 // ========== MCS MICROSCOPY PARAMS ==========
@@ -1777,7 +1781,7 @@ async function openResultModal(id) {
               <textarea id="hp_${idx}_${p.key}" rows="3" style="width:100%;resize:vertical;" placeholder="${p.key==='macro_desc'?'Describe gross appearance, dimensions, colour, consistency…':p.key==='micro_desc'?'Describe microscopic findings, cell types, patterns…':p.key==='diagnosis'?'Enter the final histopathological diagnosis…':'Enter comments or recommendations…'}">${esc(val)}</textarea></div>`;
           } else {
             formsHtml += `<div class="param-item"><label>${esc(p.name)}</label>
-              <input type="text" id="hp_${idx}_${p.key}" value="${esc(val)}" placeholder="${p.key==='pathologist'?'Full name and qualifications':p.key==='lymph_nodes'?'e.g. 0/12 nodes positive':''}"></div>`;
+              <input type="text" id="hp_${idx}_${p.key}" value="${esc(val)}" placeholder="${p.key==='pathologist'?'Full name and qualifications':p.key==='lymph_nodes'?'e.g. 0/12 nodes positive':p.key==='margin_distance'?'e.g. Posterior margin, 4mm':p.key==='staging'?'e.g. pT2 N0 Mx':''}"></div>`;
           }
         });
         formsHtml += `</div>`;

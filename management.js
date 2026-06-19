@@ -447,16 +447,24 @@ function _csvDate() {
   // Fetching released samples + their tests each time gets expensive fast.
   // Cache the raw dataset for 5 minutes; filters and deep-dives run on the
   // cached copy so the DB is only hit when the data is actually stale.
+  // The cache also stores the date-filter fingerprint it was built with,
+  // since date filters are pushed to the DB query — changing them must
+  // invalidate the cache even within the TTL window.
   let _analyticsCache       = null;   // array of mapped sample objects
   let _analyticsCacheTime   = 0;      // Date.now() when cache was filled
+  let _analyticsCacheFP     = '';     // date-filter fingerprint baked into cache
   const _ANALYTICS_TTL_MS   = 5 * 60 * 1000; // 5 minutes
 
-  function _analyticsCacheValid() {
-    return _analyticsCache !== null && (Date.now() - _analyticsCacheTime) < _ANALYTICS_TTL_MS;
+  function _analyticsCacheValid(dateFrom, dateTo) {
+    const fp = `${dateFrom||''}|${dateTo||''}`;
+    return _analyticsCache !== null
+      && (Date.now() - _analyticsCacheTime) < _ANALYTICS_TTL_MS
+      && _analyticsCacheFP === fp;
   }
   function _analyticsCacheInvalidate() {
     _analyticsCache     = null;
     _analyticsCacheTime = 0;
+    _analyticsCacheFP   = '';
   }
   // Expose so the "Refresh" button can bust it from outside
   window._analyticsInvalidateCache = _analyticsCacheInvalidate;
@@ -880,6 +888,15 @@ function _csvDate() {
     return '75+';
   }
 
+  // Returns the relevant tests for a sample, filtered by unit if active.
+  // unitFilt passed explicitly so this works both inside renderAnalytics
+  // and in the export handler which lives at the same IIFE scope level.
+  function _testsForUnit(s, unitFilt) {
+    if (!unitFilt) return (s.tests || []).filter(t => t.status !== 'Rejected');
+    const unitTests = new Set(_testDefs.units[unitFilt] || []);
+    return (s.tests || []).filter(t => unitTests.has(t.test_name) && t.status !== 'Rejected');
+  }
+
   function esc(s) {
     return (s == null ? '' : String(s)).replace(/[&<>"']/g, m =>
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -953,26 +970,51 @@ function _csvDate() {
     _populateUnitFilter();
     await _populateAreaFilter();
 
-    // Fetch released samples with their tests — use cache when fresh
+    // Fetch released samples with their tests — use cache when fresh.
+    // We paginate in batches of 1000 so the full dataset is always fetched
+    // regardless of total volume, not just the most recent 1000 rows.
+    // Date filters are pushed server-side so a researcher filtering
+    // "January 2024" never silently fetches the wrong rows.
     let samples = [];
     try {
-      if (_analyticsCacheValid()) {
+      if (_analyticsCacheValid(dateFrom, dateTo)) {
         samples = _analyticsCache;
       } else {
-        const { data, error } = await _db
-          .from('samples')
-          .select('id,patient,age,gender,area,collection_date,status,sample_tests(id,test_name,status,result)')
-          .eq('status', 'Result Released')
-          .order('id', { ascending: false })
-          .limit(1000);
-        if (error) throw error;
-        samples = (data || []).map(s => ({
+        // Read date filters now so they can be applied at DB level
+        const dateFrom = document.getElementById('analyticsDateFrom')?.value || '';
+        const dateTo   = document.getElementById('analyticsDateTo')?.value   || '';
+
+        const PAGE = 1000;
+        let page = 0, done = false;
+        const allRows = [];
+
+        while (!done) {
+          let q = _db
+            .from('samples')
+            .select('id,patient,age,gender,area,collection_date,status,sample_tests(id,test_name,status,result)')
+            .eq('status', 'Result Released')
+            .order('id', { ascending: false })
+            .range(page * PAGE, (page + 1) * PAGE - 1);
+
+          if (dateFrom) q = q.gte('collection_date', dateFrom);
+          if (dateTo)   q = q.lte('collection_date', dateTo);
+
+          const { data, error } = await q;
+          if (error) throw error;
+
+          allRows.push(...(data || []));
+          if (!data || data.length < PAGE) done = true;
+          else page++;
+        }
+
+        samples = allRows.map(s => ({
           ...s,
           collDate: s.collection_date,
           tests: s.sample_tests || []
         }));
         _analyticsCache     = samples;
         _analyticsCacheTime = Date.now();
+        _analyticsCacheFP   = `${dateFrom||''}|${dateTo||''}`;
       }
     } catch (err) {
       wrap.innerHTML = `<div class="analytics-empty" style="color:var(--red);">⚠️ Failed to load data: ${esc(err.message)}</div>`;
@@ -1014,11 +1056,7 @@ function _csvDate() {
     });
 
     // When unit filter is active, only count tests from that unit
-    function _testsForUnit(s) {
-      if (!unitFilt) return (s.tests || []).filter(t => t.status !== 'Rejected');
-      const unitTests = new Set(_testDefs.units[unitFilt] || []);
-      return (s.tests || []).filter(t => unitTests.has(t.test_name) && t.status !== 'Rejected');
-    }
+    // (_testsForUnit is defined at module level below for shared use)
 
     if (!filtered.length) {
       wrap.innerHTML = `<div class="analytics-empty">
@@ -1038,7 +1076,7 @@ function _csvDate() {
       const b = _ageGroup(s.age);
       ageBkts[b] = (ageBkts[b] || 0) + 1;
     });
-    const totalTests = filtered.reduce((sum, s) => sum + _testsForUnit(s).length, 0);
+    const totalTests = filtered.reduce((sum, s) => sum + _testsForUnit(s, unitFilt).length, 0);
 
     const unitLabel = unitFilt ? ` · Unit: ${esc(unitFilt)}` : '';
     const summaryHtml = `
@@ -1086,7 +1124,7 @@ function _csvDate() {
 
     // ── Most-requested tests ───────────────────────────────────────────────
     const testFreq = {};
-    filtered.forEach(s => _testsForUnit(s).forEach(t => {
+    filtered.forEach(s => _testsForUnit(s, unitFilt).forEach(t => {
       testFreq[t.test_name] = (testFreq[t.test_name] || 0) + 1;
     }));
     const topTests = Object.entries(testFreq).sort((a,b) => b[1]-a[1]).slice(0, 12);
@@ -1536,14 +1574,13 @@ function _csvDate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   document.getElementById('exportAnalyticsBtn')?.addEventListener('click', async () => {
-    // Re-use the live cache — no extra DB call unless cache is stale
     let samples = _analyticsCache;
     if (!samples || !samples.length) {
       window._showAnalyticsToast?.('Run analytics first, then export.');
       return;
     }
 
-    // Read current filter state (mirrors renderAnalytics filter logic exactly)
+    // ── Mirror filter state from renderAnalytics ──────────────────────────
     const dateFrom   = document.getElementById('analyticsDateFrom')?.value  || '';
     const dateTo     = document.getElementById('analyticsDateTo')?.value    || '';
     const genderFilt = document.getElementById('analyticsGender')?.value    || 'all';
@@ -1553,11 +1590,9 @@ function _csvDate() {
     const areaFilt   = document.getElementById('analyticsAreaFilter')?.value || '';
     const testFilt   = document.getElementById('analyticsTestSelect')?.value || '';
 
-    // Apply the same demographic + unit + area filters used in renderAnalytics
     const withResults = samples.filter(s =>
       (s.tests || []).some(t => t.result && t.result.trim() && t.status !== 'Rejected')
     );
-
     let filtered = withResults.filter(s => {
       if (dateFrom && (s.collDate || '') < dateFrom) return false;
       if (dateTo   && (s.collDate || '') > dateTo)   return false;
@@ -1567,30 +1602,17 @@ function _csvDate() {
       if (areaFilt && (s.area || '') !== areaFilt) return false;
       if (unitFilt) {
         const unitTests = new Set(_testDefs.units[unitFilt] || []);
-        const hasUnitTest = (s.tests || []).some(t => unitTests.has(t.test_name) && t.status !== 'Rejected' && t.result);
-        if (!hasUnitTest) return false;
+        if (!(s.tests || []).some(t => unitTests.has(t.test_name) && t.status !== 'Rejected' && t.result)) return false;
       }
-      // If a specific test is selected in the deep-dive, restrict to patients who have it
       if (testFilt) {
-        const hasTest = (s.tests || []).some(t => t.test_name === testFilt && t.status !== 'Rejected' && t.result);
-        if (!hasTest) return false;
+        if (!(s.tests || []).some(t => t.test_name === testFilt && t.status !== 'Rejected' && t.result)) return false;
       }
       return true;
     });
 
-    if (!filtered.length) {
-      alert('No data to export with current filters. Run analytics first.');
-      return;
-    }
+    if (!filtered.length) { alert('No data to export with current filters.'); return; }
 
-    // ── Pass 1: discover every numeric parameter and every qualitative key
-    //    present in the filtered dataset, maintaining insertion order ──────────
-    const numParamOrder  = [];   // display names, e.g. "WBC", "ALT"
-    const numParamKeyMap = {};   // displayName → { key, low, high, unit, testType }
-    const qualKeyOrder   = [];   // raw JSON keys, e.g. "hbsag", "blood_group"
-    const qualKeyNameMap = {};   // raw key → display name
-
-    // Qualitative display names (in sync with management.js QUAL_PARAM_NAMES)
+    // ── Qualitative display names ─────────────────────────────────────────
     const QUAL_DISPLAY = {
       hbsag:'HBsAg', anti_hbs:'Anti-HBs', hbeag:'HBeAg', anti_hbe:'Anti-HBe',
       anti_hbc:'Anti-HBc', hcv:'HCV', rvs:'RVS (HIV)', shcg:'SHCG (Pregnancy)',
@@ -1604,209 +1626,404 @@ function _csvDate() {
       colour:'Urine Colour', appearance:'Urine Appearance', protein:'Urine Protein',
       glucose:'Urine Glucose', ketones:'Urine Ketones', blood:'Urine Blood',
       bilirubin:'Urine Bilirubin', nitrite:'Urine Nitrite',
-      leuko:'Urine Leukocyte Esterase', ascorbic_acid:'Urine Ascorbic Acid',
-      bacteria:'Urine Bacteria', yeast:'Urine Yeast',
-      gram_stain:'Gram Stain', india_ink:'India Ink', crypto_ag:'Cryptococcal Ag',
+      leuko:'Urine Leukocyte Esterase', bacteria:'Urine Bacteria',
       consistency:'Stool Consistency', colour_stool:'Stool Colour',
-      blood_stool:'Stool Blood', mucus_stool:'Stool Mucus',
-      wbc_stool:'Stool WBC', rbc_stool:'Stool RBC', fat_globules:'Stool Fat Globules',
-      ova_parasite:'Stool Ova/Parasites', yeast_stool:'Stool Yeast',
-      occult_blood:'Stool Occult Blood', micro_comment_stool:'Stool Microscopy Comment',
-      viscosity:'Semen Viscosity', liquefaction:'Semen Liquefaction',
-      gram_stain_csf:'CSF Gram Stain', india_ink_csf:'CSF India Ink',
-      wp_parasite:'Wet Prep Parasite/Ova',
+      ova_parasite:'Stool Ova/Parasites', occult_blood:'Stool Occult Blood',
       crossmatch:'Crossmatch Result', patient_blood_group:'Patient Blood Group',
       donor_blood_group:'Donor Blood Group',
     };
 
+    // ── Compute all analytics data ────────────────────────────────────────
+    const n = filtered.length;
+
+    // Gender
+    const gCount = { Male: 0, Female: 0, Other: 0 };
+    filtered.forEach(s => { const g = s.gender || 'Other'; gCount[g in gCount ? g : 'Other']++; });
+
+    // Age groups
+    const ageOrder = ['0–4','5–12','13–17','18–29','30–44','45–59','60–74','75+'];
+    const ageBkts  = {}; ageOrder.forEach(g => ageBkts[g] = 0);
+    filtered.forEach(s => { const g = _ageGroup(parseInt(s.age)); if (g in ageBkts) ageBkts[g]++; });
+
+    // Monthly trend
+    const monthMap = {};
+    filtered.forEach(s => {
+      const d = (s.collDate || '').slice(0, 7); // YYYY-MM
+      if (d) monthMap[d] = (monthMap[d] || 0) + 1;
+    });
+    const monthLabels = Object.keys(monthMap).sort();
+    const monthVals   = monthLabels.map(m => monthMap[m]);
+
+    // Test frequency
+    const testFreq = {};
+    filtered.forEach(s => _testsForUnit(s, unitFilt).forEach(t => {
+      testFreq[t.test_name] = (testFreq[t.test_name] || 0) + 1;
+    }));
+    const topTests = Object.entries(testFreq).sort((a,b) => b[1]-a[1]).slice(0, 12);
+
+    // Area distribution
+    const areaFreq = {};
+    filtered.forEach(s => { const a = s.area || 'Unknown'; areaFreq[a] = (areaFreq[a] || 0) + 1; });
+    const topAreas = Object.entries(areaFreq).sort((a,b) => b[1]-a[1]).slice(0, 10);
+
+    // Numeric parameters: stats + abnormality
+    const numParamMap = {};
     filtered.forEach(s => {
       (s.tests || []).forEach(t => {
         if (t.status === 'Rejected' || !t.result) return;
-        // If deep-dive filter is on, only scan that test
         if (testFilt && t.test_name !== testFilt) return;
-
-        // Numeric parameters
-        const nums = _extractNumerics(t.test_name, t.result, s.age, s.gender);
-        nums.forEach(n => {
-          if (!numParamKeyMap[n.param]) {
-            numParamOrder.push(n.param);
-            numParamKeyMap[n.param] = { key: n.key, low: n.low, high: n.high, unit: n.unit, testName: t.test_name };
-          }
-        });
-
-        // Qualitative parameters
-        if (!t.result.startsWith('{')) return;
-        let d;
-        try { d = JSON.parse(t.result); } catch(e) { return; }
-        Object.entries(d).forEach(([k, v]) => {
-          if (v === null || v === undefined || v === '') return;
-          if (typeof v === 'object') return;
-          const strVal = String(v).trim();
-          if (!strVal || strVal.length > 80) return;
-          if (/^\d{4}-\d{2}-\d{2}/.test(strVal)) return;
-          const numV = parseFloat(strVal);
-          // Skip pure numbers (already in numeric block)
-          if (!isNaN(numV) && String(numV) === strVal) return;
-          if (!qualKeyNameMap[k]) {
-            qualKeyOrder.push(k);
-            qualKeyNameMap[k] = QUAL_DISPLAY[k] || k.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-          }
+        _extractNumerics(t.test_name, t.result, s.age, s.gender).forEach(nv => {
+          if (!numParamMap[nv.param]) numParamMap[nv.param] = { name: nv.param, unit: nv.unit, low: nv.low, high: nv.high, vals: [], abn: 0, normal: 0, mVals: [], fVals: [] };
+          const pm = numParamMap[nv.param];
+          pm.vals.push(nv.val);
+          if (nv.val > nv.high || nv.val < nv.low) pm.abn++; else pm.normal++;
+          if (s.gender === 'Male') pm.mVals.push(nv.val); else if (s.gender === 'Female') pm.fVals.push(nv.val);
         });
       });
     });
 
-    // ── Build metadata header block (rows before the data) ──────────────────
+    // Qualitative distributions
+    const qualDistMap = {};
+    filtered.forEach(s => {
+      (s.tests || []).forEach(t => {
+        if (t.status === 'Rejected' || !t.result || !t.result.startsWith('{')) return;
+        if (testFilt && t.test_name !== testFilt) return;
+        let d; try { d = JSON.parse(t.result); } catch(e) { return; }
+        Object.entries(d).forEach(([k, v]) => {
+          if (!v || typeof v === 'object') return;
+          const sv = String(v).trim();
+          if (!sv || sv.length > 80 || /^\d{4}-\d{2}-\d{2}/.test(sv) || (!isNaN(parseFloat(sv)) && String(parseFloat(sv)) === sv)) return;
+          const label = QUAL_DISPLAY[k] || k.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+          if (!qualDistMap[label]) qualDistMap[label] = {};
+          qualDistMap[label][sv] = (qualDistMap[label][sv] || 0) + 1;
+        });
+      });
+    });
+
+    // Abnormality rate per test (sorted by rate desc)
+    const abnRates = Object.entries(numParamMap)
+      .filter(([,p]) => p.vals.length > 0)
+      .map(([name, p]) => ({ name, pct: Math.round((p.abn / p.vals.length) * 100), abn: p.abn, total: p.vals.length }))
+      .sort((a,b) => b.pct - a.pct).slice(0, 15);
+
+    // ── Build histogram bins for a parameter ─────────────────────────────
+    function buildHistogram(vals, low, high) {
+      const bins = 8;
+      const minV = Math.min(...vals), maxV = Math.max(...vals);
+      const range = maxV - minV || 1;
+      const bSize = range / bins;
+      const counts = Array(bins).fill(0);
+      const colors = [];
+      vals.forEach(v => { const i = Math.min(Math.floor((v - minV) / bSize), bins - 1); counts[i]++; });
+      for (let i = 0; i < bins; i++) {
+        const midpoint = minV + (i + 0.5) * bSize;
+        colors.push(midpoint >= low && midpoint <= high ? 'rgba(16,185,129,0.75)' : 'rgba(248,113,113,0.75)');
+      }
+      const labels = Array.from({length: bins}, (_, i) => (minV + i * bSize).toFixed(1));
+      return { labels, counts, colors };
+    }
+
+    // ── Filter description ────────────────────────────────────────────────
     const filterDesc = [
-      dateFrom || dateTo ? `Date: ${dateFrom||'*'} → ${dateTo||'*'}` : null,
+      dateFrom || dateTo ? `Date: ${dateFrom || '*'} → ${dateTo || '*'}` : null,
       genderFilt !== 'all' ? `Gender: ${genderFilt}` : null,
-      (ageMin > 0 || ageMax < 999) ? `Age: ${ageMin}–${ageMax}` : null,
+      (ageMin > 0 || ageMax < 999) ? `Age: ${ageMin}–${ageMax} yrs` : null,
       unitFilt ? `Unit: ${unitFilt}` : null,
       areaFilt ? `Area: ${areaFilt}` : null,
       testFilt ? `Test: ${testFilt}` : null,
-    ].filter(Boolean).join(' | ') || 'No filters applied';
+    ].filter(Boolean).join('  ·  ') || 'All released results — no filters applied';
 
-    const metaBlock = [
-      ['EXPORT INFORMATION'],
-      ['System:', "MU'UJIZA Laboratory Information System"],
-      ['Report:', 'Clinical Analytics Dataset — Research Export'],
-      ['Generated:', new Date().toLocaleString('en-GB', { dateStyle:'full', timeStyle:'medium' })],
-      ['Exported by:', `${(window._currentSession||{}).name||'—'} (${(window._currentSession||{}).role||'—'})`],
-      ['Active filters:', filterDesc],
-      ['Patients exported:', filtered.length],
-      ['Numeric parameters:', numParamOrder.length],
-      ['Qualitative parameters:', qualKeyOrder.length],
-      ['Cache age (min):', ((_analyticsCacheTime ? ((Date.now()-_analyticsCacheTime)/60000) : 0)).toFixed(1)],
-      ['NOTE:', 'Blank cell = test not ordered or result rejected. Not equivalent to zero.'],
-      ['NOTE:', 'Flag values: HIGH | LOW | NORMAL. Blank = not applicable or not numeric.'],
-      ['NOTE:', 'Numeric reference ranges are gender/age-adjusted where applicable (Hb, HCT).'],
-      [],
-    ];
+    const exportedBy = `${(window._currentSession||{}).name || '—'} (${(window._currentSession||{}).role || '—'})`;
+    const exportDate = new Date().toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'medium' });
 
-    // ── Build column header row ──────────────────────────────────────────────
-    // Block A — identifiers
-    const colsA = [
-      'Sample_ID',        // MU-{id}  — unique key for cross-referencing
-      'Patient_Name',
-      'Age_Years',
-      'Age_Group',        // 0–4, 5–12, 13–17, 18–29, 30–44, 45–59, 60–74, 75+
-      'Gender',
-      'Area_Locality',
-    ];
-    // Block B — sample metadata
-    const colsB = [
-      'Collection_Date',
-      'Priority',         // Routine / Urgent / STAT
-      'Sample_Status',    // Result Released (all rows in analytics are released)
-    ];
-    // Block C — numeric values
-    const colsC = numParamOrder.map(p => {
-      const info = numParamKeyMap[p];
-      return `${p.replace(/[\s/()+-]/g,'_')} (${info.unit||'–'})`;
-    });
-    // Block D — qualitative values
-    const colsD = qualKeyOrder.map(k => qualKeyNameMap[k].replace(/[\s/()]/g,'_'));
-    // Block E — flag columns for each numeric param
-    const colsE = numParamOrder.map(p => `${p.replace(/[\s/()+-]/g,'_')}_FLAG`);
-
-    const headerRow = [...colsA, ...colsB, ...colsC, ...colsD, ...colsE];
-
-    // ── Build data rows ──────────────────────────────────────────────────────
-    // Helper: age group (mirrors _ageGroup in the module)
-    const ageGrp = age => {
-      const a = parseInt(age);
-      if (isNaN(a)||a<0) return 'Unknown';
-      if (a<5) return '0–4'; if (a<13) return '5–12'; if (a<18) return '13–17';
-      if (a<30) return '18–29'; if (a<45) return '30–44'; if (a<60) return '45–59';
-      if (a<75) return '60–74'; return '75+';
+    // ── Build chart JSON payloads (serialised for inline <script>) ────────
+    const chartsData = {
+      gender: {
+        type: 'doughnut',
+        data: {
+          labels: ['Male', 'Female', 'Other'].filter(g => gCount[g] > 0),
+          datasets: [{ data: ['Male','Female','Other'].filter(g => gCount[g] > 0).map(g => gCount[g]), backgroundColor: ['#2563eb','#db2777','#94a3b8'], borderWidth: 2, borderColor: '#fff' }]
+        },
+        options: { plugins: { legend: { position: 'bottom' }, title: { display: true, text: `Gender Distribution  (n = ${n})`, font: { size: 14, weight: 'bold' } } }, cutout: '60%' }
+      },
+      age: {
+        type: 'bar',
+        data: { labels: ageOrder.filter(g => ageBkts[g] > 0), datasets: [{ label: 'Patients', data: ageOrder.filter(g => ageBkts[g] > 0).map(g => ageBkts[g]), backgroundColor: '#0891b2', borderRadius: 6 }] },
+        options: { plugins: { legend: { display: false }, title: { display: true, text: 'Age Group Distribution', font: { size: 14, weight: 'bold' } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+      },
+      trend: monthLabels.length > 1 ? {
+        type: 'line',
+        data: { labels: monthLabels, datasets: [{ label: 'Samples Released', data: monthVals, borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.08)', fill: true, tension: 0.35, pointRadius: 4 }] },
+        options: { plugins: { legend: { display: false }, title: { display: true, text: 'Monthly Sample Volume Trend', font: { size: 14, weight: 'bold' } } }, scales: { y: { beginAtZero: true } } }
+      } : null,
+      topTests: {
+        type: 'bar',
+        data: { labels: topTests.map(([name]) => name), datasets: [{ label: 'Requests', data: topTests.map(([,cnt]) => cnt), backgroundColor: '#059669', borderRadius: 4 }] },
+        options: { indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Most Requested Tests (Top 12)', font: { size: 14, weight: 'bold' } } }, scales: { x: { beginAtZero: true } } }
+      },
+      areas: topAreas.length > 1 ? {
+        type: 'bar',
+        data: { labels: topAreas.map(([a]) => a), datasets: [{ label: 'Samples', data: topAreas.map(([,c]) => c), backgroundColor: '#d97706', borderRadius: 4 }] },
+        options: { indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Sample Origin by Area / Clinic', font: { size: 14, weight: 'bold' } } }, scales: { x: { beginAtZero: true } } }
+      } : null,
+      abnormality: abnRates.length ? {
+        type: 'bar',
+        data: {
+          labels: abnRates.map(r => r.name),
+          datasets: [{
+            label: '% Abnormal',
+            data: abnRates.map(r => r.pct),
+            backgroundColor: abnRates.map(r => r.pct > 30 ? '#b91c1c' : r.pct > 10 ? '#d97706' : '#15803d'),
+            borderRadius: 4
+          }]
+        },
+        options: { indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Abnormality Rate by Test Parameter (%)', font: { size: 14, weight: 'bold' } } }, scales: { x: { beginAtZero: true, max: 100 } } }
+      } : null,
     };
 
-    const dataRows = filtered.map(s => {
-      // Block A
-      const rowA = [
-        `MU-${s.id}`,
-        s.patient || '',
-        s.age ?? '',
-        ageGrp(s.age),
-        s.gender || '',
-        s.area || '',
-      ];
-      // Block B
-      const rowB = [
-        s.collDate || s.collection_date || '',
-        s.priority || '',
-        s.status || 'Result Released',
-      ];
-
-      // Gather all numeric results for this patient across all their tests
-      const numVals  = {};  // param display name → { val, low, high }
-      const qualVals = {};  // raw key → string value
-
-      (s.tests || []).forEach(t => {
-        if (t.status === 'Rejected' || !t.result) return;
-        if (testFilt && t.test_name !== testFilt) return;
-
-        // Numeric
-        const nums = _extractNumerics(t.test_name, t.result, s.age, s.gender);
-        nums.forEach(n => {
-          if (numVals[n.param] === undefined) {
-            numVals[n.param] = { val: n.val, low: n.low, high: n.high };
-          }
-        });
-
-        // Qualitative
-        if (!t.result.startsWith('{')) return;
-        let d;
-        try { d = JSON.parse(t.result); } catch(e) { return; }
-        Object.entries(d).forEach(([k, v]) => {
-          if (v === null || v === undefined || v === '') return;
-          if (typeof v === 'object') return;
-          const strVal = String(v).trim();
-          if (!strVal || strVal.length > 80) return;
-          if (/^\d{4}-\d{2}-\d{2}/.test(strVal)) return;
-          const numV = parseFloat(strVal);
-          if (!isNaN(numV) && String(numV) === strVal) return;
-          if (qualVals[k] === undefined) qualVals[k] = strVal;
-        });
-      });
-
-      // Block C — numeric values (blank if not available for this patient)
-      const rowC = numParamOrder.map(p => {
-        const entry = numVals[p];
-        return entry !== undefined ? entry.val : '';
-      });
-      // Block D — qualitative values
-      const rowD = qualKeyOrder.map(k => qualVals[k] ?? '');
-      // Block E — flags
-      const rowE = numParamOrder.map(p => {
-        const entry = numVals[p];
-        if (entry === undefined) return '';
-        if (entry.val > entry.high) return 'HIGH';
-        if (entry.val < entry.low)  return 'LOW';
-        return 'NORMAL';
-      });
-
-      return [...rowA, ...rowB, ...rowC, ...rowD, ...rowE];
+    // Per-parameter histograms + normal/abnormal donuts
+    const paramCharts = Object.values(numParamMap).filter(p => p.vals.length >= 3).map(p => {
+      const hist = buildHistogram(p.vals, p.low, p.high);
+      const mean = (p.vals.reduce((a,b)=>a+b,0)/p.vals.length).toFixed(2);
+      const mMean = p.mVals.length ? (p.mVals.reduce((a,b)=>a+b,0)/p.mVals.length).toFixed(2) : null;
+      const fMean = p.fVals.length ? (p.fVals.reduce((a,b)=>a+b,0)/p.fVals.length).toFixed(2) : null;
+      const pctAbn = Math.round((p.abn / p.vals.length) * 100);
+      return {
+        name: p.name, unit: p.unit, low: p.low, high: p.high, total: p.vals.length,
+        mean, pctAbn, mMean, fMean,
+        histConfig: {
+          type: 'bar',
+          data: { labels: hist.labels, datasets: [{ label: 'Count', data: hist.counts, backgroundColor: hist.colors, borderRadius: 3 }] },
+          options: { plugins: { legend: { display: false }, title: { display: true, text: `${p.name} Distribution (Ref: ${p.low}–${p.high} ${p.unit})`, font: { size: 12 } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+        },
+        donutConfig: {
+          type: 'doughnut',
+          data: { labels: ['Normal', 'Abnormal'], datasets: [{ data: [p.normal, p.abn], backgroundColor: ['#10b981','#f87171'], borderWidth: 2, borderColor: '#fff' }] },
+          options: { plugins: { legend: { position: 'bottom' }, title: { display: true, text: 'Normal vs Abnormal', font: { size: 12 } } }, cutout: '55%' }
+        },
+        genderConfig: (mMean && fMean) ? {
+          type: 'bar',
+          data: { labels: ['Male', 'Female'], datasets: [{ label: `Mean ${p.unit}`, data: [parseFloat(mMean), parseFloat(fMean)], backgroundColor: ['#2563eb','#db2777'], borderRadius: 6 }] },
+          options: { plugins: { legend: { display: false }, title: { display: true, text: 'Mean by Gender', font: { size: 12 } } }, scales: { y: { beginAtZero: false } } }
+        } : null
+      };
     });
 
-    // ── Reference range legend block (appended after data) ──────────────────
-    const legendBlock = [
-      [],
-      ['NUMERIC REFERENCE RANGES (used for FLAG column)'],
-      ['Parameter', 'Units', 'Lower Limit', 'Upper Limit', 'Notes'],
-      ...numParamOrder.map(p => {
-        const info = numParamKeyMap[p];
-        const genderNote = ['Haemoglobin','Haematocrit'].includes(p)
-          ? 'Gender-adjusted per row (M/F differ)' : '';
-        return [p, info.unit || '', info.low, info.high, genderNote];
-      }),
-    ];
+    // Qualitative charts
+    const qualCharts = Object.entries(qualDistMap)
+      .filter(([,d]) => Object.keys(d).length >= 2 && Object.keys(d).length <= 12)
+      .slice(0, 16)
+      .map(([label, dist]) => {
+        const entries = Object.entries(dist).sort((a,b) => b[1]-a[1]);
+        const PALETTE = ['#2563eb','#db2777','#059669','#d97706','#7c3aed','#0891b2','#b91c1c','#15803d','#94a3b8','#f59e0b','#6366f1','#ec4899'];
+        return {
+          label,
+          config: {
+            type: entries.length <= 5 ? 'doughnut' : 'bar',
+            data: {
+              labels: entries.map(([k]) => k),
+              datasets: [{
+                data: entries.map(([,v]) => v),
+                backgroundColor: entries.map((_, i) => PALETTE[i % PALETTE.length]),
+                borderWidth: 2, borderColor: '#fff', borderRadius: 4
+              }]
+            },
+            options: {
+              indexAxis: entries.length > 5 ? 'y' : undefined,
+              plugins: {
+                legend: { position: entries.length <= 5 ? 'bottom' : 'none', display: entries.length <= 5 },
+                title: { display: true, text: label, font: { size: 13, weight: 'bold' } }
+              },
+              cutout: entries.length <= 5 ? '50%' : undefined,
+              scales: entries.length > 5 ? { x: { beginAtZero: true } } : undefined
+            }
+          }
+        };
+      });
 
-    // ── Assemble final CSV ───────────────────────────────────────────────────
-    const allRows = [...metaBlock, headerRow, ...dataRows, ...legendBlock];
-    const filename = `muujiza_clinical_export_${_csvDate()}.csv`;
-    _downloadCsv(filename, allRows);
+    // Reference range table rows
+    const refTableRows = Object.values(numParamMap).map(p =>
+      `<tr><td>${p.name}</td><td>${p.unit||'—'}</td><td>${p.low}</td><td>${p.high}</td><td>${p.vals.length}</td><td style="color:${p.abn/p.vals.length>0.3?'#b91c1c':p.abn/p.vals.length>0.1?'#d97706':'#15803d'};font-weight:600;">${Math.round((p.abn/p.vals.length)*100)}%</td></tr>`
+    ).join('');
 
-    const msg = `Exported ${filtered.length} patients · ${numParamOrder.length} numeric + ${qualKeyOrder.length} qualitative parameters → ${filename}`;
+    // ── Generate self-contained HTML report ───────────────────────────────
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MU'UJIZA LIS — Clinical Analytics Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f8fafc; color: #1e293b; font-size: 14px; }
+  .cover { background: linear-gradient(135deg, #0f4c81 0%, #1e3a5f 100%); color: #fff; padding: 48px 40px 36px; }
+  .cover h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .cover h2 { font-size: 1.1rem; font-weight: 400; opacity: .8; margin-bottom: 24px; }
+  .cover-meta { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; }
+  .cover-meta-item { background: rgba(255,255,255,.1); border-radius: 10px; padding: 12px 18px; }
+  .cover-meta-item .label { font-size: .7rem; opacity: .65; text-transform: uppercase; letter-spacing: .5px; }
+  .cover-meta-item .value { font-size: 1.05rem; font-weight: 700; margin-top: 2px; }
+  .filter-bar { background: #e0f2fe; border-left: 4px solid #0891b2; margin: 24px 32px 0; padding: 12px 18px; border-radius: 8px; font-size: .82rem; color: #0c4a6e; }
+  .section { padding: 28px 32px 0; }
+  .section-title { font-size: 1rem; font-weight: 700; color: #0f4c81; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 20px; letter-spacing: .2px; }
+  .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 24px; }
+  .chart-card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+  .chart-card canvas { max-height: 300px; }
+  .param-card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); margin-bottom: 20px; }
+  .param-title { font-size: .95rem; font-weight: 700; color: #059669; margin-bottom: 4px; }
+  .param-stats { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 16px; }
+  .stat-chip { background: #f1f5f9; border-radius: 8px; padding: 6px 12px; font-size: .78rem; }
+  .stat-chip strong { display: block; font-size: 1rem; color: #0f4c81; }
+  .param-charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  .param-charts-row-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .param-charts-row, .param-charts-row-3 { grid-template-columns: 1fr; } }
+  .ref-table { width: 100%; border-collapse: collapse; font-size: .82rem; margin-bottom: 32px; }
+  .ref-table th { background: #0f4c81; color: #fff; padding: 8px 12px; text-align: left; }
+  .ref-table td { padding: 7px 12px; border-bottom: 1px solid #e2e8f0; }
+  .ref-table tr:nth-child(even) td { background: #f8fafc; }
+  .footer { background: #1e293b; color: rgba(255,255,255,.5); text-align: center; padding: 20px; font-size: .75rem; margin-top: 32px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+  .pill-normal { background: #dcfce7; color: #15803d; }
+  .pill-warn   { background: #fef3c7; color: #92400e; }
+  .pill-danger { background: #fee2e2; color: #b91c1c; }
+  @media print {
+    .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .chart-card, .param-card { page-break-inside: avoid; }
+    .section { page-break-before: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ COVER ═══════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div style="font-size:.75rem;opacity:.6;margin-bottom:6px;letter-spacing:1px;">MU'UJIZA LABORATORY INFORMATION SYSTEM</div>
+  <h1>Clinical Analytics Report</h1>
+  <h2>Research & Epidemiological Summary</h2>
+  <div class="cover-meta">
+    <div class="cover-meta-item"><div class="label">Total Patients</div><div class="value">${n.toLocaleString()}</div></div>
+    <div class="cover-meta-item"><div class="label">Numeric Parameters</div><div class="value">${Object.keys(numParamMap).length}</div></div>
+    <div class="cover-meta-item"><div class="label">Qualitative Parameters</div><div class="value">${Object.keys(qualDistMap).length}</div></div>
+    <div class="cover-meta-item"><div class="label">Generated</div><div class="value" style="font-size:.85rem;">${exportDate}</div></div>
+    <div class="cover-meta-item"><div class="label">Exported by</div><div class="value" style="font-size:.85rem;">${exportedBy}</div></div>
+  </div>
+</div>
+<div class="filter-bar">🔍 <strong>Active Filters:</strong> ${filterDesc}</div>
+
+<!-- ═══ SECTION 1: OVERVIEW ══════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">1. Population Overview</div>
+  <div class="charts-grid">
+    <div class="chart-card"><canvas id="c_gender"></canvas></div>
+    <div class="chart-card"><canvas id="c_age"></canvas></div>
+    ${chartsData.trend ? `<div class="chart-card" style="grid-column:1/-1"><canvas id="c_trend"></canvas></div>` : ''}
+  </div>
+</div>
+
+<!-- ═══ SECTION 2: TEST DEMAND & AREA ═══════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">2. Test Demand & Sample Origin</div>
+  <div class="charts-grid">
+    <div class="chart-card"><canvas id="c_topTests"></canvas></div>
+    ${chartsData.areas ? `<div class="chart-card"><canvas id="c_areas"></canvas></div>` : ''}
+  </div>
+</div>
+
+<!-- ═══ SECTION 3: ABNORMALITY RATES ════════════════════════════════════ -->
+${chartsData.abnormality ? `
+<div class="section">
+  <div class="section-title">3. Abnormality Rates by Parameter</div>
+  <div class="chart-card"><canvas id="c_abnormality" style="max-height:420px;"></canvas></div>
+</div>` : ''}
+
+<!-- ═══ SECTION 4: QUALITATIVE FINDINGS ═════════════════════════════════ -->
+${qualCharts.length ? `
+<div class="section">
+  <div class="section-title">4. Qualitative Test Findings</div>
+  <div class="charts-grid">
+    ${qualCharts.map((qc, i) => `<div class="chart-card"><canvas id="c_qual_${i}"></canvas></div>`).join('')}
+  </div>
+</div>` : ''}
+
+<!-- ═══ SECTION 5: PER-PARAMETER DEEP DIVE ══════════════════════════════ -->
+${paramCharts.length ? `
+<div class="section">
+  <div class="section-title">5. Numeric Parameter Analysis</div>
+  ${paramCharts.map((p, i) => `
+  <div class="param-card">
+    <div class="param-title">${p.name} <span style="font-weight:400;color:#64748b;font-size:.8rem;">(${p.unit}) · n = ${p.total}</span>
+      &nbsp;<span class="pill ${p.pctAbn > 30 ? 'pill-danger' : p.pctAbn > 10 ? 'pill-warn' : 'pill-normal'}">${p.pctAbn}% Abnormal</span>
+    </div>
+    <div class="param-stats">
+      <div class="stat-chip"><strong>${p.mean}</strong>Mean (${p.unit})</div>
+      <div class="stat-chip"><strong>${p.low}–${p.high}</strong>Reference</div>
+      ${p.mMean ? `<div class="stat-chip"><strong style="color:#2563eb;">${p.mMean}</strong>Male Mean</div>` : ''}
+      ${p.fMean ? `<div class="stat-chip"><strong style="color:#db2777;">${p.fMean}</strong>Female Mean</div>` : ''}
+    </div>
+    <div class="${p.genderConfig ? 'param-charts-row-3' : 'param-charts-row'}">
+      <canvas id="c_hist_${i}"></canvas>
+      <canvas id="c_donut_${i}"></canvas>
+      ${p.genderConfig ? `<canvas id="c_gender_${i}"></canvas>` : ''}
+    </div>
+  </div>`).join('')}
+</div>` : ''}
+
+<!-- ═══ SECTION 6: REFERENCE RANGES ════════════════════════════════════ -->
+${refTableRows ? `
+<div class="section">
+  <div class="section-title">6. Reference Ranges & Abnormality Summary</div>
+  <table class="ref-table">
+    <thead><tr><th>Parameter</th><th>Unit</th><th>Lower Limit</th><th>Upper Limit</th><th>n</th><th>% Abnormal</th></tr></thead>
+    <tbody>${refTableRows}</tbody>
+  </table>
+</div>` : ''}
+
+<div class="footer">
+  MU'UJIZA Laboratory Information System &nbsp;·&nbsp; Generated ${exportDate} &nbsp;·&nbsp; ${exportedBy}<br>
+  <span style="font-size:.7rem;opacity:.7;">This report is generated from verified released laboratory results. For clinical use, verify individual patient records in the LIS.</span>
+</div>
+
+<script>
+(function() {
+  const C = ${JSON.stringify(chartsData)};
+  const P = ${JSON.stringify(paramCharts)};
+  const Q = ${JSON.stringify(qualCharts)};
+
+  function make(id, cfg) {
+    const el = document.getElementById(id);
+    if (el && cfg) new Chart(el, cfg);
+  }
+
+  make('c_gender',      C.gender);
+  make('c_age',         C.age);
+  make('c_trend',       C.trend);
+  make('c_topTests',    C.topTests);
+  make('c_areas',       C.areas);
+  make('c_abnormality', C.abnormality);
+
+  Q.forEach((q, i) => make('c_qual_' + i, q.config));
+  P.forEach((p, i) => {
+    make('c_hist_'   + i, p.histConfig);
+    make('c_donut_'  + i, p.donutConfig);
+    if (p.genderConfig) make('c_gender_' + i, p.genderConfig);
+  });
+})();
+<\/script>
+</body>
+</html>`;
+
+    // ── Download as .html file ────────────────────────────────────────────
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `muujiza_analytics_report_${_csvDate()}.html`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+
+    const msg = `Report generated: ${n} patients · ${Object.keys(numParamMap).length} numeric + ${Object.keys(qualDistMap).length} qualitative parameters. Open the downloaded .html file, then File → Print → Save as PDF.`;
     (typeof showToast === 'function') ? showToast(msg, 'success') : alert(msg);
   });
 
