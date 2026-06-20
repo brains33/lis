@@ -1280,6 +1280,20 @@ function buildReportPreview(s) {
           }
         }
       } catch(e) { rows += `<tr><td colspan="4">${esc(t.result)}</td></tr>`; }
+    } else if (t.result && (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
+               testType === 'complex_rbs' || testType === 'complex_fbs')) {
+      let range = getReferenceRange(t.test_name, s.age, s.gender);
+      if (!range) range = { low: 0, high: 100, unit: '' };
+      let flag = '';
+      let num = parseFloat(t.result);
+      if (!isNaN(num)) {
+        if (num > range.high) flag = '↑';
+        else if (num < range.low) flag = '↓';
+      }
+      rows += `<tr><td style="padding:6px 12px;">Result</td>
+                   <td style="padding:6px 12px; ${flag ? 'font-weight:700;color:#dc2626;' : ''}">${esc(t.result)} ${flag}</td>
+                   <td style="padding:6px 12px;">${esc(range.unit)}</td>
+                   <td style="padding:6px 12px;">${range.low}–${range.high}</td></tr>`;
     } else {
       rows += `<tr><td colspan="4">${esc(t.result || '—')}</td></tr>`;
     }
@@ -1727,11 +1741,16 @@ async function generatePDF(id) {
       continue;
     }
     let testType = getTestType(t.test_name);
+    const isSimpleNumericComplex = testType === 'complex_pcv' || testType === 'complex_hb' ||
+      testType === 'complex_esr' || testType === 'complex_rbs' || testType === 'complex_fbs';
     if (t.result && t.result.startsWith('{') && testType) {
       try {
         let data = JSON.parse(t.result);
         rows += generatePDFRows(t.test_name, data, testType, s.age, s.gender);
       } catch(e) { rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result)}</td></tr>`; }
+    } else if (t.result && isSimpleNumericComplex) {
+      let key = testType.split('_')[1];
+      rows += generatePDFRows(t.test_name, { [key]: t.result }, testType, s.age, s.gender);
     } else {
       rows += `<tr><td colspan="4">${esc(t.test_name)}: ${esc(t.result || '—')}</td></tr>`;
     }

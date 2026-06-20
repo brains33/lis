@@ -984,6 +984,12 @@ function buildResultCard(s) {
       }
       // ─────────────────────────────────────────────────────────────────────────
 
+      // ── complex_pcv/hb/esr/rbs/fbs: result is a plain string (not JSON) ──
+      if (['complex_pcv','complex_hb','complex_esr','complex_rbs','complex_fbs'].includes(testType)) {
+        testSections += buildParamTable(t.test_name, { [testType.split('_')[1]]: t.result || '' }, testType, s.age, s.gender);
+        return;
+      }
+
       if (!t.result || !t.result.startsWith('{')) {
         testSections += `
           <table class="param-table">
@@ -1672,6 +1678,8 @@ async function generatePDF(id) {
           ref ? pdfUnit(ref.unit) : '',
           ref ? `${ref.low}–${ref.high}` : '—'
         ]);
+      } else if (['complex_pcv','complex_hb','complex_esr','complex_rbs','complex_fbs'].includes(testType)) {
+        collectAutoTableRows(tableBody, t.test_name, { [testType.split('_')[1]]: t.result || '' }, testType, s.age, s.gender);
       } else if (!t.result || !t.result.startsWith('{')) {
         tableBody.push([t.test_name, t.result || '—', '', '']);
       } else {

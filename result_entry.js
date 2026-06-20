@@ -2246,11 +2246,8 @@ function collectSingleTestResult(idx) {
     test.result = JSON.stringify(data);
   } else if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
              testType === 'complex_rbs' || testType === 'complex_fbs') {
-    let key = testType.split('_')[1];
-    let inp = document.getElementById(`${key}_${idx}`);
-    let data = {};
-    if (inp && inp.value !== '') data[key] = parseFloat(inp.value);
-    test.result = JSON.stringify(data);
+    let inp = document.getElementById(`textResult_${idx}`);
+    if (inp) test.result = inp.value;
   } else if (testType === 'simple_numeric' || testType === 'simple_select') {
     let ta = document.getElementById(`textResult_${idx}`);
     if (ta) test.result = ta.value;
@@ -2496,11 +2493,8 @@ function collectResultsFromForms() {
       test.result = JSON.stringify(data);
     } else if (testType === 'complex_pcv' || testType === 'complex_hb' || testType === 'complex_esr' ||
                testType === 'complex_rbs' || testType === 'complex_fbs') {
-      let key = testType.split('_')[1];
-      let inp = document.getElementById(`${key}_${idx}`);
-      let data = {};
-      if (inp && inp.value !== '') data[key] = parseFloat(inp.value);
-      test.result = JSON.stringify(data);
+      let inp = document.getElementById(`textResult_${idx}`);
+      if (inp) test.result = inp.value;
     } else {
       let ta = document.getElementById(`textResult_${idx}`);
       if (ta) test.result = ta.value;
