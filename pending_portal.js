@@ -384,8 +384,8 @@ const PHOSPHATE_PARAMS = [
   {key:'phosphate_children', name:'Inorganic Phosphate (Children)', unit:'mmol/L', low:1.1, high:2.0}
 ];
 const URIC_ACID_PARAMS = [
-  {key:'uric_female', name:'Uric Acid (Female)', unit:'mmol/L', low:0.16, high:0.43},
-  {key:'uric_male',   name:'Uric Acid (Male)',   unit:'mmol/L', low:0.24, high:0.51}
+  {key:'uric_female', name:'Uric Acid (Female)', unit:'mg/dL', low:1.5, high:7.0},
+  {key:'uric_male',   name:'Uric Acid (Male)',   unit:'mmol/L', low:1.5, high:7.0}
 ];
 const LFT_PARAMS_FULL = [
   {key:'tbil',  name:'Total Bilirubin',                  unit:'mg/dL', low:0,   high:1.11},

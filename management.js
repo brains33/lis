@@ -768,8 +768,8 @@ function _csvDate() {
     // ── Uric Acid (standalone) ──────────────────────────────────────────────
     // NEW — matches pending_portal.js URIC_ACID_PARAMS exactly (gender split)
     complex_uric_acid: [
-      {key:'uric_female', name:'Uric Acid (Female)', unit:'mmol/L', low:0.16, high:0.43},
-      {key:'uric_male',   name:'Uric Acid (Male)',   unit:'mmol/L', low:0.24, high:0.51},
+      {key:'uric_female', name:'Uric Acid (Female)', unit:'md/dL', low:1.5, high:7.0},
+      {key:'uric_male',   name:'Uric Acid (Male)',   unit:'mg/dL', low:1.5, high:7.0},
     ],
 
     // ── Widal Test (titers — numeric, but flagged via 1:160+ cutoff) ────────
