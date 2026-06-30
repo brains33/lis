@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA Records – Admin</title>
+
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' https://npdopywxemtwzvpummsn.supabase.co;">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  :root{
+    --bg:#0e1320; --card:#161c2c; --field:#1e2538; --border:#2a324a;
+    --text:#e8ecf4; --muted:#8b93a8; --accent:#3ddc97; --accent-dark:#2bb87d; --error:#ff6b6b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);padding:20px;}
+  .wrap{max-width:1100px;margin:0 auto;}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  header h1{font-size:1.3rem;margin:0;}
+  header p{margin:2px 0 0;color:var(--muted);font-size:0.85rem;}
+  .logout-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.8rem;padding:7px 14px;border-radius:8px;cursor:pointer;}
+
+  .tabs{display:flex;gap:8px;margin-bottom:18px;}
+  .tab-btn{background:var(--card);border:1px solid var(--border);color:var(--muted);
+    padding:10px 18px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.88rem;}
+  .tab-btn.active{background:var(--accent);color:#04221a;font-weight:600;border-color:var(--accent);}
+
+  .panel{display:none;}
+  .panel.active{display:block;}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .card h2{font-size:1rem;margin:0 0 14px;color:var(--accent);}
+
+  .search-row{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .search-row input{flex:1;min-width:200px;}
+  input,select{background:var(--field);border:1px solid var(--border);border-radius:8px;
+    padding:9px 10px;color:var(--text);font-family:inherit;font-size:0.9rem;}
+  button{font-family:inherit;font-size:0.9rem;border:none;border-radius:8px;padding:10px 18px;cursor:pointer;}
+  .btn-primary{background:var(--accent);color:#04221a;font-weight:600;}
+  .btn-primary:hover{background:var(--accent-dark);}
+  .btn-primary:disabled{opacity:0.6;cursor:not-allowed;}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn-small{padding:6px 12px;font-size:0.8rem;}
+
+  table{width:100%;border-collapse:collapse;font-size:0.85rem;}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:500;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.04em;}
+  tr:hover td{background:rgba(255,255,255,0.02);}
+  .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:0.72rem;background:var(--field);border:1px solid var(--border);}
+  .badge.active{color:var(--accent);border-color:var(--accent);}
+  .badge.inactive{color:var(--error);border-color:var(--error);}
+
+  .msg{padding:12px 14px;border-radius:8px;font-size:0.88rem;margin-bottom:14px;display:none;}
+  .msg.show{display:block;}
+  .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
+  .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--accent);color:var(--accent);}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:50;}
+  .modal-bg.show{display:flex;}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;width:100%;max-width:520px;max-height:88vh;overflow:auto;}
+  .modal h3{margin:0 0 14px;}
+  .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .modal-grid .full{grid-column:1/-1;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  label{font-size:0.78rem;color:var(--muted);}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;}
+
+  .empty{color:var(--muted);text-align:center;padding:30px 0;}
+  .scroll-x{overflow-x:auto;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>⚙️ Records Admin</h1>
+      <p>MU'UJIZA Records Module — Administration</p>
+    </div>
+    <button class="logout-btn" id="logoutBtn">Log out</button>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="patients">Patients</button>
+    <button class="tab-btn" data-tab="staff">Staff Accounts</button>
+  </div>
+
+  <div class="msg error" id="errorMsg"></div>
+  <div class="msg success" id="successMsg"></div>
+
+  <!-- PATIENTS PANEL -->
+  <div class="panel active" id="panel-patients">
+    <div class="card">
+      <h2>Search Patients</h2>
+      <div class="search-row">
+        <input type="text" id="patientSearch" placeholder="Search by name, hospital number, or phone...">
+        <button class="btn-primary" id="searchBtn">Search</button>
+        <button class="btn-ghost" id="clearSearchBtn">Clear</button>
+      </div>
+      <div class="scroll-x">
+        <table id="patientTable">
+          <thead>
+            <tr><th>Hosp. No</th><th>Name</th><th>Gender</th><th>Phone</th><th>Department</th><th>Registered</th><th></th></tr>
+          </thead>
+          <tbody id="patientTbody"><tr><td colspan="7" class="empty">Search to view patients</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAFF PANEL -->
+  <div class="panel" id="panel-staff">
+    <div class="card">
+      <h2>Create Staff Account</h2>
+      <div class="modal-grid">
+        <div class="field"><label>Username</label><input type="text" id="newUsername"></div>
+        <div class="field"><label>Password</label><input type="password" id="newPassword"></div>
+        <div class="field full"><label>Role</label>
+          <select id="newRole">
+            <option value="records_officer">Records Officer</option>
+            <option value="records_admin">Records Admin</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="createUserBtn">Create Account</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Existing Staff</h2>
+      <div class="scroll-x">
+        <table id="staffTable">
+          <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr></thead>
+          <tbody id="staffTbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT PATIENT MODAL -->
+<div class="modal-bg" id="editModalBg">
+  <div class="modal">
+    <h3>Edit Patient</h3>
+    <div class="modal-grid">
+      <div class="field"><label>Surname</label><input type="text" id="e_surname"></div>
+      <div class="field"><label>First Name</label><input type="text" id="e_first_name"></div>
+      <div class="field"><label>Phone</label><input type="text" id="e_phone"></div>
+      <div class="field"><label>WhatsApp</label><input type="text" id="e_whatsapp_number"></div>
+      <div class="field full"><label>Address</label><input type="text" id="e_address"></div>
+      <div class="field"><label>Patient Department</label><input type="text" id="e_patient_department"></div>
+      <div class="field"><label>Assigned Doctor</label><input type="text" id="e_assigned_doctor"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="cancelEditBtn">Cancel</button>
+      <button class="btn-primary" id="saveEditBtn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script src="records-auth-guard.js"></script>
+<script src="record-admin.js"></script>
+</body>
+</html>
