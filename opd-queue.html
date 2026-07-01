@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA OPD – Nurse Queue</title>
+<meta http-equiv="X-Frame-Options" content="DENY">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#0e1320;--card:#161c2c;--field:#1e2538;--border:#2a324a;--text:#e8ecf4;--muted:#8b93a8;
+    --accent:#38bdf8;--accent-dark:#0ea5e9;--green:#3ddc97;--error:#ff6b6b;--warn:#ffb347;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);}
+  nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;flex-wrap:wrap;gap:8px;}
+  .nav-brand{font-weight:700;font-size:1rem;color:var(--accent);}
+  .nav-right{display:flex;align-items:center;gap:10px;}
+  .logout-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.78rem;padding:6px 12px;border-radius:7px;cursor:pointer;font-family:inherit;}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px;}
+
+  /* Stats bar */
+  .stats{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 16px;min-width:110px;}
+  .stat-val{font-size:1.5rem;font-weight:700;}
+  .stat-val.blue{color:var(--accent);}
+  .stat-val.green{color:var(--green);}
+  .stat-val.warn{color:var(--warn);}
+  .stat-val.red{color:var(--error);}
+  .stat-lbl{font-size:0.7rem;color:var(--muted);}
+
+  /* Queue panel + vitals panel side by side on wide screens */
+  .main-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:720px){.main-grid{grid-template-columns:1fr;}}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;}
+  .card h2{font-size:0.92rem;margin:0 0 12px;color:var(--accent);display:flex;align-items:center;gap:6px;}
+  .card h2 .count{background:var(--field);border:1px solid var(--border);border-radius:12px;padding:1px 8px;font-size:0.72rem;color:var(--muted);}
+
+  /* Queue search */
+  .queue-search{display:flex;gap:8px;margin-bottom:12px;}
+  .queue-search input{flex:1;}
+  input,select,textarea{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:inherit;font-size:0.86rem;width:100%;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+
+  /* Queue list */
+  .queue-list{display:flex;flex-direction:column;gap:6px;max-height:520px;overflow-y:auto;}
+  .queue-item{background:var(--field);border:1px solid var(--border);border-radius:10px;padding:11px 13px;cursor:pointer;transition:border-color 0.15s;}
+  .queue-item:hover{border-color:var(--accent);}
+  .queue-item.selected{border-color:var(--accent);background:rgba(56,189,248,0.06);}
+  .queue-item.emergency{border-left:3px solid var(--error);}
+  .queue-item.urgent{border-left:3px solid var(--warn);}
+  .queue-item.routine{border-left:3px solid var(--green);}
+  .qi-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .qi-name{font-weight:600;font-size:0.88rem;}
+  .qi-hospno{font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:var(--accent);}
+  .qi-bottom{display:flex;gap:10px;margin-top:4px;font-size:0.75rem;color:var(--muted);}
+  .triage-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.68rem;font-weight:600;text-transform:uppercase;}
+  .triage-badge.emergency{background:rgba(255,107,107,0.15);color:var(--error);}
+  .triage-badge.urgent{background:rgba(255,179,71,0.15);color:var(--warn);}
+  .triage-badge.routine{background:rgba(61,220,151,0.15);color:var(--green);}
+  .triage-badge.queued{background:var(--field);color:var(--muted);}
+  .status-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.68rem;}
+  .status-badge.queued{background:rgba(139,147,168,0.15);color:var(--muted);}
+  .status-badge.vitals_taken{background:rgba(56,189,248,0.12);color:var(--accent);}
+  .status-badge.with_doctor{background:rgba(61,220,151,0.12);color:var(--green);}
+  .empty{color:var(--muted);text-align:center;padding:24px 0;font-size:0.85rem;}
+
+  /* Vitals form */
+  .vitals-placeholder{display:flex;align-items:center;justify-content:center;height:200px;color:var(--muted);font-size:0.85rem;text-align:center;}
+  .vitals-form{display:none;}
+  .vitals-form.show{display:block;}
+  .patient-banner{background:var(--field);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:14px;}
+  .patient-banner .name{font-weight:700;font-size:1rem;}
+  .patient-banner .meta{font-size:0.78rem;color:var(--muted);margin-top:3px;}
+  .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .vfield{display:flex;flex-direction:column;gap:3px;}
+  .vfield.full{grid-column:1/-1;}
+  label{font-size:0.74rem;color:var(--muted);}
+  .unit{font-size:0.68rem;color:var(--muted);margin-top:1px;}
+  .triage-select{margin-bottom:10px;}
+  .triage-select select{font-weight:600;}
+  .btn-row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;}
+  button{font-family:inherit;font-size:0.86rem;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;}
+  .btn-primary{background:var(--accent);color:#04131d;font-weight:700;}
+  .btn-primary:hover{background:var(--accent-dark);}
+  .btn-primary:disabled{opacity:0.6;cursor:not-allowed;}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn-success{background:var(--green);color:#04221a;font-weight:700;}
+  .btn-warn{background:var(--warn);color:#1a0e00;font-weight:700;}
+
+  /* Queue a patient manually */
+  .queue-add{display:flex;gap:8px;margin-bottom:12px;}
+  .queue-add input{flex:1;}
+
+  .msg{padding:10px 12px;border-radius:8px;font-size:0.84rem;margin-bottom:12px;display:none;}
+  .msg.show{display:block;}
+  .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
+  .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--green);color:var(--green);}
+</style>
+</head>
+<body>
+<nav>
+  <span class="nav-brand">🏥 MU'UJIZA OPD — Nurse Station</span>
+  <div class="nav-right">
+    <span style="font-size:0.76rem;color:var(--muted);" id="userLabel"></span>
+    <button class="logout-btn" id="logoutBtn">Log out</button>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><div class="stat-val blue" id="s_queued">—</div><div class="stat-lbl">Queued</div></div>
+    <div class="stat"><div class="stat-val warn" id="s_vitals">—</div><div class="stat-lbl">Awaiting Doctor</div></div>
+    <div class="stat"><div class="stat-val green" id="s_done">—</div><div class="stat-lbl">Done Today</div></div>
+    <div class="stat"><div class="stat-val red" id="s_emergency">—</div><div class="stat-lbl">🔴 Emergency</div></div>
+  </div>
+
+  <div class="msg error" id="errorMsg"></div>
+  <div class="msg success" id="successMsg"></div>
+
+  <div class="main-grid">
+    <!-- LEFT: Queue -->
+    <div class="card">
+      <h2>Today's Queue <span class="count" id="queueCount">0</span></h2>
+
+      <!-- Add to queue by hospital number -->
+      <div class="queue-add">
+        <input type="text" id="queueHospNum" placeholder="Hospital No. to queue (e.g. MU-2026-00001)">
+        <button class="btn-primary" id="addToQueueBtn">+ Queue</button>
+      </div>
+
+      <!-- Filter -->
+      <div class="queue-search">
+        <input type="text" id="queueFilter" placeholder="Filter by name or hospital no...">
+        <select id="statusFilter">
+          <option value="">All</option>
+          <option value="queued">Queued</option>
+          <option value="vitals_taken">Vitals Taken</option>
+          <option value="with_doctor">With Doctor</option>
+        </select>
+      </div>
+
+      <div class="queue-list" id="queueList">
+        <div class="empty">Loading queue...</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Vitals form -->
+    <div class="card">
+      <h2>Record Vitals</h2>
+      <div class="vitals-placeholder" id="vitalsPlaceholder">
+        ← Select a patient from the queue to record vitals
+      </div>
+      <div class="vitals-form" id="vitalsForm">
+        <div class="patient-banner" id="patientBanner"></div>
+
+        <div class="triage-select">
+          <label>Triage Category <span style="color:var(--error)">*</span></label>
+          <select id="v_triage">
+            <option value="">— Select triage —</option>
+            <option value="emergency">🔴 Emergency</option>
+            <option value="urgent">🟡 Urgent</option>
+            <option value="routine">🟢 Routine</option>
+          </select>
+        </div>
+
+        <div class="vgrid">
+          <div class="vfield">
+            <label>BP Systolic</label>
+            <input type="number" id="v_bp_sys" placeholder="e.g. 120"><div class="unit">mmHg</div>
+          </div>
+          <div class="vfield">
+            <label>BP Diastolic</label>
+            <input type="number" id="v_bp_dia" placeholder="e.g. 80"><div class="unit">mmHg</div>
+          </div>
+          <div class="vfield">
+            <label>Temperature</label>
+            <input type="number" id="v_temp" step="0.1" placeholder="e.g. 36.5"><div class="unit">°C</div>
+          </div>
+          <div class="vfield">
+            <label>Pulse</label>
+            <input type="number" id="v_pulse" placeholder="e.g. 72"><div class="unit">beats/min</div>
+          </div>
+          <div class="vfield">
+            <label>Respiratory Rate</label>
+            <input type="number" id="v_rr" placeholder="e.g. 16"><div class="unit">breaths/min</div>
+          </div>
+          <div class="vfield">
+            <label>SPO2</label>
+            <input type="number" id="v_spo2" placeholder="e.g. 98"><div class="unit">%</div>
+          </div>
+          <div class="vfield">
+            <label>Weight</label>
+            <input type="number" id="v_weight" step="0.1" placeholder="e.g. 70"><div class="unit">kg</div>
+          </div>
+          <div class="vfield">
+            <label>Height</label>
+            <input type="number" id="v_height" step="0.1" placeholder="e.g. 170"><div class="unit">cm</div>
+          </div>
+          <div class="vfield">
+            <label>RBS (Blood Sugar)</label>
+            <input type="number" id="v_rbs" placeholder="e.g. 95"><div class="unit">mg/dL</div>
+          </div>
+          <div class="vfield">
+            <label>MUAC</label>
+            <input type="number" id="v_muac" step="0.1" placeholder="e.g. 24"><div class="unit">cm</div>
+          </div>
+          <div class="vfield">
+            <label>Pain Score (0–10)</label>
+            <input type="number" id="v_pain" min="0" max="10" placeholder="0–10">
+          </div>
+          <div class="vfield">
+            <label>Assigned Doctor</label>
+            <input type="text" id="v_doctor" placeholder="Doctor name">
+          </div>
+          <div class="vfield full">
+            <label>Chief Complaint <span style="color:var(--error)">*</span></label>
+            <textarea id="v_complaint" rows="2" placeholder="Patient's main complaint..."></textarea>
+          </div>
+          <div class="vfield full">
+            <label>Allergy Note</label>
+            <input type="text" id="v_allergy" placeholder="Known allergies if any">
+          </div>
+          <div class="vfield full">
+            <label>Nurse Note</label>
+            <textarea id="v_nurse_note" rows="2" placeholder="Additional observations..."></textarea>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-ghost" id="clearVitalsBtn">Clear</button>
+          <button class="btn-success btn-primary" id="sendDoctorBtn" style="display:none;">✓ Send to Doctor</button>
+          <button class="btn-primary" id="saveVitalsBtn">Save Vitals</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="opd-auth-guard.js"></script>
+<script src="opd-queue.js"></script>
+</body>
+</html>
