@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA OPD – Login</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' https://npdopywxemtwzvpummsn.supabase.co https://api.ipify.org https://api64.ipify.org;">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#0e1320;--card:#161c2c;--field:#1e2538;--border:#2a324a;--text:#e8ecf4;--muted:#8b93a8;--accent:#38bdf8;--accent-dark:#0ea5e9;--error:#ff6b6b;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px 28px;width:100%;max-width:400px;}
+  .header{text-align:center;margin-bottom:24px;}
+  .logo{font-size:2rem;margin-bottom:6px;}
+  h1{font-size:1.2rem;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:0.83rem;}
+  .sec-badge{display:inline-block;margin-top:8px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);color:var(--accent);border-radius:20px;padding:3px 12px;font-size:0.72rem;}
+  .section-label{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin:0 0 8px;}
+  .roles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;}
+  .role-btn{background:var(--field);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:10px 6px;cursor:pointer;font-family:inherit;font-size:0.82rem;transition:all 0.15s;display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .role-btn .icon{font-size:1.2rem;}
+  .role-btn.active{background:rgba(56,189,248,0.12);border-color:var(--accent);color:var(--accent);}
+  .field{margin-bottom:14px;}
+  label{display:block;font-size:0.76rem;color:var(--muted);margin-bottom:5px;}
+  input{width:100%;background:var(--field);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;font-size:0.9rem;}
+  input:focus{outline:none;border-color:var(--accent);}
+  .pw-wrap{position:relative;}
+  .pw-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted);padding:0;}
+  .caps-warn{font-size:0.72rem;color:#ffb347;margin-top:3px;display:none;}
+  .login-btn{width:100%;background:var(--accent);color:#04131d;font-family:inherit;font-size:0.95rem;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .login-btn:disabled{opacity:0.6;cursor:not-allowed;}
+  .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;display:none;}
+  .login-btn.loading .spinner{display:block;}
+  .login-btn.loading .btn-text{opacity:0.7;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .error-box{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);border-radius:8px;padding:10px 12px;font-size:0.84rem;margin-top:12px;display:none;}
+  .error-box.show{display:block;}
+  .lockout-box{background:rgba(255,100,100,0.08);border:1px solid #ff6b6b;color:#ff9a9a;border-radius:8px;padding:12px;font-size:0.83rem;margin-top:12px;text-align:center;display:none;}
+  .lockout-box.show{display:block;}
+  .footer{text-align:center;color:var(--muted);font-size:0.7rem;margin-top:16px;}
+  .attempt-bar{display:none;align-items:center;gap:6px;margin-top:10px;}
+  .attempt-dot{width:10px;height:10px;border-radius:50%;background:var(--border);}
+  .attempt-dot.used{background:var(--error);}
+  .attempt-label{font-size:0.72rem;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <div class="logo">🏥</div>
+    <h1>MU'UJIZA OPD</h1>
+    <p class="sub">Outpatient Department</p>
+    <div class="sec-badge">Secure Access Portal</div>
+  </div>
+
+  <div class="section-label">Select Your Role</div>
+  <div class="roles">
+    <button class="role-btn" data-role="opd_nurse"><span class="icon">👩‍⚕️</span>OPD Nurse</button>
+    <button class="role-btn" data-role="opd_admin"><span class="icon">⚙️</span>OPD Admin</button>
+  </div>
+
+  <div class="field">
+    <label>Username</label>
+    <input type="text" id="usernameInput" autocomplete="username" autofocus>
+  </div>
+  <div class="field">
+    <label>Password</label>
+    <div class="pw-wrap">
+      <input type="password" id="passwordInput" autocomplete="current-password">
+      <button class="pw-eye" id="pwEye" type="button">👁</button>
+    </div>
+    <div class="caps-warn" id="capsWarn">⚠ Caps Lock is ON</div>
+  </div>
+
+  <div class="attempt-bar" id="attemptBar">
+    <div class="attempt-dot" id="dot1"></div><div class="attempt-dot" id="dot2"></div>
+    <div class="attempt-dot" id="dot3"></div><div class="attempt-dot" id="dot4"></div>
+    <div class="attempt-dot" id="dot5"></div>
+    <span class="attempt-label" id="attemptLabel"></span>
+  </div>
+
+  <button class="login-btn" id="loginBtn">
+    <div class="spinner"></div><span class="btn-text">Sign In Securely</span>
+  </button>
+  <div class="error-box" id="errorBox"></div>
+  <div class="lockout-box" id="lockoutBox">
+    🔒 Account locked. Try again in <span id="lockoutTimer">—</span>
+  </div>
+  <div class="footer">Access is logged. Unauthorized use is prohibited.</div>
+</div>
+<script src="opd-login.js"></script>
+</body>
+</html>
