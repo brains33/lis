@@ -120,7 +120,7 @@ document.getElementById('createUserBtn').addEventListener('click', async()=>{
   const btn = document.getElementById('createUserBtn');
   btn.disabled=true; btn.textContent='Creating...';
   try{
-    const { data, error } = await client.rpc('create_records_user',{
+    const { data, error } = await client.rpc('create_opd_user',{
       p_token:session.token, p_username:username, p_password:password, p_role:role
     });
     if(error) throw error;
