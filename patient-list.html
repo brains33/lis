@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA Records – Patient List</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' https://npdopywxemtwzvpummsn.supabase.co;">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#0e1320;--card:#161c2c;--field:#1e2538;--border:#2a324a;--text:#e8ecf4;--muted:#8b93a8;--accent:#3ddc97;--accent-dark:#2bb87d;--error:#ff6b6b;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);}
+  nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;}
+  .nav-brand{font-weight:700;font-size:1rem;color:var(--accent);}
+  .nav-links{display:flex;gap:4px;}
+  .nav-link{background:transparent;border:none;color:var(--muted);font-family:inherit;font-size:0.85rem;padding:7px 14px;border-radius:7px;cursor:pointer;text-decoration:none;display:inline-block;}
+  .nav-link:hover{background:var(--field);color:var(--text);}
+  .nav-link.active{background:var(--accent);color:#04221a;font-weight:600;}
+  .nav-right{display:flex;align-items:center;gap:10px;}
+  .logout-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.8rem;padding:6px 12px;border-radius:7px;cursor:pointer;font-family:inherit;}
+  .wrap{max-width:1000px;margin:0 auto;padding:20px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .card h2{font-size:0.95rem;margin:0 0 14px;color:var(--accent);}
+  .search-row{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .search-row input{flex:1;min-width:200px;}
+  input,select{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-family:inherit;font-size:0.88rem;}
+  button{font-family:inherit;font-size:0.88rem;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;}
+  .btn-primary{background:var(--accent);color:#04221a;font-weight:600;}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn-small{padding:5px 11px;font-size:0.78rem;}
+  .btn-print-sm{background:#2a3f6e;color:#a8c4ff;border:1px solid #3a5090;}
+  table{width:100%;border-collapse:collapse;font-size:0.83rem;}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:500;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.04em;}
+  tr:hover td{background:rgba(255,255,255,0.02);}
+  .empty{color:var(--muted);text-align:center;padding:30px 0;}
+  .scroll-x{overflow-x:auto;}
+  .stats{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap;}
+  .stat{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:10px 16px;}
+  .stat-val{font-size:1.4rem;font-weight:700;color:var(--accent);}
+  .stat-lbl{font-size:0.72rem;color:var(--muted);}
+  .msg{padding:12px 14px;border-radius:8px;font-size:0.88rem;margin-bottom:14px;display:none;}
+  .msg.show{display:block;}
+  .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
+
+  /* PRINT */
+  #printCard{display:none;}
+  @media print{
+    body>*{display:none!important;}
+    #printCard{display:block!important;font-family:Arial,sans-serif;color:#000;padding:20px;}
+    .pc-header{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px;}
+    .pc-title{font-size:1.4rem;font-weight:bold;letter-spacing:1px;}
+    .pc-sub{font-size:0.85rem;margin-top:2px;}
+    .pc-hospno{font-size:1.8rem;font-weight:bold;text-align:center;border:3px solid #000;padding:8px 16px;border-radius:6px;display:inline-block;margin:10px 0;letter-spacing:2px;}
+    .pc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;font-size:0.88rem;}
+    .pc-row{display:flex;gap:6px;padding:4px 0;border-bottom:1px solid #ddd;}
+    .pc-label{color:#555;flex:0 0 130px;font-weight:bold;}
+    .pc-val{color:#000;}
+    .pc-footer{margin-top:14px;font-size:0.75rem;color:#666;text-align:center;border-top:1px solid #ccc;padding-top:8px;}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-brand">🗂️ MU'UJIZA RECORDS</span>
+  <div class="nav-links">
+    <a class="nav-link" href="register-patient.html">Register Patient</a>
+    <a class="nav-link active" href="patient-list.html">Patient List</a>
+  </div>
+  <div class="nav-right">
+    <span style="font-size:0.78rem;color:var(--muted);" id="userLabel"></span>
+    <button class="logout-btn" id="logoutBtn">Log out</button>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><div class="stat-val" id="totalCount">—</div><div class="stat-lbl">Total Patients</div></div>
+    <div class="stat"><div class="stat-val" id="todayCount">—</div><div class="stat-lbl">Registered Today</div></div>
+  </div>
+
+  <div class="msg error" id="errorMsg"></div>
+
+  <div class="card">
+    <h2>Search Patients</h2>
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="Name, hospital number, phone, or NIN...">
+      <button class="btn-primary" id="searchBtn">Search</button>
+      <button class="btn-ghost" id="clearBtn">Clear</button>
+    </div>
+    <div class="scroll-x">
+      <table>
+        <thead>
+          <tr>
+            <th>Hosp. No</th><th>Name</th><th>Gender</th><th>Phone</th>
+            <th>NIN</th><th>Department</th><th>Registered</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PRINT CARD -->
+<div id="printCard">
+  <div class="pc-header">
+    <div class="pc-title">MU'UJIZA HOSPITAL</div>
+    <div class="pc-sub">Patient Registration Card</div>
+    <div><span class="pc-hospno" id="pc_hospno">—</span></div>
+  </div>
+  <div class="pc-grid">
+    <div class="pc-row"><span class="pc-label">Full Name:</span><span class="pc-val" id="pc_name">—</span></div>
+    <div class="pc-row"><span class="pc-label">Date of Birth:</span><span class="pc-val" id="pc_dob">—</span></div>
+    <div class="pc-row"><span class="pc-label">Gender:</span><span class="pc-val" id="pc_gender">—</span></div>
+    <div class="pc-row"><span class="pc-label">NIN / National ID:</span><span class="pc-val" id="pc_nin">—</span></div>
+    <div class="pc-row"><span class="pc-label">Blood Group:</span><span class="pc-val" id="pc_blood">—</span></div>
+    <div class="pc-row"><span class="pc-label">Genotype:</span><span class="pc-val" id="pc_geno">—</span></div>
+    <div class="pc-row"><span class="pc-label">Phone:</span><span class="pc-val" id="pc_phone">—</span></div>
+    <div class="pc-row"><span class="pc-label">Address:</span><span class="pc-val" id="pc_address">—</span></div>
+    <div class="pc-row"><span class="pc-label">Department:</span><span class="pc-val" id="pc_dept">—</span></div>
+    <div class="pc-row"><span class="pc-label">Patient Type:</span><span class="pc-val" id="pc_type">—</span></div>
+    <div class="pc-row"><span class="pc-label">Assigned Doctor:</span><span class="pc-val" id="pc_doctor">—</span></div>
+    <div class="pc-row"><span class="pc-label">Registered:</span><span class="pc-val" id="pc_date">—</span></div>
+  </div>
+  <div class="pc-footer">This card is the property of MU'UJIZA Hospital. Please present it at every visit.</div>
+</div>
+
+<script src="records-auth-guard.js"></script>
+<script src="patient-list.js"></script>
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA Records – Patient Registration</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' https://npdopywxemtwzvpummsn.supabase.co;">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#0e1320;--card:#161c2c;--field:#1e2538;--border:#2a324a;--text:#e8ecf4;--muted:#8b93a8;--accent:#3ddc97;--accent-dark:#2bb87d;--error:#ff6b6b;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);}
+
+  /* NAV */
+  nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;}
+  .nav-brand{font-weight:700;font-size:1rem;color:var(--accent);}
+  .nav-links{display:flex;gap:4px;}
+  .nav-link{background:transparent;border:none;color:var(--muted);font-family:inherit;font-size:0.85rem;padding:7px 14px;border-radius:7px;cursor:pointer;text-decoration:none;display:inline-block;}
+  .nav-link:hover{background:var(--field);color:var(--text);}
+  .nav-link.active{background:var(--accent);color:#04221a;font-weight:600;}
+  .nav-right{display:flex;align-items:center;gap:10px;}
+  .logout-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.8rem;padding:6px 12px;border-radius:7px;cursor:pointer;font-family:inherit;}
+
+  .wrap{max-width:900px;margin:0 auto;padding:20px;}
+  .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+  .hosp-no{font-family:'JetBrains Mono',monospace;background:var(--field);border:1px solid var(--border);padding:8px 14px;border-radius:8px;color:var(--accent);font-size:0.88rem;}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .card h2{font-size:0.95rem;margin:0 0 14px;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:8px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field.full{grid-column:1/-1;}
+  .field.half{grid-column:span 1;}
+  label{font-size:0.76rem;color:var(--muted);}
+  label.req::after{content:" *";color:var(--error);}
+  input,select,textarea{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-family:inherit;font-size:0.88rem;width:100%;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+  .phone-row{display:flex;gap:6px;}
+  .phone-row select{flex:0 0 76px;}
+  textarea{resize:vertical;min-height:52px;}
+  .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:4px;}
+  button{font-family:inherit;font-size:0.9rem;border:none;border-radius:8px;padding:10px 20px;cursor:pointer;}
+  .btn-primary{background:var(--accent);color:#04221a;font-weight:600;}
+  .btn-primary:hover{background:var(--accent-dark);}
+  .btn-primary:disabled{opacity:0.6;cursor:not-allowed;}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn-print{background:#2a3f6e;color:#a8c4ff;border:1px solid #3a5090;}
+  .msg{padding:12px 14px;border-radius:8px;font-size:0.88rem;margin-bottom:14px;display:none;}
+  .msg.show{display:block;}
+  .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
+  .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--accent);color:var(--accent);}
+
+  /* NIN duplicate warning */
+  .dup-warn{font-size:0.76rem;color:#ffb347;margin-top:3px;display:none;}
+  .dup-warn.show{display:block;}
+
+  /* PRINT CARD */
+  #printCard{display:none;}
+  @media print{
+    body>*{display:none!important;}
+    #printCard{display:block!important;font-family:Arial,sans-serif;color:#000;padding:20px;}
+    .pc-header{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px;}
+    .pc-title{font-size:1.4rem;font-weight:bold;letter-spacing:1px;}
+    .pc-sub{font-size:0.85rem;margin-top:2px;}
+    .pc-hospno{font-size:1.8rem;font-weight:bold;text-align:center;border:3px solid #000;padding:8px 16px;border-radius:6px;display:inline-block;margin:10px 0;letter-spacing:2px;}
+    .pc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;font-size:0.88rem;}
+    .pc-row{display:flex;gap:6px;padding:4px 0;border-bottom:1px solid #ddd;}
+    .pc-label{color:#555;flex:0 0 130px;font-weight:bold;}
+    .pc-val{color:#000;}
+    .pc-footer{margin-top:14px;font-size:0.75rem;color:#666;text-align:center;border-top:1px solid #ccc;padding-top:8px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <span class="nav-brand">🗂️ MU'UJIZA RECORDS</span>
+  <div class="nav-links">
+    <a class="nav-link active" href="register-patient.html">Register Patient</a>
+    <a class="nav-link" href="patient-list.html">Patient List</a>
+  </div>
+  <div class="nav-right">
+    <span style="font-size:0.78rem;color:var(--muted);" id="userLabel"></span>
+    <button class="logout-btn" id="logoutBtn">Log out</button>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="page-header">
+    <div>
+      <h1 style="font-size:1.1rem;margin:0;">New Patient Registration</h1>
+      <p style="margin:2px 0 0;color:var(--muted);font-size:0.82rem;">Front Desk Intake Form</p>
+    </div>
+    <span class="hosp-no" id="hospNoPreview">Hospital No: auto-generated on save</span>
+  </div>
+
+  <div class="msg error" id="errorMsg"></div>
+  <div class="msg success" id="successMsg"></div>
+
+  <form id="patientForm">
+
+    <!-- IDENTITY -->
+    <div class="card">
+      <h2>Identity</h2>
+      <div class="grid">
+        <div class="field"><label class="req">Surname</label><input type="text" id="surname" required></div>
+        <div class="field"><label class="req">First Name</label><input type="text" id="first_name" required></div>
+        <div class="field"><label>Middle Name</label><input type="text" id="middle_name"></div>
+        <div class="field"><label>Date of Birth</label><input type="date" id="date_of_birth"></div>
+        <div class="field"><label>Age (if DOB unknown)</label><input type="number" id="age" min="0" max="150"></div>
+        <div class="field"><label class="req">Gender</label>
+          <select id="gender" required>
+            <option value="">Select</option><option>Male</option><option>Female</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>NIN / National ID</label>
+          <input type="text" id="nin" placeholder="11-digit NIN or National ID" maxlength="20">
+          <span class="dup-warn" id="ninDupWarn">⚠ A patient with this NIN already exists.</span>
+        </div>
+        <div class="field"><label>Nationality</label><input type="text" id="nationality" value="NIGERIA"></div>
+        <div class="field"><label>State of Origin</label><input type="text" id="state_of_origin"></div>
+        <div class="field"><label>LGA of Origin</label><input type="text" id="lga_of_origin"></div>
+        <div class="field"><label>Ethnicity</label><input type="text" id="ethnicity"></div>
+        <div class="field"><label>Religion</label>
+          <select id="religion">
+            <option value="">Select</option><option>Christianity</option><option>Islam</option>
+            <option>Traditional</option><option>Other</option>
+          </select>
+        </div>
+        <div class="field"><label>Marital Status</label>
+          <select id="marital_status">
+            <option value="">Select</option><option>Single</option><option>Married</option>
+            <option>Divorced</option><option>Widowed</option>
+          </select>
+        </div>
+        <div class="field"><label>Genotype</label>
+          <select id="genotype">
+            <option value="">Select</option><option>AA</option><option>AS</option><option>SS</option>
+            <option>AC</option><option>SC</option><option>Unknown</option>
+          </select>
+        </div>
+        <div class="field"><label>Blood Group</label>
+          <select id="blood_group">
+            <option value="">Select</option>
+            <option>O+</option><option>O-</option><option>A+</option><option>A-</option>
+            <option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>Unknown</option>
+          </select>
+        </div>
+        <div class="field"><label>Height (cm)</label><input type="number" id="height" step="0.1"></div>
+        <div class="field"><label>Weight (kg)</label><input type="number" id="weight" step="0.1"></div>
+      </div>
+    </div>
+
+    <!-- CONTACT -->
+    <div class="card">
+      <h2>Contact</h2>
+      <div class="grid">
+        <div class="field">
+          <label class="req">Phone</label>
+          <div class="phone-row"><select id="phone_code"><option>+234</option></select><input type="tel" id="phone" required></div>
+        </div>
+        <div class="field">
+          <label>Other Phone</label>
+          <div class="phone-row"><select id="other_phone_code"><option>+234</option></select><input type="tel" id="other_phone"></div>
+        </div>
+        <div class="field">
+          <label>WhatsApp</label>
+          <div class="phone-row"><select id="whatsapp_code"><option>+234</option></select><input type="tel" id="whatsapp_number"></div>
+        </div>
+        <div class="field"><label>Email</label><input type="email" id="email"></div>
+        <div class="field full"><label>Address</label><textarea id="address"></textarea></div>
+        <div class="field"><label>State of Residence</label><input type="text" id="state_of_residence"></div>
+        <div class="field"><label>LGA of Residence</label><input type="text" id="lga_of_residence"></div>
+        <div class="field"><label>Contact Preference</label>
+          <select id="contact_preference">
+            <option value="">Select</option><option>Phone Call</option><option>SMS</option>
+            <option>WhatsApp</option><option>Email</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOSPITAL -->
+    <div class="card">
+      <h2>Hospital Details</h2>
+      <div class="grid">
+        <div class="field"><label>Patient Type</label>
+          <select id="patient_type">
+            <option value="">Select</option><option>Outpatient</option><option>Inpatient</option>
+            <option>Emergency</option><option>Antenatal</option>
+          </select>
+        </div>
+        <div class="field"><label>Patient Department</label><input type="text" id="patient_department"></div>
+        <div class="field"><label>Assigned Doctor</label><input type="text" id="assigned_doctor"></div>
+        <div class="field"><label>Main Consultant</label><input type="text" id="main_consultant"></div>
+        <div class="field"><label>Referral Source</label><input type="text" id="referral_source"></div>
+        <div class="field"><label>Reg. Payment Status</label>
+          <select id="reg_payment_status">
+            <option value="">Select</option><option>Paid</option><option>Pending</option><option>Waived</option>
+          </select>
+        </div>
+        <div class="field"><label>Occupation</label><input type="text" id="occupation"></div>
+        <div class="field"><label>Primary Care Giver</label><input type="text" id="primary_care_giver"></div>
+        <div class="field"><label>Care Giver Contact</label><input type="text" id="care_giver_contact"></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-ghost" id="resetBtn">Clear Form</button>
+      <button type="button" class="btn-print" id="printBtn" style="display:none;">🖨 Print Card</button>
+      <button type="submit" class="btn-primary" id="saveBtn">Save Patient</button>
+    </div>
+  </form>
+</div>
+
+<!-- PRINT CARD (hidden, shown only on print) -->
+<div id="printCard">
+  <div class="pc-header">
+    <div class="pc-title">MU'UJIZA HOSPITAL</div>
+    <div class="pc-sub">Patient Registration Card</div>
+    <div><span class="pc-hospno" id="pc_hospno">—</span></div>
+  </div>
+  <div class="pc-grid">
+    <div class="pc-row"><span class="pc-label">Full Name:</span><span class="pc-val" id="pc_name">—</span></div>
+    <div class="pc-row"><span class="pc-label">Date of Birth:</span><span class="pc-val" id="pc_dob">—</span></div>
+    <div class="pc-row"><span class="pc-label">Gender:</span><span class="pc-val" id="pc_gender">—</span></div>
+    <div class="pc-row"><span class="pc-label">NIN / National ID:</span><span class="pc-val" id="pc_nin">—</span></div>
+    <div class="pc-row"><span class="pc-label">Blood Group:</span><span class="pc-val" id="pc_blood">—</span></div>
+    <div class="pc-row"><span class="pc-label">Genotype:</span><span class="pc-val" id="pc_geno">—</span></div>
+    <div class="pc-row"><span class="pc-label">Phone:</span><span class="pc-val" id="pc_phone">—</span></div>
+    <div class="pc-row"><span class="pc-label">Address:</span><span class="pc-val" id="pc_address">—</span></div>
+    <div class="pc-row"><span class="pc-label">Department:</span><span class="pc-val" id="pc_dept">—</span></div>
+    <div class="pc-row"><span class="pc-label">Patient Type:</span><span class="pc-val" id="pc_type">—</span></div>
+    <div class="pc-row"><span class="pc-label">Assigned Doctor:</span><span class="pc-val" id="pc_doctor">—</span></div>
+    <div class="pc-row"><span class="pc-label">Registered:</span><span class="pc-val" id="pc_date">—</span></div>
+  </div>
+  <div class="pc-footer">This card is the property of MU'UJIZA Hospital. Please present it at every visit.</div>
+</div>
+
+<script src="records-auth-guard.js"></script>
+<script src="register-patient.js"></script>
+</body>
+</html>
