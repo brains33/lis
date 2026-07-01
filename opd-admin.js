@@ -81,9 +81,7 @@ document.getElementById('clearVisitsBtn').addEventListener('click', ()=>{
 async function loadStaff(){
   const tbody = document.getElementById('staffTbody');
   tbody.innerHTML=`<tr><td colspan="5" class="empty">Loading...</td></tr>`;
-  const { data, error } = await client.from('admins')
-    .select('username,role,is_active,created_at')
-    .in('role',['opd_nurse','opd_admin']).order('created_at',{ascending:false});
+  const { data, error } = await client.rpc('list_opd_staff',{ p_token: session.token });
   if(error){ tbody.innerHTML=`<tr><td colspan="5" class="empty">Error loading staff</td></tr>`; return; }
   if(!data||data.length===0){ tbody.innerHTML=`<tr><td colspan="5" class="empty">No OPD staff yet</td></tr>`; return; }
   tbody.innerHTML = data.map(u=>`<tr>
