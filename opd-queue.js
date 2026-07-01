@@ -236,12 +236,11 @@ async function loadPreviousVitals(v) {
   panel.innerHTML = `<div class="pv-title">🕓 Previous Vitals</div>Loading...`;
 
   const { data, error } = await client
-    .from('opd_visits')
-    .select('visit_date, vitals_taken_at, bp_systolic, bp_diastolic, temperature, pulse, respiratory_rate, spo2, weight, height, rbs, muac, pain_score')
+    .from('vitals')
+    .select('recorded_at, bp_systolic, bp_diastolic, temperature, pulse, respiratory_rate, spo2, weight, height, rbs, muac, pain_score')
     .eq('hospital_number', v.hospital_number)
-    .not('vitals_taken_at', 'is', null)
-    .neq('id', v.id)
-    .order('vitals_taken_at', { ascending: false })
+    .neq('visit_id', v.id)
+    .order('recorded_at', { ascending: false })
     .limit(1);
 
   if (error) {
@@ -257,7 +256,7 @@ async function loadPreviousVitals(v) {
 
   previousVitals = data[0];
   const d = previousVitals;
-  const dateStr = d.vitals_taken_at ? new Date(d.vitals_taken_at).toLocaleString('en-NG', {dateStyle:'medium', timeStyle:'short'}) : (d.visit_date || '—');
+  const dateStr = d.recorded_at ? new Date(d.recorded_at).toLocaleString('en-NG', {dateStyle:'medium', timeStyle:'short'}) : '—';
   const row = (label, val, unit) => val==null ? '' : `<div>${label}: <b style="color:var(--text)">${val}${unit||''}</b></div>`;
   panel.innerHTML = `
     <div class="pv-title">🕓 Previous Vitals — ${esc(dateStr)}</div>
