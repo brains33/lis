@@ -237,7 +237,7 @@ async function loadPreviousVitals(v) {
 
   const { data, error } = await client
     .from('vitals')
-    .select('recorded_at, bp_systolic, bp_diastolic, temperature, pulse, respiratory_rate, spo2, weight, height, rbs, muac, pain_score')
+    .select('recorded_at, bp_systolic, bp_diastolic, temperature, pulse, respiratory_rate, spo2, weight, height, bmi, rbs, muac, pain_score')
     .eq('hospital_number', v.hospital_number)
     .order('recorded_at', { ascending: false })
     .limit(1);
@@ -266,8 +266,11 @@ async function loadPreviousVitals(v) {
       ${row('RR', d.respiratory_rate, '/min')}
       ${row('SPO2', d.spo2, '%')}
       ${row('Weight', d.weight, 'kg')}
+      ${row('Height', d.height, 'cm')}
+      ${row('BMI', d.bmi, '')}
       ${row('RBS', d.rbs, ' mg/dL')}
       ${row('MUAC', d.muac, 'cm')}
+      ${row('Pain', d.pain_score, '/10')}
     </div>`;
 
   // Re-evaluate trend arrows now that previous data is available
