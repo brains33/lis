@@ -239,7 +239,6 @@ async function loadPreviousVitals(v) {
     .from('vitals')
     .select('recorded_at, bp_systolic, bp_diastolic, temperature, pulse, respiratory_rate, spo2, weight, height, rbs, muac, pain_score')
     .eq('hospital_number', v.hospital_number)
-    .neq('visit_id', v.id)
     .order('recorded_at', { ascending: false })
     .limit(1);
 
