@@ -96,6 +96,32 @@
   .msg.show{display:block;}
   .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
   .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--green);color:var(--green);}
+
+  /* Vital flagging */
+  .vfield label{display:flex;align-items:center;gap:6px;}
+  .flag-badge{display:none;font-size:0.62rem;font-weight:700;padding:1px 6px;border-radius:8px;letter-spacing:0.3px;}
+  .flag-badge.show{display:inline-block;}
+  .flag-badge.high{background:rgba(255,107,107,0.18);color:var(--error);}
+  .flag-badge.low{background:rgba(255,179,71,0.18);color:var(--warn);}
+  .trend{font-size:0.68rem;color:var(--muted);margin-left:2px;}
+  .trend.up{color:var(--error);}
+  .trend.down{color:var(--accent);}
+  .vfield.flag-high input{border-color:var(--error);background:rgba(255,107,107,0.06);}
+  .vfield.flag-low input{border-color:var(--warn);background:rgba(255,179,71,0.06);}
+
+  .abnormal-banner{display:none;background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);
+    border-radius:9px;padding:10px 12px;font-size:0.8rem;margin-bottom:12px;}
+  .abnormal-banner.show{display:block;}
+  .abnormal-banner b{color:var(--error);}
+  .abnormal-banner .sugg{color:var(--warn);font-weight:600;}
+
+  .prev-vitals-btn{background:transparent;border:1px solid var(--border);color:var(--accent);font-size:0.76rem;
+    padding:6px 10px;border-radius:7px;cursor:pointer;margin-top:8px;}
+  .prev-vitals-panel{display:none;background:var(--field);border:1px solid var(--border);border-radius:9px;
+    padding:10px 12px;margin-top:8px;font-size:0.76rem;color:var(--muted);}
+  .prev-vitals-panel.show{display:block;}
+  .prev-vitals-panel .pv-title{color:var(--accent);font-weight:600;margin-bottom:6px;font-size:0.74rem;}
+  .prev-vitals-panel .pv-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 10px;}
 </style>
 </head>
 <body>
@@ -154,6 +180,11 @@
       <div class="vitals-form" id="vitalsForm">
         <div class="patient-banner" id="patientBanner"></div>
 
+        <button class="prev-vitals-btn" id="prevVitalsBtn" type="button">🕓 View Previous Vitals</button>
+        <div class="prev-vitals-panel" id="prevVitalsPanel"></div>
+
+        <div class="abnormal-banner" id="abnormalBanner"></div>
+
         <div class="triage-select">
           <label>Triage Category <span style="color:var(--error)">*</span></label>
           <select id="v_triage">
@@ -165,48 +196,48 @@
         </div>
 
         <div class="vgrid">
-          <div class="vfield">
-            <label>BP Systolic</label>
-            <input type="number" id="v_bp_sys" placeholder="e.g. 120"><div class="unit">mmHg</div>
+          <div class="vfield" id="fld_v_bp_sys">
+            <label>BP Systolic <span class="flag-badge" id="flag_v_bp_sys"></span></label>
+            <input type="number" id="v_bp_sys" placeholder="e.g. 120"><div class="unit">mmHg <span class="trend" id="trend_v_bp_sys"></span></div>
           </div>
-          <div class="vfield">
-            <label>BP Diastolic</label>
-            <input type="number" id="v_bp_dia" placeholder="e.g. 80"><div class="unit">mmHg</div>
+          <div class="vfield" id="fld_v_bp_dia">
+            <label>BP Diastolic <span class="flag-badge" id="flag_v_bp_dia"></span></label>
+            <input type="number" id="v_bp_dia" placeholder="e.g. 80"><div class="unit">mmHg <span class="trend" id="trend_v_bp_dia"></span></div>
           </div>
-          <div class="vfield">
-            <label>Temperature</label>
-            <input type="number" id="v_temp" step="0.1" placeholder="e.g. 36.5"><div class="unit">°C</div>
+          <div class="vfield" id="fld_v_temp">
+            <label>Temperature <span class="flag-badge" id="flag_v_temp"></span></label>
+            <input type="number" id="v_temp" step="0.1" placeholder="e.g. 36.5"><div class="unit">°C <span class="trend" id="trend_v_temp"></span></div>
           </div>
-          <div class="vfield">
-            <label>Pulse</label>
-            <input type="number" id="v_pulse" placeholder="e.g. 72"><div class="unit">beats/min</div>
+          <div class="vfield" id="fld_v_pulse">
+            <label>Pulse <span class="flag-badge" id="flag_v_pulse"></span></label>
+            <input type="number" id="v_pulse" placeholder="e.g. 72"><div class="unit">beats/min <span class="trend" id="trend_v_pulse"></span></div>
           </div>
-          <div class="vfield">
-            <label>Respiratory Rate</label>
-            <input type="number" id="v_rr" placeholder="e.g. 16"><div class="unit">breaths/min</div>
+          <div class="vfield" id="fld_v_rr">
+            <label>Respiratory Rate <span class="flag-badge" id="flag_v_rr"></span></label>
+            <input type="number" id="v_rr" placeholder="e.g. 16"><div class="unit">breaths/min <span class="trend" id="trend_v_rr"></span></div>
           </div>
-          <div class="vfield">
-            <label>SPO2</label>
-            <input type="number" id="v_spo2" placeholder="e.g. 98"><div class="unit">%</div>
+          <div class="vfield" id="fld_v_spo2">
+            <label>SPO2 <span class="flag-badge" id="flag_v_spo2"></span></label>
+            <input type="number" id="v_spo2" placeholder="e.g. 98"><div class="unit">% <span class="trend" id="trend_v_spo2"></span></div>
           </div>
-          <div class="vfield">
+          <div class="vfield" id="fld_v_weight">
             <label>Weight</label>
-            <input type="number" id="v_weight" step="0.1" placeholder="e.g. 70"><div class="unit">kg</div>
+            <input type="number" id="v_weight" step="0.1" placeholder="e.g. 70"><div class="unit">kg <span class="trend" id="trend_v_weight"></span></div>
           </div>
-          <div class="vfield">
+          <div class="vfield" id="fld_v_height">
             <label>Height</label>
             <input type="number" id="v_height" step="0.1" placeholder="e.g. 170"><div class="unit">cm</div>
           </div>
-          <div class="vfield">
-            <label>RBS (Blood Sugar)</label>
-            <input type="number" id="v_rbs" placeholder="e.g. 95"><div class="unit">mg/dL</div>
+          <div class="vfield" id="fld_v_rbs">
+            <label>RBS (Blood Sugar) <span class="flag-badge" id="flag_v_rbs"></span></label>
+            <input type="number" id="v_rbs" placeholder="e.g. 95"><div class="unit">mg/dL <span class="trend" id="trend_v_rbs"></span></div>
           </div>
-          <div class="vfield">
-            <label>MUAC</label>
-            <input type="number" id="v_muac" step="0.1" placeholder="e.g. 24"><div class="unit">cm</div>
+          <div class="vfield" id="fld_v_muac">
+            <label>MUAC <span class="flag-badge" id="flag_v_muac"></span></label>
+            <input type="number" id="v_muac" step="0.1" placeholder="e.g. 24"><div class="unit">cm <span class="trend" id="trend_v_muac"></span></div>
           </div>
-          <div class="vfield">
-            <label>Pain Score (0–10)</label>
+          <div class="vfield" id="fld_v_pain">
+            <label>Pain Score (0–10) <span class="flag-badge" id="flag_v_pain"></span></label>
             <input type="number" id="v_pain" min="0" max="10" placeholder="0–10">
           </div>
           <div class="vfield">
