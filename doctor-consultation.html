@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA – Doctor Consultation</title>
+<meta http-equiv="X-Frame-Options" content="DENY">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#0e1320;--card:#161c2c;--field:#1e2538;--border:#2a324a;--text:#e8ecf4;--muted:#8b93a8;
+    --purple:#a78bfa;--purple-dark:#7c3aed;--green:#3ddc97;--blue:#38bdf8;--error:#ff6b6b;--warn:#ffb347;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;}
+  nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:50px;flex-shrink:0;}
+  .nav-brand{font-weight:700;font-size:0.95rem;color:var(--purple);}
+  .nav-right{display:flex;align-items:center;gap:10px;font-size:0.78rem;color:var(--muted);}
+  .logout-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.76rem;padding:5px 11px;border-radius:7px;cursor:pointer;font-family:inherit;}
+
+  .main{display:grid;grid-template-columns:300px 1fr;flex:1;overflow:hidden;}
+  @media(max-width:800px){.main{grid-template-columns:1fr;height:auto;overflow:auto;}}
+
+  /* LEFT: Patient Queue */
+  .queue-panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+  .queue-head{padding:12px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .queue-head h2{font-size:0.88rem;margin:0 0 8px;color:var(--purple);}
+  .queue-search{display:flex;gap:6px;}
+  .queue-list{flex:1;overflow-y:auto;padding:8px;}
+  .queue-item{background:var(--field);border:1px solid var(--border);border-radius:9px;padding:10px 12px;
+    cursor:pointer;margin-bottom:6px;transition:border-color 0.15s;}
+  .queue-item:hover{border-color:var(--purple);}
+  .queue-item.selected{border-color:var(--purple);background:rgba(167,139,250,0.07);}
+  .queue-item.emergency{border-left:3px solid var(--error);}
+  .queue-item.urgent{border-left:3px solid var(--warn);}
+  .queue-item.routine{border-left:3px solid var(--green);}
+  .qi-name{font-weight:600;font-size:0.86rem;}
+  .qi-meta{font-size:0.73rem;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;}
+  .triage-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px;}
+  .triage-dot.emergency{background:var(--error);}
+  .triage-dot.urgent{background:var(--warn);}
+  .triage-dot.routine{background:var(--green);}
+  .empty-queue{color:var(--muted);text-align:center;padding:30px 12px;font-size:0.83rem;}
+  .stats-row{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .stat-chip{flex:1;background:var(--field);border:1px solid var(--border);border-radius:7px;padding:6px 8px;text-align:center;}
+  .stat-chip .v{font-size:1.1rem;font-weight:700;}
+  .stat-chip .l{font-size:0.64rem;color:var(--muted);}
+
+  /* RIGHT: Consultation panel */
+  .consult-panel{overflow-y:auto;display:flex;flex-direction:column;}
+  .placeholder{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:0.9rem;text-align:center;padding:40px;}
+  .consult-content{display:none;flex-direction:column;flex:1;}
+  .consult-content.show{display:flex;}
+
+  /* Patient header */
+  .patient-header{background:var(--card);border-bottom:1px solid var(--border);padding:14px 18px;flex-shrink:0;}
+  .ph-name{font-size:1.1rem;font-weight:700;}
+  .ph-meta{font-size:0.78rem;color:var(--muted);margin-top:3px;display:flex;gap:12px;flex-wrap:wrap;}
+  .ph-hospno{font-family:'JetBrains Mono',monospace;color:var(--purple);}
+
+  /* Tabs */
+  .ctabs{display:flex;gap:6px;padding:10px 18px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--card);}
+  .ctab{background:transparent;border:1px solid var(--border);color:var(--muted);padding:7px 14px;border-radius:7px;cursor:pointer;font-family:inherit;font-size:0.82rem;}
+  .ctab.active{background:var(--purple);color:#1a0040;font-weight:700;border-color:var(--purple);}
+
+  .cpanel{display:none;padding:16px 18px;flex:1;}
+  .cpanel.active{display:block;}
+
+  /* Vitals display */
+  .vitals-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px;}
+  .vital-chip{background:var(--field);border:1px solid var(--border);border-radius:9px;padding:10px 12px;}
+  .vital-chip.flag-high{border-color:var(--error);background:rgba(255,107,107,0.07);}
+  .vital-chip.flag-low{border-color:var(--warn);background:rgba(255,179,71,0.07);}
+  .vc-label{font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;}
+  .vc-value{font-size:1.15rem;font-weight:700;margin:2px 0;}
+  .vc-unit{font-size:0.68rem;color:var(--muted);}
+  .vc-flag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.65rem;font-weight:700;margin-left:4px;}
+  .vc-flag.high{background:rgba(255,107,107,0.2);color:var(--error);}
+  .vc-flag.low{background:rgba(255,179,71,0.2);color:var(--warn);}
+  .abnormal-banner{background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:8px;
+    padding:10px 14px;font-size:0.82rem;color:var(--error);margin-bottom:12px;display:none;}
+  .abnormal-banner.show{display:block;}
+  .section-title{font-size:0.78rem;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:0.06em;margin:16px 0 8px;}
+  .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;}
+  .info-row{background:var(--field);border-radius:7px;padding:8px 11px;font-size:0.82rem;}
+  .info-row .lbl{color:var(--muted);font-size:0.7rem;}
+  .past-consult{background:var(--field);border:1px solid var(--border);border-radius:9px;padding:12px;margin-bottom:8px;font-size:0.82rem;}
+  .pc-head{display:flex;justify-content:space-between;font-size:0.76rem;color:var(--muted);margin-bottom:6px;}
+  .pc-diagnosis{font-weight:700;color:var(--text);margin-bottom:4px;}
+
+  /* Consultation form */
+  .cform{max-width:800px;}
+  .fgroup{margin-bottom:16px;}
+  .fgroup label{display:block;font-size:0.74rem;color:var(--muted);margin-bottom:4px;}
+  .fgroup label.req::after{content:" *";color:var(--error);}
+  input[type=text],input[type=number],select,textarea{background:var(--field);border:1px solid var(--border);
+    border-radius:8px;padding:9px 10px;color:var(--text);font-family:inherit;font-size:0.87rem;width:100%;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple);}
+  textarea{resize:vertical;min-height:60px;}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:600px){.fgrid{grid-template-columns:1fr;}}
+  .fgrid .full{grid-column:1/-1;}
+
+  /* Action selector */
+  .action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px;}
+  .action-btn{background:var(--field);border:2px solid var(--border);border-radius:9px;padding:12px 8px;
+    cursor:pointer;font-family:inherit;text-align:center;transition:all 0.15s;}
+  .action-btn .icon{font-size:1.4rem;display:block;margin-bottom:4px;}
+  .action-btn .label{font-size:0.76rem;font-weight:600;}
+  .action-btn:hover{border-color:var(--purple);}
+  .action-btn.selected{border-color:var(--purple);background:rgba(167,139,250,0.1);}
+  .action-btn.selected.discharge{border-color:var(--green);background:rgba(61,220,151,0.1);}
+  .action-btn.selected.admit{border-color:var(--blue);background:rgba(56,189,248,0.1);}
+  .action-btn.selected.refer{border-color:var(--warn);background:rgba(255,179,71,0.1);}
+  .action-btn.selected.lab{border-color:#e879f9;background:rgba(232,121,249,0.1);}
+
+  .action-fields{display:none;} .action-fields.show{display:block;}
+
+  /* Lab test selector */
+  .test-search{margin-bottom:8px;}
+  .test-list{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--field);}
+  .test-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:0.82rem;cursor:pointer;}
+  .test-item:last-child{border-bottom:none;}
+  .test-item:hover{background:rgba(167,139,250,0.06);}
+  .test-item input[type=checkbox]{width:auto;cursor:pointer;}
+  .selected-tests{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;}
+  .test-tag{background:rgba(232,121,249,0.1);border:1px solid rgba(232,121,249,0.3);color:#e879f9;
+    border-radius:12px;padding:3px 10px;font-size:0.74rem;display:flex;align-items:center;gap:4px;}
+  .test-tag button{background:none;border:none;color:#e879f9;cursor:pointer;font-size:0.8rem;padding:0;}
+
+  .submit-row{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-bottom:20px;}
+  button.btn-submit{background:var(--purple);color:#1a0040;font-family:inherit;font-weight:700;border:none;
+    border-radius:8px;padding:11px 28px;cursor:pointer;font-size:0.92rem;}
+  button.btn-submit:disabled{opacity:0.6;cursor:not-allowed;}
+  button.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);
+    font-family:inherit;border-radius:8px;padding:10px 18px;cursor:pointer;font-size:0.88rem;}
+
+  .msg{padding:10px 12px;border-radius:8px;font-size:0.84rem;margin-bottom:12px;display:none;}
+  .msg.show{display:block;}
+  .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
+  .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--green);color:var(--green);}
+
+  input[type=text]{width:100%;}
+</style>
+</head>
+<body>
+<nav>
+  <span class="nav-brand">🩺 MU'UJIZA — Doctor Consultation</span>
+  <div class="nav-right">
+    <span id="userLabel"></span>
+    <button class="logout-btn" id="logoutBtn">Log out</button>
+  </div>
+</nav>
+
+<div class="main">
+  <!-- LEFT: Queue -->
+  <div class="queue-panel">
+    <div class="stats-row">
+      <div class="stat-chip"><div class="v" id="s_waiting" style="color:var(--purple)">—</div><div class="l">Waiting</div></div>
+      <div class="stat-chip"><div class="v" id="s_done_today" style="color:var(--green)">—</div><div class="l">Done Today</div></div>
+      <div class="stat-chip"><div class="v" id="s_emrg" style="color:var(--error)">—</div><div class="l">🔴 Urgent</div></div>
+    </div>
+    <div class="queue-head">
+      <h2>My Patient Queue</h2>
+      <div class="queue-search">
+        <input type="text" id="queueFilter" placeholder="Filter by name / hosp no..." style="font-size:0.82rem;padding:7px 9px;">
+      </div>
+    </div>
+    <div class="queue-list" id="queueList"><div class="empty-queue">Loading...</div></div>
+  </div>
+
+  <!-- RIGHT: Consultation -->
+  <div class="consult-panel">
+    <div class="placeholder" id="placeholder">
+      ← Select a patient from the queue to begin consultation
+    </div>
+
+    <div class="consult-content" id="consultContent">
+      <div class="patient-header" id="patientHeader"></div>
+      <div class="ctabs">
+        <button class="ctab active" data-tab="summary">Patient Summary</button>
+        <button class="ctab" data-tab="consult">Consultation</button>
+        <button class="ctab" data-tab="history">Past Consultations</button>
+      </div>
+      <div class="msg error" id="errorMsg" style="margin:12px 18px 0;"></div>
+      <div class="msg success" id="successMsg" style="margin:12px 18px 0;"></div>
+
+      <!-- SUMMARY TAB -->
+      <div class="cpanel active" id="cpanel-summary">
+        <div class="section-title">Current Vitals</div>
+        <div class="abnormal-banner" id="abnormalBanner"></div>
+        <div class="vitals-grid" id="vitalsGrid"></div>
+        <div class="section-title">Demographics</div>
+        <div class="info-grid" id="demoGrid"></div>
+        <div class="section-title">Nurse Notes</div>
+        <div id="nurseNotes" style="font-size:0.84rem;color:var(--muted);"></div>
+      </div>
+
+      <!-- CONSULT TAB -->
+      <div class="cpanel" id="cpanel-consult">
+        <div class="cform">
+          <div class="section-title">History</div>
+          <div class="fgrid">
+            <div class="fgroup full">
+              <label class="req">Presenting Complaint</label>
+              <textarea id="c_complaint" rows="2" placeholder="Patient's main complaint..."></textarea>
+            </div>
+            <div class="fgroup full">
+              <label>History of Presenting Illness</label>
+              <textarea id="c_hpi" rows="3" placeholder="Onset, duration, character, associated symptoms..."></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Past Medical History</label>
+              <textarea id="c_pmh" rows="2" placeholder="Previous illnesses, surgeries, hospitalisations..."></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Current Medications</label>
+              <textarea id="c_meds" rows="2" placeholder="Current drugs and dosages..."></textarea>
+            </div>
+            <div class="fgroup full">
+              <label>Allergies</label>
+              <input type="text" id="c_allergy" placeholder="Known drug/food allergies">
+            </div>
+          </div>
+
+          <div class="section-title">Examination</div>
+          <div class="fgrid">
+            <div class="fgroup">
+              <label>General Examination</label>
+              <textarea id="c_gen_exam" rows="3" placeholder="Appearance, consciousness, pallor, jaundice, oedema..."></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Systemic Examination</label>
+              <textarea id="c_sys_exam" rows="3" placeholder="CVS, RS, GIT, CNS, MSS findings..."></textarea>
+            </div>
+          </div>
+
+          <div class="section-title">Assessment</div>
+          <div class="fgrid">
+            <div class="fgroup full">
+              <label class="req">Diagnosis / Clinical Impression</label>
+              <textarea id="c_diagnosis" rows="2" placeholder="Primary diagnosis, differential diagnoses..."></textarea>
+            </div>
+            <div class="fgroup">
+              <label>ICD-10 Code (optional)</label>
+              <input type="text" id="c_icd10" placeholder="e.g. J06.9, A09, I10">
+            </div>
+          </div>
+
+          <div class="section-title">Plan</div>
+          <div class="action-grid" id="actionGrid">
+            <button class="action-btn discharge" data-action="opd_discharge">
+              <span class="icon">🏠</span><span class="label">OPD Discharge</span>
+            </button>
+            <button class="action-btn lab" data-action="lab_request">
+              <span class="icon">🔬</span><span class="label">Order Lab Tests</span>
+            </button>
+            <button class="action-btn lab" data-action="lab_and_discharge">
+              <span class="icon">🔬🏠</span><span class="label">Lab + Discharge</span>
+            </button>
+            <button class="action-btn admit" data-action="admit">
+              <span class="icon">🛏️</span><span class="label">Admit to Ward</span>
+            </button>
+            <button class="action-btn refer" data-action="refer">
+              <span class="icon">↗️</span><span class="label">Refer</span>
+            </button>
+          </div>
+
+          <!-- OPD Discharge fields -->
+          <div class="action-fields" id="fields_opd_discharge">
+            <div class="fgroup">
+              <label>Prescription</label>
+              <textarea id="c_prescription" rows="4" placeholder="Drug name, dose, frequency, duration...&#10;e.g. Amoxicillin 500mg TDS x 5 days"></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Instructions / Advice</label>
+              <textarea id="c_instructions" rows="2" placeholder="Rest, diet, follow-up date, warning signs..."></textarea>
+            </div>
+          </div>
+
+          <!-- Lab request fields -->
+          <div class="action-fields" id="fields_lab_request">
+            <div class="fgroup">
+              <label>Test Urgency</label>
+              <select id="c_lab_urgency">
+                <option value="routine">Routine</option>
+                <option value="urgent">Urgent</option>
+                <option value="emergency">Emergency</option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label>Clinical Notes for Lab</label>
+              <input type="text" id="c_lab_notes" placeholder="Relevant clinical information for the lab technologist">
+            </div>
+            <div class="fgroup">
+              <label>Select Tests</label>
+              <div class="test-search">
+                <input type="text" id="testSearch" placeholder="Search test name..." style="margin-bottom:6px;">
+              </div>
+              <div class="test-list" id="testList"><div style="padding:10px;color:var(--muted);font-size:0.82rem;">Loading tests...</div></div>
+              <div class="selected-tests" id="selectedTests"></div>
+            </div>
+          </div>
+
+          <!-- Lab + discharge (reuse lab fields, add prescription) -->
+          <div class="action-fields" id="fields_lab_and_discharge">
+            <div class="fgroup">
+              <label>Test Urgency</label>
+              <select id="c_lab_urgency2">
+                <option value="routine">Routine</option>
+                <option value="urgent">Urgent</option>
+                <option value="emergency">Emergency</option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label>Clinical Notes for Lab</label>
+              <input type="text" id="c_lab_notes2" placeholder="Relevant clinical information for the lab">
+            </div>
+            <div class="fgroup">
+              <label>Select Tests</label>
+              <div class="test-search">
+                <input type="text" id="testSearch2" placeholder="Search test name...">
+              </div>
+              <div class="test-list" id="testList2"><div style="padding:10px;color:var(--muted);font-size:0.82rem;">Loading tests...</div></div>
+              <div class="selected-tests" id="selectedTests2"></div>
+            </div>
+            <div class="fgroup">
+              <label>Prescription</label>
+              <textarea id="c_prescription2" rows="3" placeholder="Drug name, dose, frequency, duration..."></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Instructions</label>
+              <textarea id="c_instructions2" rows="2" placeholder="Follow-up, advice..."></textarea>
+            </div>
+          </div>
+
+          <!-- Admit fields -->
+          <div class="action-fields" id="fields_admit">
+            <div class="fgrid">
+              <div class="fgroup">
+                <label class="req">Ward / Unit</label>
+                <input type="text" id="c_ward" placeholder="e.g. Male Medical Ward, Paediatric Ward">
+              </div>
+              <div class="fgroup">
+                <label>Admitting Diagnosis</label>
+                <input type="text" id="c_admit_diag" placeholder="Primary admitting diagnosis">
+              </div>
+              <div class="fgroup full">
+                <label>Admission Orders / Instructions</label>
+                <textarea id="c_admit_orders" rows="3" placeholder="IV fluids, monitoring, medications, nursing instructions..."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Refer fields -->
+          <div class="action-fields" id="fields_refer">
+            <div class="fgrid">
+              <div class="fgroup">
+                <label class="req">Refer To</label>
+                <input type="text" id="c_refer_to" placeholder="Specialist / department / hospital">
+              </div>
+              <div class="fgroup">
+                <label>Reason for Referral</label>
+                <textarea id="c_refer_reason" rows="2" placeholder="Reason and urgency of referral..."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="fgroup" style="margin-top:12px;">
+            <label>Doctor's Note (internal)</label>
+            <textarea id="c_doctor_note" rows="2" placeholder="Internal notes, follow-up instructions..."></textarea>
+          </div>
+
+          <div class="submit-row">
+            <button class="btn-ghost" id="clearConsultBtn">Clear Form</button>
+            <button class="btn-submit" id="submitConsultBtn">Submit Consultation</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- HISTORY TAB -->
+      <div class="cpanel" id="cpanel-history">
+        <div id="historyList"><div style="color:var(--muted);font-size:0.84rem;">Loading...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="doctor-auth-guard.js"></script>
+<script src="doctor-consultation.js"></script>
+</body>
+</html>
