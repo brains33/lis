@@ -1,0 +1,194 @@
+/* ============================================================
+   MU'UJIZA HMS — pharmacy.css
+   Light theme, amber accent (#f59e0b) — distinct from
+   records (green), OPD (blue/dark), doctor (purple/dark).
+   Same design language as management1.css: DM Sans/DM Mono,
+   pill buttons, rounded cards.
+   ============================================================ */
+:root{
+  --primary:#f59e0b; --primary-dark:#b45309; --primary-light:#fff7ed;
+  --bg:#faf7f2; --surface:#ffffff; --text:#2a2115; --text2:#8a7458; --text3:#a89680;
+  --border:#f0e4d0; --red:#dc2626; --red-l:#fee2e2; --yellow:#d97706; --yellow-l:#fef3c7;
+  --green:#15803d; --green-l:#dcfce7; --mono:'DM Mono',monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
+.app{max-width:1400px;margin:0 auto;padding:20px;}
+
+.topbar{display:flex;justify-content:space-between;align-items:center;background:var(--surface);
+  padding:12px 24px;border-radius:28px;margin-bottom:20px;border:1px solid var(--border);flex-wrap:wrap;gap:10px;}
+.brand-name{font-weight:800;font-size:1.15rem;color:var(--primary-dark);}
+.topbar-user{display:flex;align-items:center;gap:14px;font-size:0.85rem;color:var(--text2);}
+.logout-btn{background:none;border:1px solid var(--border);padding:6px 14px;border-radius:40px;cursor:pointer;font-family:inherit;color:var(--text);}
+
+.card{background:var(--surface);border-radius:24px;border:1px solid var(--border);margin-bottom:20px;overflow:hidden;}
+.card-header{padding:14px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:0.92rem;
+  display:flex;align-items:center;gap:8px;color:var(--primary-dark);}
+.card-header .count{background:var(--primary-light);border:1px solid var(--border);border-radius:12px;
+  padding:1px 9px;font-size:0.72rem;color:var(--primary-dark);font-weight:600;}
+.card-body{padding:18px 20px;}
+
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:18px;}
+.stat-card{background:var(--surface);border-radius:20px;padding:14px 16px;border:1px solid var(--border);}
+.stat-label{font-size:0.76rem;color:var(--text2);}
+.stat-val{font-size:1.7rem;font-weight:800;}
+.stat-val.amber{color:var(--primary-dark);}
+.stat-val.green{color:var(--green);}
+.stat-val.red{color:var(--red);}
+
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:800px){.main-grid{grid-template-columns:1fr;}}
+
+input,select,textarea{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;
+  padding:9px 13px;color:var(--text);font-family:inherit;font-size:0.86rem;width:100%;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);}
+label{font-size:0.74rem;color:var(--text2);font-weight:600;}
+.form-group{display:flex;flex-direction:column;gap:4px;}
+.form-label{font-size:0.7rem;font-weight:700;text-transform:uppercase;color:var(--text2);display:block;margin-bottom:2px;}
+
+button{font-family:inherit;cursor:pointer;}
+.btn{padding:9px 20px;border-radius:40px;border:none;font-weight:700;font-size:0.85rem;
+  display:inline-flex;align-items:center;gap:6px;transition:0.15s;}
+.btn-primary{background:var(--primary);color:#3a2200;}
+.btn-primary:hover{background:var(--primary-dark);color:white;}
+.btn-primary:disabled{opacity:0.55;cursor:not-allowed;}
+.btn-secondary{background:#f3ede2;color:var(--text2);}
+.btn-secondary:hover{background:#e9dfc9;}
+.btn-danger{background:var(--red-l);color:#b91c1c;}
+.btn-success{background:var(--green-l);color:var(--green);}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:40px;padding:9px 18px;font-size:0.85rem;font-weight:600;}
+.btn-small{padding:5px 13px;font-size:0.75rem;border-radius:30px;}
+
+/* Tabs */
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px;}
+.tab-btn{background:transparent;border:none;padding:8px 20px;border-radius:40px;cursor:pointer;font-weight:600;
+  font-size:0.85rem;color:var(--text2);transition:0.15s;}
+.tab-btn:hover{background:var(--primary-light);}
+.tab-btn.active{background:var(--primary);color:#3a2200;}
+.panel{display:none;}
+.panel.active{display:block;}
+
+/* Data table */
+.data-table{width:100%;border-collapse:collapse;}
+.data-table th{padding:10px 12px;text-align:left;font-size:0.72rem;text-transform:uppercase;
+  color:var(--text2);background:#faf5ea;}
+.data-table td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:0.85rem;}
+.data-table tr:hover td{background:#fffbf2;}
+.data-table tr.inactive-row td{opacity:0.5;}
+.empty{color:var(--text3);text-align:center;padding:26px 0;font-size:0.85rem;}
+.dn{font-weight:700;}
+.dn-sub{font-size:0.74rem;color:var(--text2);}
+
+/* Messages */
+.msg{padding:11px 14px;border-radius:14px;font-size:0.84rem;margin-bottom:14px;display:none;}
+.msg.show{display:block;}
+.msg.error{background:var(--red-l);border:1px solid #f3b5b5;color:#b91c1c;}
+.msg.success{background:var(--green-l);border:1px solid #a6e6bb;color:var(--green);}
+
+/* Badges */
+.badge,.status-badge,.low-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;}
+.low-badge{background:var(--red-l);color:#b91c1c;margin-left:6px;}
+.status-badge.pending{background:var(--yellow-l);color:var(--yellow);}
+.status-badge.completed{background:var(--green-l);color:var(--green);}
+.status-badge.cancelled{background:#f0e4d0;color:var(--text2);}
+
+/* Low stock badge on tab */
+#lowStockBadge{display:none;background:var(--red);color:white;border-radius:10px;padding:1px 8px;
+  font-size:0.68rem;font-weight:700;margin-left:6px;}
+#lowStockBadge.show{display:inline-block;}
+
+/* Low stock banner (pharmacist queue) */
+.low-stock-banner{display:none;background:var(--yellow-l);border:1px solid #f3d38a;color:var(--yellow);
+  border-radius:14px;padding:10px 14px;font-size:0.82rem;margin-bottom:14px;font-weight:600;}
+.low-stock-banner.show{display:block;}
+
+/* Prescription queue list */
+.queue-search{display:flex;gap:8px;margin-bottom:12px;}
+.queue-list{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow-y:auto;}
+.queue-item{background:#fffdf9;border:1.5px solid var(--border);border-radius:16px;padding:12px 14px;
+  cursor:pointer;transition:0.15s;}
+.queue-item:hover{border-color:var(--primary);}
+.queue-item.selected{border-color:var(--primary);background:var(--primary-light);}
+.qi-top{display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;color:var(--text2);}
+.qi-hospno{font-family:var(--mono);font-weight:700;color:var(--primary-dark);}
+.qi-dx{font-weight:700;margin-top:4px;font-size:0.88rem;}
+.qi-doc{font-size:0.76rem;color:var(--text2);margin-top:2px;}
+
+/* Manual search row */
+.rx-search{display:flex;gap:8px;margin-bottom:14px;}
+.rx-search input{flex:1;}
+
+/* Patient / prescription panel */
+.placeholder-box{display:flex;align-items:center;justify-content:center;height:200px;color:var(--text3);
+  font-size:0.85rem;text-align:center;}
+.dispense-content{display:none;}
+.dispense-content.show{display:block;}
+.patient-header{background:var(--primary-light);border:1px solid var(--border);border-radius:16px;
+  padding:14px;margin-bottom:14px;}
+.ph-hospno{font-family:var(--mono);font-weight:800;font-size:1rem;color:var(--primary-dark);}
+.ph-meta{font-size:0.78rem;color:var(--text2);margin-top:3px;}
+.ph-dx{font-size:0.86rem;font-weight:600;margin-top:6px;}
+
+.prescription-box{background:#fffdf9;border:1.5px dashed var(--border);border-radius:14px;
+  padding:14px;margin-bottom:14px;white-space:pre-wrap;font-size:0.88rem;line-height:1.5;}
+
+.allergy-warning{display:none;background:var(--red-l);border:1px solid #f3b5b5;color:#b91c1c;
+  border-radius:12px;padding:10px 14px;font-size:0.84rem;margin-bottom:14px;font-weight:600;}
+.allergy-warning.show{display:block;}
+
+/* Drug picker */
+.drug-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;margin-bottom:14px;}
+.drug-item{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fffdf9;
+  border:1px solid var(--border);border-radius:12px;padding:9px 12px;}
+.drug-item.out{opacity:0.55;}
+.di-name{font-weight:700;font-size:0.85rem;}
+.di-strength{color:var(--text2);font-weight:400;font-size:0.78rem;}
+.di-meta{font-size:0.74rem;color:var(--text2);flex:1;margin-left:10px;}
+.btn-add{background:var(--primary-light);border:1px solid var(--border);color:var(--primary-dark);
+  border-radius:20px;padding:5px 13px;font-size:0.76rem;font-weight:700;cursor:pointer;white-space:nowrap;}
+.btn-add:disabled{opacity:0.5;cursor:not-allowed;}
+
+.selected-drugs{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
+.selected-drug-row{display:flex;align-items:center;gap:10px;background:var(--primary-light);
+  border:1px solid var(--border);border-radius:12px;padding:9px 12px;}
+.sd-name{font-weight:700;font-size:0.85rem;flex:1;}
+.sd-qty{width:64px;padding:6px 8px;}
+.sd-unit{font-size:0.72rem;color:var(--text2);white-space:nowrap;}
+.sd-remove{background:none;border:none;color:var(--red);font-size:1rem;cursor:pointer;padding:2px 6px;}
+
+.btn-row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap;}
+
+/* Add-drug form */
+.add-drug-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;}
+
+/* Toolbar */
+.toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;margin-bottom:16px;gap:12px;}
+.search-bar{background:white;border-radius:40px;border:1px solid var(--border);padding:7px 16px;
+  display:flex;gap:8px;align-items:center;flex:1;max-width:320px;}
+.search-bar input{border:none;outline:none;background:transparent;padding:0;}
+
+/* ---- Login page ---- */
+.login-wrap{max-width:400px;margin:60px auto;padding:0 16px;}
+.login-card{background:var(--surface);border-radius:28px;border:1px solid var(--border);padding:30px 26px;}
+.login-brand{text-align:center;font-weight:800;font-size:1.2rem;color:var(--primary-dark);margin-bottom:4px;}
+.login-sub{text-align:center;font-size:0.8rem;color:var(--text2);margin-bottom:22px;}
+.role-row{display:flex;gap:10px;margin-bottom:18px;}
+.role-btn{flex:1;padding:12px;border-radius:16px;border:1.5px solid var(--border);background:#fffdf9;
+  cursor:pointer;font-family:inherit;font-weight:700;font-size:0.85rem;color:var(--text2);text-align:center;}
+.role-btn.active{border-color:var(--primary);background:var(--primary-light);color:var(--primary-dark);}
+.field-group{margin-bottom:14px;position:relative;}
+.pw-wrap{position:relative;}
+.pw-eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;background:none;
+  border:none;font-size:1rem;padding:0;}
+.caps-warn{display:none;color:var(--yellow);font-size:0.74rem;margin-top:4px;}
+.login-btn{width:100%;padding:12px;margin-top:6px;}
+.login-btn.loading{opacity:0.7;pointer-events:none;}
+.attempt-bar{display:none;gap:5px;margin:10px 0;align-items:center;}
+.attempt-dots{display:flex;gap:4px;}
+.attempt-dots span{width:8px;height:8px;border-radius:50%;background:var(--border);}
+.attempt-dots span.used{background:var(--red);}
+.attempt-label{font-size:0.72rem;color:var(--text2);margin-left:6px;}
+.lockout-box{display:none;background:var(--red-l);border:1px solid #f3b5b5;border-radius:12px;
+  padding:12px;text-align:center;margin-top:14px;}
+.lockout-box.show{display:block;}
+.lockout-timer{font-family:var(--mono);font-weight:800;font-size:1.2rem;color:#b91c1c;}

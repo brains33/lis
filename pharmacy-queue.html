@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA Pharmacy – Dispense</title>
+<meta http-equiv="X-Frame-Options" content="DENY">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="pharmacy.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand-name">💊 MU'UJIZA Pharmacy — Dispense</div>
+    <div class="topbar-user">
+      <span id="userLabel"></span>
+      <button class="logout-btn" id="logoutBtn">Log out</button>
+    </div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-val amber" id="s_pending">—</div><div class="stat-label">Pending Prescriptions</div></div>
+    <div class="stat-card"><div class="stat-val green" id="s_dispensed">—</div><div class="stat-label">Dispensed Today</div></div>
+  </div>
+
+  <div class="low-stock-banner" id="lowStockBanner"></div>
+  <div class="msg error" id="errorMsg"></div>
+  <div class="msg success" id="successMsg"></div>
+
+  <div class="main-grid">
+    <!-- LEFT: Prescription queue -->
+    <div class="card">
+      <div class="card-header">Prescription Queue <span class="count" id="queueCount">0</span></div>
+      <div class="card-body">
+        <div class="rx-search">
+          <input type="text" id="rxSearchHospNum" placeholder="Search any hospital no. (e.g. MU-2026-00001)">
+          <button class="btn btn-secondary" id="rxSearchBtn">Search</button>
+        </div>
+        <div class="queue-search">
+          <input type="text" id="queueFilter" placeholder="Filter today's queue by hospital no. or diagnosis...">
+        </div>
+        <div class="queue-list" id="rxQueueList">
+          <div class="empty">Loading queue...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Dispense panel -->
+    <div class="card">
+      <div class="card-header">Dispense</div>
+      <div class="card-body">
+        <div class="placeholder-box" id="placeholder">
+          ← Select a prescription from the queue, or search by hospital number
+        </div>
+
+        <div class="dispense-content" id="dispenseContent">
+          <div class="patient-header" id="patientHeader"></div>
+
+          <label>Doctor's Prescription</label>
+          <div class="prescription-box" id="prescriptionText"></div>
+
+          <div class="allergy-warning" id="allergyWarning"></div>
+
+          <label>Search Drugs</label>
+          <input type="text" id="drugSearch" placeholder="Search by drug name or generic name..." style="margin:6px 0 10px;">
+          <div class="drug-list" id="drugList"></div>
+
+          <label>Selected for Dispensing</label>
+          <div class="selected-drugs" id="selectedDrugs" style="margin-top:6px;"></div>
+
+          <div class="form-group">
+            <label class="form-label">Pharmacist Note (optional)</label>
+            <textarea id="pharmacistNote" rows="2" placeholder="Counselling notes, substitutions, etc..."></textarea>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn-ghost" id="clearDispenseBtn">Clear</button>
+            <button class="btn btn-primary" id="submitDispenseBtn">Dispense</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="pharmacy-auth-guard.js"></script>
+<script src="pharmacy-queue.js?v=20260702"></script>
+</body>
+</html>
