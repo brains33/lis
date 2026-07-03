@@ -65,7 +65,7 @@ function flagValue(val,param,ageYears){
 let selectedVisit    = null;
 let selectedPatient  = null;
 let currentVitals    = null;
-let selectedTests    = [];   // { id, name } for lab
+let selectedTests    = [];   // { id: "unit||test", name: test_name, unit_name } for lab
 let selectedTests2   = [];   // for lab_and_discharge
 let selectedTests3   = [];   // for admit_and_lab
 let allTestDefs      = [];
@@ -276,6 +276,7 @@ async function loadHistory(hospNum){
       ${c.prescription?`<div style="margin-top:4px;">💊 ${esc(c.prescription)}</div>`:''}
       ${c.refer_to?`<div style="margin-top:4px;">↗️ Referred to: ${esc(c.refer_to)}</div>`:''}
       ${c.admit_ward?`<div style="margin-top:4px;">🛏️ Admitted: ${esc(c.admit_ward)}</div>`:''}
+      ${Array.isArray(c.lab_test_names)&&c.lab_test_names.length?`<div style="margin-top:4px;">🧪 Labs ordered: ${c.lab_test_names.map(esc).join(', ')}</div>`:''}
     </div>`).join('');
 }
 
@@ -307,11 +308,21 @@ document.querySelectorAll('.action-btn').forEach(btn=>{
 // ============================================================
 // TEST DEFINITIONS (from existing LIS test_definitions table)
 // ============================================================
+// Composite key — test_definitions has no usable surrogate id in this schema
+// (accession.js never keys off one either); unit_name+test_name is the real
+// natural key, same as accession's cart dedup check.
+function testKey(t){ return `${t.unit_name}||${t.test_name}`; }
+
 async function loadTestDefs(){
   if(allTestDefs.length>0) return; // already loaded
-  const { data } = await client.from('test_definitions')
-    .select('id,name,area_id,areas(name)')
-    .order('name',{ascending:true});
+  const { data, error } = await client.from('test_definitions')
+    .select('unit_name,test_name,price_ngn,sample_type,tube,test_type')
+    .order('unit_name',{ascending:true})
+    .order('test_name',{ascending:true});
+  if(error){
+    console.error('loadTestDefs failed:', error);
+    toast?.('Failed to load test list','error');
+  }
   allTestDefs = data||[];
   renderTestList('testList','testSearch',selectedTests,'selectedTests');
   renderTestList('testList2','testSearch2',selectedTests2,'selectedTests2');
@@ -321,24 +332,26 @@ async function loadTestDefs(){
 function renderTestList(listId, searchId, selectedArr, selectedContainerId){
   const search = document.getElementById(searchId)?.value?.toLowerCase()||'';
   const list   = document.getElementById(listId);
-  const filtered = allTestDefs.filter(t=>!search||t.name.toLowerCase().includes(search));
+  const filtered = allTestDefs.filter(t=>!search
+    || t.test_name.toLowerCase().includes(search)
+    || (t.unit_name||'').toLowerCase().includes(search));
   if(filtered.length===0){ list.innerHTML=`<div style="padding:10px;color:var(--muted);font-size:0.82rem;">No tests found.</div>`; return; }
   list.innerHTML = filtered.map(t=>{
-    const checked = selectedArr.some(s=>s.id===t.id);
-    const area    = t.areas?.name||'';
+    const key = testKey(t);
+    const checked = selectedArr.some(s=>s.id===key);
     return `<div class="test-item">
-      <input type="checkbox" data-id="${t.id}" data-name="${esc(t.name)}" ${checked?'checked':''}>
-      <span>${esc(t.name)}</span>${area?`<span style="color:var(--muted);font-size:0.72rem;margin-left:auto;">${esc(area)}</span>`:''}
+      <input type="checkbox" data-key="${esc(key)}" data-name="${esc(t.test_name)}" data-unit="${esc(t.unit_name)}" ${checked?'checked':''}>
+      <span>${esc(t.test_name)}</span>${t.unit_name?`<span style="color:var(--muted);font-size:0.72rem;margin-left:auto;">${esc(t.unit_name)}</span>`:''}
     </div>`;
   }).join('');
 
   list.querySelectorAll('input[type=checkbox]').forEach(cb=>{
     cb.addEventListener('change',()=>{
-      const id=parseInt(cb.dataset.id), name=cb.dataset.name;
+      const key=cb.dataset.key, name=cb.dataset.name, unit=cb.dataset.unit;
       if(cb.checked){
-        if(!selectedArr.some(s=>s.id===id)) selectedArr.push({id,name});
+        if(!selectedArr.some(s=>s.id===key)) selectedArr.push({id:key, name, unit_name:unit});
       } else {
-        const idx=selectedArr.findIndex(s=>s.id===id);
+        const idx=selectedArr.findIndex(s=>s.id===key);
         if(idx>-1) selectedArr.splice(idx,1);
       }
       renderSelectedTags(selectedArr, selectedContainerId, listId, searchId);
@@ -349,13 +362,13 @@ function renderTestList(listId, searchId, selectedArr, selectedContainerId){
 function renderSelectedTags(arr, containerId, listId, searchId){
   const el=document.getElementById(containerId);
   el.innerHTML = arr.map(t=>`
-    <div class="test-tag">${esc(t.name)}
-      <button data-id="${t.id}" title="Remove">✕</button>
+    <div class="test-tag">${t.unit_name?`${esc(t.unit_name)}: `:''}${esc(t.name)}
+      <button data-key="${esc(t.id)}" title="Remove">✕</button>
     </div>`).join('');
   el.querySelectorAll('button').forEach(btn=>{
     btn.addEventListener('click',()=>{
-      const id=parseInt(btn.dataset.id);
-      const idx=arr.findIndex(s=>s.id===id);
+      const key=btn.dataset.key;
+      const idx=arr.findIndex(s=>s.id===key);
       if(idx>-1) arr.splice(idx,1);
       renderSelectedTags(arr, containerId, listId, searchId);
       renderTestList(listId, searchId, arr, containerId);
@@ -403,18 +416,11 @@ function populateWardSelects(){
 // but with NO prices. Patient carries this to the lab window instead
 // of the system pushing the order electronically.
 // ============================================================
-function buildAreaLookup(){
-  const map = {};
-  allTestDefs.forEach(t => { map[t.id] = t.areas?.name || 'General'; });
-  return map;
-}
-
 function generateLabRequestSlip(tests, meta){
   if(!tests || tests.length===0) return;
   if(!window.jspdf || !window.jspdf.jsPDF){ console.error('jsPDF not loaded'); return; }
   const { jsPDF } = window.jspdf;
   const doc   = new jsPDF({ unit:'mm', format:'a5' });
-  const areaMap = buildAreaLookup();
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   let y = 14;
@@ -452,10 +458,10 @@ function generateLabRequestSlip(tests, meta){
   doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
   doc.text('Tests Requested', 10, y); y+=6;
 
-  // Group by unit/area — same grouping accession uses, minus pricing
+  // Group by unit — same grouping accession uses, minus pricing
   const byUnit = {};
   tests.forEach(t=>{
-    const u = areaMap[t.id] || 'General';
+    const u = t.unit_name || 'General';
     if(!byUnit[u]) byUnit[u]=[];
     byUnit[u].push(t.name);
   });
@@ -549,8 +555,9 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
       p_doctor_note:          sv('c_doctor_note'),
       p_lab_urgency:          labUrgency||'routine',
       p_lab_clinical_notes:   labNotes,
-      p_lab_test_ids:         testsToSend.length>0 ? testsToSend.map(t=>t.id) : null,
-      p_lab_test_names:       testsToSend.length>0 ? testsToSend.map(t=>t.name) : null
+      p_lab_test_ids:         null, // test_definitions has no real id column in this schema (see note below)
+      p_lab_test_names:       testsToSend.length>0 ? testsToSend.map(t=>t.name) : null,
+      p_lab_test_units:       testsToSend.length>0 ? testsToSend.map(t=>t.unit_name) : null
     });
 
     if(error) throw error;
