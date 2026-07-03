@@ -332,7 +332,13 @@ async function loadTestDefs(){
     .order('test_name',{ascending:true});
   if(error){
     console.error('loadTestDefs failed:', error);
-    toast?.('Failed to load test list','error');
+    showError('Failed to load test list — ' + error.message);
+    // Degrade gracefully instead of leaving selects stuck on "Loading
+    // units...": show each group's "no tests" notice and disable Add.
+    allTestDefs = [];
+    testDefinitionsByUnit = {};
+    TEST_GROUPS.forEach(g=>populateUnits(g.suf));
+    return;
   }
   allTestDefs = data||[];
   testDefinitionsByUnit = {};
@@ -382,7 +388,7 @@ function addTestForGroup(suf, arr, containerId){
   const test = document.getElementById(`c_test${suf}`)?.value;
   if(!unit || !test) return;
   const key = `${unit}||${test}`;
-  if(arr.some(s=>s.id===key)){ toast?.('Test already added','warn'); return; }
+  if(arr.some(s=>s.id===key)){ showError('Test already added'); return; }
   arr.push({ id:key, name:test, unit_name:unit });
   renderSelectedTags(arr, containerId);
 }
