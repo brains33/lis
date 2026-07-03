@@ -49,7 +49,6 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    min-height: 100vh;
   }
   .hero {
     display: flex;
@@ -57,6 +56,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 48px;
+    margin-bottom: 56px;
   }
   .hero-content {
     flex: 1;
@@ -175,6 +175,84 @@
     color: var(--green);
     opacity: 0.85;
   }
+  .module-section {
+    width: 100%;
+  }
+  .module-header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .module-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--slate);
+    margin-bottom: 6px;
+  }
+  .module-header p {
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .module-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 18px;
+  }
+  .module-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 20px;
+    text-decoration: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .module-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--green);
+    box-shadow: 0 16px 32px rgba(31,110,67,0.14);
+  }
+  .module-icon {
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: var(--green-l);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .module-icon i {
+    font-size: 1.4rem;
+    color: var(--green);
+  }
+  .module-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .module-text h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--slate);
+    margin-bottom: 2px;
+  }
+  .module-text p {
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .module-card .fa-chevron-right {
+    color: var(--muted);
+    font-size: 0.85rem;
+    transition: transform 0.2s;
+  }
+  .module-card:hover .fa-chevron-right {
+    color: var(--green);
+    transform: translateX(4px);
+  }
   .footer {
     text-align: center;
     padding: 24px;
@@ -186,9 +264,9 @@
   }
   @media (max-width: 768px) {
     .hero-content h1 { font-size: 2.2rem; }
-    .hero-image .icon-circle { width: 200px; height: 200px; }
-    .hero-image .icon-circle i { font-size: 5rem; }
+    .hero-image { display: none; }
     .container { padding: 32px 20px; }
+    .module-card { padding: 16px; }
   }
 </style>
 </head>
@@ -210,15 +288,68 @@
         <div class="feature-item"><i class="fas fa-history"></i> Audit Trail</div>
         <div class="feature-item"><i class="fas fa-credit-card"></i> Billing & Payment</div>
       </div>
-      <button class="start-btn" onclick="window.location.href='login.html'">
-        <span>Start</span>
-        <i class="fas fa-arrow-right"></i>
-      </button>
     </div>
     <div class="hero-image">
       <div class="icon-circle">
         <i class="fas fa-dna"></i>
       </div>
+    </div>
+  </div>
+
+  <div class="module-section">
+    <div class="module-header">
+      <h2>Select Your Module</h2>
+      <p>Choose your department to sign in</p>
+    </div>
+    <div class="module-grid">
+      <a class="module-card" href="login.html">
+        <div class="module-icon"><i class="fas fa-flask"></i></div>
+        <div class="module-text">
+          <h3>Laboratory</h3>
+          <p>Accession, result entry &amp; verification</p>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+      </a>
+      <a class="module-card" href="doctor-login.html">
+        <div class="module-icon"><i class="fas fa-user-doctor"></i></div>
+        <div class="module-text">
+          <h3>Doctor Consultation</h3>
+          <p>Consultations, prescriptions &amp; admissions</p>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+      </a>
+      <a class="module-card" href="opd-login.html">
+        <div class="module-icon"><i class="fas fa-clipboard-list"></i></div>
+        <div class="module-text">
+          <h3>OPD</h3>
+          <p>Outpatient queue &amp; vitals</p>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+      </a>
+      <a class="module-card" href="pharmacy-login.html">
+        <div class="module-icon"><i class="fas fa-pills"></i></div>
+        <div class="module-text">
+          <h3>Pharmacy</h3>
+          <p>Dispensing &amp; drug inventory</p>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+      </a>
+      <a class="module-card" href="ward-login.html">
+        <div class="module-icon"><i class="fas fa-bed-pulse"></i></div>
+        <div class="module-text">
+          <h3>Ward / IPD</h3>
+          <p>Admissions, vitals &amp; nursing care</p>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+      </a>
+      <a class="module-card" href="records-login.html">
+        <div class="module-icon"><i class="fas fa-folder-open"></i></div>
+        <div class="module-text">
+          <h3>Records</h3>
+          <p>Patient records &amp; registration</p>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+      </a>
     </div>
   </div>
 </div>
