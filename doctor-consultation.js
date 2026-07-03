@@ -703,7 +703,7 @@ function resetForm(){
   document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('selected'));
   document.querySelectorAll('.action-fields').forEach(f=>f.classList.remove('show'));
   selectedAction=null;
-  selectedTests=[]; selectedTests2=[]; selectedTests3=[];
+  selectedTests.length=0; selectedTests2.length=0; selectedTests3.length=0;
   document.getElementById('selectedTests').innerHTML='';
   document.getElementById('selectedTests2').innerHTML='';
   document.getElementById('selectedTests3').innerHTML='';
