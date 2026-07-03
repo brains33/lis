@@ -595,8 +595,7 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
       p_lab_urgency:          labUrgency||'routine',
       p_lab_clinical_notes:   labNotes,
       p_lab_test_ids:         null, // test_definitions has no real id column in this schema (see note below)
-      p_lab_test_names:       testsToSend.length>0 ? testsToSend.map(t=>t.name) : null,
-      p_lab_test_units:       testsToSend.length>0 ? testsToSend.map(t=>t.unit_name) : null
+      p_lab_test_names:       testsToSend.length>0 ? testsToSend.map(t=>t.name) : null
     });
 
     if(error) throw error;
