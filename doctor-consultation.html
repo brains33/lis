@@ -7,6 +7,7 @@
 <meta http-equiv="X-Frame-Options" content="DENY">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
   :root{--bg:#0e1320;--card:#161c2c;--field:#1e2538;--border:#2a324a;--text:#e8ecf4;--muted:#8b93a8;
     --purple:#a78bfa;--purple-dark:#7c3aed;--green:#3ddc97;--blue:#38bdf8;--error:#ff6b6b;--warn:#ffb347;}
@@ -260,6 +261,9 @@
             <button class="action-btn admit" data-action="admit">
               <span class="icon">🛏️</span><span class="label">Admit to Ward</span>
             </button>
+            <button class="action-btn admit" data-action="admit_and_lab">
+              <span class="icon">🛏️🔬</span><span class="label">Admit + Order Labs</span>
+            </button>
             <button class="action-btn refer" data-action="refer">
               <span class="icon">↗️</span><span class="label">Refer</span>
             </button>
@@ -338,7 +342,7 @@
             <div class="fgrid">
               <div class="fgroup">
                 <label class="req">Ward / Unit</label>
-                <input type="text" id="c_ward" placeholder="e.g. Male Medical Ward, Paediatric Ward">
+                <select id="c_ward"><option value="">Loading wards...</option></select>
               </div>
               <div class="fgroup">
                 <label>Admitting Diagnosis</label>
@@ -348,6 +352,44 @@
                 <label>Admission Orders / Instructions</label>
                 <textarea id="c_admit_orders" rows="3" placeholder="IV fluids, monitoring, medications, nursing instructions..."></textarea>
               </div>
+            </div>
+          </div>
+
+          <!-- Admit + Order Labs fields -->
+          <div class="action-fields" id="fields_admit_and_lab">
+            <div class="fgrid">
+              <div class="fgroup">
+                <label class="req">Ward / Unit</label>
+                <select id="c_ward3"><option value="">Loading wards...</option></select>
+              </div>
+              <div class="fgroup">
+                <label>Admitting Diagnosis</label>
+                <input type="text" id="c_admit_diag3" placeholder="Primary admitting diagnosis">
+              </div>
+              <div class="fgroup full">
+                <label>Admission Orders / Instructions</label>
+                <textarea id="c_admit_orders3" rows="3" placeholder="IV fluids, monitoring, medications, nursing instructions..."></textarea>
+              </div>
+            </div>
+            <div class="fgroup">
+              <label>Test Urgency</label>
+              <select id="c_lab_urgency3">
+                <option value="routine">Routine</option>
+                <option value="urgent">Urgent</option>
+                <option value="emergency">Emergency</option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label>Clinical Notes for Lab</label>
+              <input type="text" id="c_lab_notes3" placeholder="Relevant clinical information for the lab technologist">
+            </div>
+            <div class="fgroup">
+              <label>Select Tests</label>
+              <div class="test-search">
+                <input type="text" id="testSearch3" placeholder="Search test name...">
+              </div>
+              <div class="test-list" id="testList3"><div style="padding:10px;color:var(--muted);font-size:0.82rem;">Loading tests...</div></div>
+              <div class="selected-tests" id="selectedTests3"></div>
             </div>
           </div>
 

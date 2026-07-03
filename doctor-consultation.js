@@ -67,7 +67,9 @@ let selectedPatient  = null;
 let currentVitals    = null;
 let selectedTests    = [];   // { id, name } for lab
 let selectedTests2   = [];   // for lab_and_discharge
+let selectedTests3   = [];   // for admit_and_lab
 let allTestDefs      = [];
+let allWards         = [];
 let selectedAction   = null;
 
 // ============================================================
@@ -77,7 +79,7 @@ async function loadQueue(){
   const today = new Date().toISOString().split('T')[0];
   const { data, error } = await client.from('opd_visits')
     .select(`id,hospital_number,status,triage_category,chief_complaint,assigned_doctor,queued_at,
-             patient_registry(surname,first_name,gender,date_of_birth,age,blood_group,genotype,phone,address,occupation,state_of_origin,nin)`)
+             patient_registry(id,surname,first_name,gender,date_of_birth,age,blood_group,genotype,phone,address,occupation,state_of_origin,nin)`)
     .eq('visit_date', today)
     .eq('status','with_doctor')
     .order('queued_at',{ascending:true});
@@ -313,6 +315,7 @@ async function loadTestDefs(){
   allTestDefs = data||[];
   renderTestList('testList','testSearch',selectedTests,'selectedTests');
   renderTestList('testList2','testSearch2',selectedTests2,'selectedTests2');
+  renderTestList('testList3','testSearch3',selectedTests3,'selectedTests3');
 }
 
 function renderTestList(listId, searchId, selectedArr, selectedContainerId){
@@ -360,12 +363,128 @@ function renderSelectedTags(arr, containerId, listId, searchId){
   });
 }
 
-['testSearch','testSearch2'].forEach((id,i)=>{
-  document.getElementById(id)?.addEventListener('input',()=>{
-    if(i===0) renderTestList('testList','testSearch',selectedTests,'selectedTests');
-    else      renderTestList('testList2','testSearch2',selectedTests2,'selectedTests2');
+// ============================================================
+// WARDS (real wards table — feeds admit_patient() ward_id)
+// ============================================================
+async function loadWards(){
+  if(allWards.length>0){ populateWardSelects(); return; }
+  const { data, error } = await client.from('wards')
+    .select('id,ward_name,department,bed_count')
+    .eq('is_active', true)
+    .order('ward_name',{ascending:true});
+  if(error){
+    console.error(error);
+    ['c_ward','c_ward3'].forEach(id=>{ const sel=document.getElementById(id); if(sel) sel.innerHTML='<option value="">Failed to load wards</option>'; });
+    return;
+  }
+  allWards = data||[];
+  populateWardSelects();
+}
+function populateWardSelects(){
+  const opts = allWards.length===0
+    ? '<option value="">No active wards found</option>'
+    : '<option value="">Select ward...</option>' +
+      allWards.map(w=>`<option value="${w.id}">${esc(w.ward_name)}${w.department?` — ${esc(w.department)}`:''}</option>`).join('');
+  ['c_ward','c_ward3'].forEach(id=>{ const sel=document.getElementById(id); if(sel) sel.innerHTML=opts; });
+}
+
+[
+  ['testSearch','testList',selectedTests,'selectedTests'],
+  ['testSearch2','testList2',selectedTests2,'selectedTests2'],
+  ['testSearch3','testList3',selectedTests3,'selectedTests3']
+].forEach(([searchId,listId,arr,containerId])=>{
+  document.getElementById(searchId)?.addEventListener('input',()=>{
+    renderTestList(listId, searchId, arr, containerId);
   });
 });
+
+// ============================================================
+// LAB REQUEST SLIP — printable PDF, mirrors accession's unit grouping
+// but with NO prices. Patient carries this to the lab window instead
+// of the system pushing the order electronically.
+// ============================================================
+function buildAreaLookup(){
+  const map = {};
+  allTestDefs.forEach(t => { map[t.id] = t.areas?.name || 'General'; });
+  return map;
+}
+
+function generateLabRequestSlip(tests, meta){
+  if(!tests || tests.length===0) return;
+  if(!window.jspdf || !window.jspdf.jsPDF){ console.error('jsPDF not loaded'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc   = new jsPDF({ unit:'mm', format:'a5' });
+  const areaMap = buildAreaLookup();
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  let y = 14;
+
+  function checkPage(minSpace){
+    if(y > pageH - minSpace){ doc.addPage(); y = 14; }
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text("MU'UJIZA DIAGNOSTICS", pageW/2, y, { align:'center' }); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text('Laboratory Request Slip', pageW/2, y, { align:'center' }); y+=3;
+  doc.setDrawColor(180); doc.line(10,y,pageW-10,y); y+=6;
+
+  doc.setFontSize(9.5);
+  function row(label, value){
+    checkPage(20);
+    doc.setFont('helvetica','bold'); doc.text(`${label}:`, 10, y);
+    doc.setFont('helvetica','normal');
+    const lines = doc.splitTextToSize(String(value||'—'), pageW-42);
+    doc.text(lines, 40, y);
+    y += 5*lines.length;
+  }
+  row('Patient', meta.patientName);
+  row('Sex', meta.gender);
+  row('Hospital No.', meta.hospitalNumber);
+  row('Diagnosis / Impression', meta.diagnosis);
+  row('Ordering Doctor', meta.doctorName);
+  row('Urgency', (meta.urgency||'routine').toUpperCase());
+  row('Date', meta.date);
+
+  y += 2;
+  doc.setDrawColor(180); doc.line(10,y,pageW-10,y); y+=6;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
+  doc.text('Tests Requested', 10, y); y+=6;
+
+  // Group by unit/area — same grouping accession uses, minus pricing
+  const byUnit = {};
+  tests.forEach(t=>{
+    const u = areaMap[t.id] || 'General';
+    if(!byUnit[u]) byUnit[u]=[];
+    byUnit[u].push(t.name);
+  });
+
+  doc.setFontSize(9.5);
+  Object.entries(byUnit).forEach(([unit, names])=>{
+    checkPage(15);
+    doc.setFont('helvetica','bold');
+    doc.text(unit.toUpperCase(), 10, y); y+=5;
+    doc.setFont('helvetica','normal');
+    names.forEach(n=>{
+      checkPage(10);
+      const lines = doc.splitTextToSize(`•  ${n}`, pageW-24);
+      doc.text(lines, 14, y);
+      y += 5*lines.length;
+    });
+    y+=1;
+  });
+
+  y += 3;
+  checkPage(20);
+  doc.setDrawColor(180); doc.line(10,y,pageW-10,y); y+=6;
+  doc.setFont('helvetica','italic'); doc.setFontSize(8);
+  doc.text('Present this slip at the laboratory reception window.', 10, y); y+=4;
+  doc.text('No fees are shown here — payment is processed at accession.', 10, y);
+
+  const safeHosp = String(meta.hospitalNumber||'patient').replace(/[^a-zA-Z0-9-]/g,'');
+  doc.save(`lab-request-${safeHosp}-${new Date().toISOString().slice(0,10)}.pdf`);
+}
 
 // ============================================================
 // SUBMIT CONSULTATION
@@ -378,21 +497,34 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
   if(!selectedAction)    return showError('Please select a plan (action).');
 
   // Action-specific validation
-  if(selectedAction==='admit' && !sv('c_ward'))     return showError('Ward is required for admission.');
-  if(selectedAction==='refer' && !sv('c_refer_to')) return showError('Specify where to refer.');
+  if(selectedAction==='admit' && !sv('c_ward'))             return showError('Ward is required for admission.');
+  if(selectedAction==='admit_and_lab' && !sv('c_ward3'))    return showError('Ward is required for admission.');
+  if(selectedAction==='refer' && !sv('c_refer_to'))         return showError('Specify where to refer.');
   if((selectedAction==='lab_request'||selectedAction==='lab_and_discharge') && selectedTests.length===0 && selectedTests2.length===0)
+    return showError('Select at least one lab test.');
+  if(selectedAction==='admit_and_lab' && selectedTests3.length===0)
     return showError('Select at least one lab test.');
 
   const btn=document.getElementById('submitConsultBtn');
   btn.disabled=true; btn.textContent='Submitting...';
 
-  // Determine which test array to use
-  const testsToSend = selectedAction==='lab_and_discharge' ? selectedTests2 : selectedTests;
-  const labUrgency  = selectedAction==='lab_and_discharge' ? sv('c_lab_urgency2') : sv('c_lab_urgency');
-  const labNotes    = selectedAction==='lab_and_discharge' ? sv('c_lab_notes2')   : sv('c_lab_notes');
-  const prescription   = selectedAction==='lab_and_discharge' ? sv('c_prescription2') : sv('c_prescription');
-  const instructions   = selectedAction==='lab_and_discharge' ? sv('c_instructions2') : sv('c_instructions');
-  const admitOrders    = sv('c_admit_orders');
+  // Determine which test/urgency/notes set to use for this action
+  let testsToSend, labUrgency, labNotes;
+  if(selectedAction==='lab_and_discharge'){
+    testsToSend = selectedTests2; labUrgency = sv('c_lab_urgency2'); labNotes = sv('c_lab_notes2');
+  } else if(selectedAction==='admit_and_lab'){
+    testsToSend = selectedTests3; labUrgency = sv('c_lab_urgency3'); labNotes = sv('c_lab_notes3');
+  } else {
+    testsToSend = selectedTests; labUrgency = sv('c_lab_urgency'); labNotes = sv('c_lab_notes');
+  }
+
+  const prescription = selectedAction==='lab_and_discharge' ? sv('c_prescription2') : sv('c_prescription');
+  const instructions  = selectedAction==='lab_and_discharge' ? sv('c_instructions2') : sv('c_instructions');
+
+  // Admission fields — admit_and_lab uses the suffix-3 fields, admit uses the original ones
+  const admitWardId  = selectedAction==='admit_and_lab' ? sv('c_ward3')        : sv('c_ward');
+  const admitDiag    = selectedAction==='admit_and_lab' ? sv('c_admit_diag3') : sv('c_admit_diag');
+  const admitOrders  = selectedAction==='admit_and_lab' ? sv('c_admit_orders3') : sv('c_admit_orders');
 
   try{
     const { data, error } = await client.rpc('submit_consultation',{
@@ -408,10 +540,10 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
       p_diagnosis:            sv('c_diagnosis'),
       p_icd10_code:           sv('c_icd10'),
       p_action_type:          selectedAction,
-      p_prescription:         prescription || (selectedAction==='admit'?admitOrders:null),
+      p_prescription:         prescription || ((selectedAction==='admit'||selectedAction==='admit_and_lab')?admitOrders:null),
       p_instructions:         instructions,
-      p_admit_ward:           sv('c_ward'),
-      p_admit_diagnosis:      sv('c_admit_diag'),
+      p_admit_ward:           allWards.find(w=>w.id===admitWardId)?.ward_name || admitWardId,
+      p_admit_diagnosis:      admitDiag,
       p_refer_to:             sv('c_refer_to'),
       p_refer_reason:         sv('c_refer_reason'),
       p_doctor_note:          sv('c_doctor_note'),
@@ -425,14 +557,80 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
     const r=Array.isArray(data)?data[0]:data;
     if(!r?.success) throw new Error(r?.message||'Failed to submit.');
 
-    const actionLabel={
+    // Printable lab request slip (no prices) — patient carries this to the
+    // lab window instead of the system pushing the order there electronically.
+    if(['lab_request','lab_and_discharge','admit_and_lab'].includes(selectedAction) && testsToSend.length>0){
+      try{
+        const p = selectedPatient;
+        generateLabRequestSlip(testsToSend, {
+          patientName:     p?`${p.surname||''} ${p.first_name||''}`.trim():'Unknown',
+          gender:          p?.gender,
+          hospitalNumber:  selectedVisit.hospital_number,
+          diagnosis:       sv('c_diagnosis'),
+          doctorName:      session.name||session.username,
+          urgency:         labUrgency,
+          date:            new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
+        });
+      }catch(pdfErr){ console.error('Lab request slip PDF failed:', pdfErr); }
+    }
+
+    let actionLabel={
       opd_discharge:'Patient discharged.',
       lab_request:'Lab tests ordered. Patient retained pending results.',
       lab_and_discharge:'Lab tests ordered and patient discharged.',
       admit:'Patient admitted to ward.',
+      admit_and_lab:'Patient admitted to ward and lab tests ordered.',
       refer:'Referral issued.',
       observation:'Patient placed under observation.'
     }[selectedAction]||'Consultation submitted.';
+
+    // Consultation is saved at this point regardless of what happens below.
+    // For 'admit', now actually create the admission (real wards/beds row) —
+    // second call, same two-call pattern used elsewhere in the system.
+    if(selectedAction==='admit'||selectedAction==='admit_and_lab'){
+      const labSuffix = selectedAction==='admit_and_lab' ? ' Lab tests were still saved to this consultation.' : '';
+      if(!selectedPatient?.id){
+        showSuccess(`✅ Consultation saved, but admission was NOT created — patient record has no linked patient_registry id. Please admit this patient manually via the ward module.${labSuffix}`);
+        resetForm(); selectedVisit=null; selectedPatient=null;
+        document.getElementById('placeholder').style.display='flex';
+        document.getElementById('consultContent').classList.remove('show');
+        await loadQueue();
+        return;
+      }
+      try{
+        const { data: admitData, error: admitError } = await client.rpc('admit_patient',{
+          p_token:                session.token,
+          p_consultation_id:      r.consultation_id,
+          p_hospital_number:      selectedVisit.hospital_number,
+          p_patient_id:           selectedPatient.id,
+          p_ward_id:              admitWardId,
+          p_admitting_doctor:     session.name||session.username,
+          p_admission_diagnosis:  admitDiag || sv('c_diagnosis'),
+          p_allergy_note:         sv('c_allergy')
+        });
+        if(admitError) throw admitError;
+        const ar=Array.isArray(admitData)?admitData[0]:admitData;
+        if(!ar?.success){
+          showSuccess(`✅ Consultation saved, but admission failed: ${ar?.message||'unknown error'}. Please admit this patient manually via the ward module (consultation ID: ${r.consultation_id}).${labSuffix}`);
+          resetForm(); selectedVisit=null; selectedPatient=null;
+          document.getElementById('placeholder').style.display='flex';
+          document.getElementById('consultContent').classList.remove('show');
+          await loadQueue();
+          return;
+        }
+        const labNote = selectedAction==='admit_and_lab' ? ' Lab tests ordered.' : '';
+        actionLabel = ar.bed_assigned
+          ? `Patient admitted to ward — bed assigned.${labNote}`
+          : `Patient admitted — no bed free yet, queued as pending bed assignment.${labNote}`;
+      }catch(admitErr){
+        showSuccess(`✅ Consultation saved, but admission failed: ${admitErr.message||admitErr}. Please admit this patient manually via the ward module (consultation ID: ${r.consultation_id}).${labSuffix}`);
+        resetForm(); selectedVisit=null; selectedPatient=null;
+        document.getElementById('placeholder').style.display='flex';
+        document.getElementById('consultContent').classList.remove('show');
+        await loadQueue();
+        return;
+      }
+    }
 
     showSuccess(`✅ ${actionLabel} Consultation saved.`);
     resetForm();
@@ -453,14 +651,16 @@ function resetForm(){
   ['c_complaint','c_hpi','c_pmh','c_meds','c_allergy','c_gen_exam','c_sys_exam',
    'c_diagnosis','c_icd10','c_prescription','c_instructions','c_ward','c_admit_diag',
    'c_admit_orders','c_refer_to','c_refer_reason','c_doctor_note','c_prescription2',
-   'c_instructions2','c_lab_notes','c_lab_notes2','c_doctor_note']
+   'c_instructions2','c_lab_notes','c_lab_notes2','c_doctor_note',
+   'c_ward3','c_admit_diag3','c_admit_orders3','c_lab_urgency3','c_lab_notes3']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('selected'));
   document.querySelectorAll('.action-fields').forEach(f=>f.classList.remove('show'));
   selectedAction=null;
-  selectedTests=[]; selectedTests2=[];
+  selectedTests=[]; selectedTests2=[]; selectedTests3=[];
   document.getElementById('selectedTests').innerHTML='';
   document.getElementById('selectedTests2').innerHTML='';
+  document.getElementById('selectedTests3').innerHTML='';
   document.getElementById('vitalsGrid').innerHTML='';
   document.getElementById('demoGrid').innerHTML='';
   document.getElementById('nurseNotes').innerHTML='';
@@ -472,4 +672,5 @@ document.getElementById('clearConsultBtn').addEventListener('click',()=>{ clearM
 
 // Init
 loadQueue();
+loadWards();
 setInterval(loadQueue, 30000);
