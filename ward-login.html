@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MU'UJIZA Ward/IPD – Login</title>
+<meta http-equiv="X-Frame-Options" content="DENY">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ward.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand">🛏️ MU'UJIZA Ward/IPD</div>
+    <div class="login-sub">Sign in to continue</div>
+
+    <div class="role-row">
+      <button class="role-btn" data-role="ward_nurse">Nurse</button>
+      <button class="role-btn" data-role="ward_admin">Ward Admin</button>
+    </div>
+
+    <div class="field-group">
+      <label>Username</label>
+      <input type="text" id="usernameInput" placeholder="Enter username" autocomplete="username">
+    </div>
+
+    <div class="field-group">
+      <label>Password</label>
+      <div class="pw-wrap">
+        <input type="password" id="passwordInput" placeholder="Enter password" autocomplete="current-password">
+        <button type="button" class="pw-eye" id="pwEye">👁</button>
+      </div>
+      <div class="caps-warn" id="capsWarn">⚠️ Caps Lock is on</div>
+    </div>
+
+    <div class="attempt-bar" id="attemptBar">
+      <div class="attempt-dots">
+        <span id="dot1"></span><span id="dot2"></span><span id="dot3"></span><span id="dot4"></span><span id="dot5"></span>
+      </div>
+      <span class="attempt-label" id="attemptLabel"></span>
+    </div>
+
+    <div class="msg error" id="errorBox"></div>
+
+    <button class="btn btn-primary login-btn" id="loginBtn">Sign In</button>
+
+    <div class="lockout-box" id="lockoutBox">
+      Account locked. Try again in<br>
+      <span class="lockout-timer" id="lockoutTimer">15:00</span>
+    </div>
+  </div>
+</div>
+
+<script src="ward-login.js"></script>
+</body>
+</html>

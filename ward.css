@@ -1,0 +1,97 @@
+/* ============================================================
+   MU'UJIZA HMS — ward.css
+   Shared styles for Ward/IPD module (login, nurse queue, admin)
+   Design tokens match opd-queue.html / pharmacy module, with a
+   distinct accent so users can tell modules apart at a glance.
+   ============================================================ */
+
+:root{
+  --bg:#0e1320; --card:#161c2c; --field:#1e2538; --border:#2a324a; --text:#e8ecf4; --muted:#8b93a8;
+  --accent:#a78bfa; --accent-dark:#8b5cf6; --green:#3ddc97; --error:#ff6b6b; --warn:#ffb347;
+}
+
+*{ box-sizing:border-box; }
+body{
+  margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+  font-family:'DM Sans',system-ui,sans-serif;
+  display:flex; align-items:center; justify-content:center;
+}
+
+/* ---------- Login ---------- */
+.login-wrap{ width:100%; max-width:400px; padding:20px; }
+.login-card{
+  background:var(--card); border:1px solid var(--border); border-radius:16px;
+  padding:32px 28px; box-shadow:0 20px 50px rgba(0,0,0,.35);
+}
+.login-brand{ font-size:1.35rem; font-weight:700; text-align:center; margin-bottom:4px; }
+.login-sub{ color:var(--muted); text-align:center; font-size:.85rem; margin-bottom:24px; }
+
+.role-row{ display:flex; gap:8px; margin-bottom:20px; }
+.role-btn{
+  flex:1; padding:10px 8px; border-radius:10px; border:1px solid var(--border);
+  background:var(--field); color:var(--muted); font-family:inherit; font-size:.82rem; font-weight:600;
+  cursor:pointer; transition:.15s;
+}
+.role-btn:hover{ border-color:var(--accent); color:var(--text); }
+.role-btn.active{ background:var(--accent); border-color:var(--accent); color:#fff; }
+
+.field-group{ margin-bottom:16px; }
+.field-group label{ display:block; font-size:.78rem; color:var(--muted); margin-bottom:6px; font-weight:600; }
+.field-group input{
+  width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--border);
+  background:var(--field); color:var(--text); font-family:inherit; font-size:.9rem;
+}
+.field-group input:focus{ outline:none; border-color:var(--accent); }
+
+.pw-wrap{ position:relative; }
+.pw-wrap input{ padding-right:42px; }
+.pw-eye{
+  position:absolute; right:6px; top:50%; transform:translateY(-50%);
+  background:none; border:none; cursor:pointer; font-size:1rem; padding:6px;
+}
+.caps-warn{ display:none; color:var(--warn); font-size:.75rem; margin-top:6px; }
+
+.attempt-bar{ display:none; align-items:center; gap:8px; margin-bottom:14px; font-size:.75rem; color:var(--muted); }
+.attempt-dots{ display:flex; gap:4px; }
+.attempt-dots span{ width:8px; height:8px; border-radius:50%; background:var(--border); }
+.attempt-dots span.used{ background:var(--error); }
+
+.msg{ display:none; padding:10px 12px; border-radius:8px; font-size:.82rem; margin-bottom:14px; }
+.msg.error{ background:rgba(255,107,107,.12); color:var(--error); border:1px solid rgba(255,107,107,.3); }
+.msg.error.show{ display:block; }
+.msg.success{ background:rgba(61,220,151,.12); color:var(--green); border:1px solid rgba(61,220,151,.3); }
+.msg.success.show{ display:block; }
+
+.btn{ font-family:inherit; cursor:pointer; border:none; border-radius:10px; font-weight:600; }
+.btn-primary{
+  width:100%; padding:13px; background:var(--accent); color:#fff; font-size:.92rem;
+  transition:.15s; position:relative;
+}
+.btn-primary:hover:not(:disabled){ background:var(--accent-dark); }
+.btn-primary:disabled{ opacity:.6; cursor:not-allowed; }
+.btn-primary.loading{ color:transparent; }
+.btn-primary.loading::after{
+  content:''; position:absolute; left:50%; top:50%; width:16px; height:16px;
+  margin:-8px 0 0 -8px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff;
+  border-radius:50%; animation:spin .7s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+.lockout-box{
+  display:none; text-align:center; margin-top:14px; padding:12px; border-radius:10px;
+  background:rgba(255,107,107,.08); color:var(--error); font-size:.82rem; line-height:1.6;
+}
+.lockout-box.show{ display:block; }
+.lockout-timer{ font-family:'DM Mono',monospace; font-size:1.1rem; font-weight:700; }
+
+/* ---------- Shared app-shell bits (reused by ward-queue / ward-admin) ---------- */
+.app-shell{ display:flex; height:100vh; width:100%; align-items:stretch; justify-content:stretch; }
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; padding:14px 22px;
+  background:var(--card); border-bottom:1px solid var(--border);
+}
+.topbar .brand{ font-weight:700; display:flex; align-items:center; gap:8px; }
+.badge{ padding:3px 9px; border-radius:20px; font-size:.7rem; font-weight:700; }
+.badge.occupied{ background:rgba(255,107,107,.15); color:var(--error); }
+.badge.available{ background:rgba(61,220,151,.15); color:var(--green); }
+.badge.pending{ background:rgba(255,179,71,.15); color:var(--warn); }
