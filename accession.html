@@ -92,7 +92,12 @@
           </select>
         </div>
         <div class="form-group"><label class="form-label">Phone</label><input type="tel" class="form-input" id="f-phone"></div>
-        <div class="form-group"><label class="form-label">ID / File No.</label><input type="text" class="form-input" id="f-nid"></div>
+        <div class="form-group" style="grid-column:span 2; position:relative;">
+          <label class="form-label">Hospital Number</label>
+          <input type="text" class="form-input" id="f-hospnum" placeholder="🔍 Search by hospital no. or name — or type new ID for walk-in" autocomplete="off">
+          <div id="hospnum-results" style="display:none; position:absolute; z-index:20; background:#fff; border:1px solid #ddd; border-radius:6px; width:100%; max-height:220px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,.12);"></div>
+          <div id="hospnum-status" style="font-size:12px; margin-top:4px; color:var(--muted, #888);"></div>
+        </div>
         <div class="form-group" style="grid-column:span 2;">
           <label class="form-label">Area / Locality</label>
           <div style="display:flex; gap:8px;">

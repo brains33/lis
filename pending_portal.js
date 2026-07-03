@@ -158,6 +158,14 @@ async function loadAndRender() {
     if (countEl) countEl.textContent = `${allSamples.length} result${allSamples.length !== 1 ? 's' : ''}`;
 
     filterTable();
+
+    // Deep link support: ?sample=123 opens that result directly (used by
+    // doctor-consultation.js's "View / Print Result" button)
+    const deepLinkId = new URLSearchParams(window.location.search).get('sample');
+    if (deepLinkId) {
+      const targetId = parseInt(deepLinkId, 10);
+      if (allSamples.some(s => s.id === targetId)) expandResult(targetId);
+    }
   } catch (err) {
     console.error(err);
     const isNetworkErr = !navigator.onLine || (err?.message || '').match(/fetch|network|failed to fetch/i);

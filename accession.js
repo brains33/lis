@@ -12,6 +12,97 @@
   const db = window._supabaseClient;    // token-authenticated client
 
   // --------------------------------------------------------------
+  //  HOSPITAL NUMBER LOOKUP (links samples back to patient_registry
+  //  so doctor-consultation.js can later find results by hosp. no.)
+  // --------------------------------------------------------------
+  let _linkedPatient = null; // { hospital_number, name, age, gender, phone } once a match is picked
+  let _hospnumDebounce = null;
+
+  function _initHospnumSearch() {
+    const input = document.getElementById('f-hospnum');
+    const resultsBox = document.getElementById('hospnum-results');
+    const statusEl = document.getElementById('hospnum-status');
+    if (!input || !resultsBox) return;
+
+    input.addEventListener('input', () => {
+      _linkedPatient = null; // any manual edit invalidates a prior match
+      if (statusEl) statusEl.textContent = '';
+      clearTimeout(_hospnumDebounce);
+      const q = input.value.trim();
+      if (q.length < 2) { resultsBox.style.display = 'none'; resultsBox.innerHTML = ''; return; }
+      _hospnumDebounce = setTimeout(() => _searchHospnum(q), 300);
+    });
+
+    input.addEventListener('blur', () => {
+      // small delay so a click on a result registers before the box hides
+      setTimeout(() => { resultsBox.style.display = 'none'; }, 150);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!resultsBox.contains(e.target) && e.target !== input) resultsBox.style.display = 'none';
+    });
+  }
+
+  async function _searchHospnum(q) {
+    const resultsBox = document.getElementById('hospnum-results');
+    const statusEl = document.getElementById('hospnum-status');
+    if (!db || !resultsBox) return;
+    try {
+      const { data, error } = await db
+        .from('patient_registry')
+        .select('hospital_number, surname, first_name, middle_name, age, gender, phone, date_of_birth')
+        .or(`hospital_number.ilike.%${q}%,surname.ilike.%${q}%,first_name.ilike.%${q}%`)
+        .limit(8);
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        resultsBox.innerHTML = `<div style="padding:8px 10px; color:var(--muted,#888); font-size:13px;">No match — will register as walk-in with this as a free-text ID</div>`;
+        resultsBox.style.display = 'block';
+        return;
+      }
+
+      resultsBox.innerHTML = data.map(p => {
+        const fullName = [p.surname, p.first_name, p.middle_name].filter(Boolean).join(' ');
+        return `<div class="hospnum-result-row" data-hn="${esc(p.hospital_number)}"
+                     style="padding:8px 10px; cursor:pointer; border-bottom:1px solid #f0f0f0; font-size:13px;">
+                  <strong>${esc(p.hospital_number)}</strong> — ${esc(fullName)}
+                  <span style="color:var(--muted,#888);">${p.age ? ` · ${p.age}y` : ''}${p.gender ? ` · ${esc(p.gender)}` : ''}</span>
+                </div>`;
+      }).join('');
+      resultsBox.style.display = 'block';
+
+      resultsBox.querySelectorAll('.hospnum-result-row').forEach((row, idx) => {
+        row.addEventListener('mouseenter', () => row.style.background = '#f5f5f5');
+        row.addEventListener('mouseleave', () => row.style.background = '#fff');
+        row.addEventListener('click', () => _pickHospnumMatch(data[idx]));
+      });
+    } catch (err) {
+      console.error('[AC] hospnum search failed', err);
+      if (statusEl) statusEl.textContent = 'Search failed — you can still type a manual ID.';
+    }
+  }
+
+  function _pickHospnumMatch(p) {
+    const fullName = [p.surname, p.first_name, p.middle_name].filter(Boolean).join(' ');
+    document.getElementById('f-hospnum').value = p.hospital_number;
+    document.getElementById('f-name').value = fullName;
+    if (p.age) document.getElementById('f-age').value = p.age;
+    if (p.gender) document.getElementById('f-gender').value = p.gender;
+    if (p.phone) document.getElementById('f-phone').value = p.phone;
+    document.getElementById('f-name')?.classList.remove('required-empty');
+
+    _linkedPatient = { hospital_number: p.hospital_number, name: fullName, age: p.age, gender: p.gender, phone: p.phone };
+
+    const statusEl = document.getElementById('hospnum-status');
+    if (statusEl) statusEl.textContent = `✓ Linked to existing patient record — results will be visible to the ordering doctor.`;
+    const resultsBox = document.getElementById('hospnum-results');
+    if (resultsBox) resultsBox.style.display = 'none';
+  }
+
+  document.addEventListener('DOMContentLoaded', _initHospnumSearch);
+  if (document.readyState !== 'loading') _initHospnumSearch();
+
+  // --------------------------------------------------------------
   //  SERVER-SIDE PAYSTACK VERIFICATION
   // --------------------------------------------------------------
   // Never trust the Paystack inline `callback` alone — it fires in the
@@ -279,7 +370,7 @@
       patient: name, age: parseInt(document.getElementById('f-age')?.value) || null,
       gender: document.getElementById('f-gender')?.value || 'Male',
       phone: document.getElementById('f-phone')?.value.trim() || null,
-      nid: document.getElementById('f-nid')?.value.trim() || null,
+      hospital_number: _linkedPatient?.hospital_number || document.getElementById('f-hospnum')?.value.trim() || null,
       area: document.getElementById('f-area')?.value.trim() || null,
       clinician: document.getElementById('f-clinician')?.value.trim() || null,
       history: document.getElementById('f-history')?.value.trim() || null,
@@ -487,9 +578,12 @@
   //  CLEAR FORM
   // --------------------------------------------------------------
   function clearForm() {
-    ['f-name','f-phone','f-nid','f-clinician','f-history','f-insurance','f-patient-email','f-area-search'].forEach(id => {
+    ['f-name','f-phone','f-hospnum','f-clinician','f-history','f-insurance','f-patient-email','f-area-search'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
     });
+    _linkedPatient = null;
+    const statusEl = document.getElementById('hospnum-status'); if (statusEl) statusEl.textContent = '';
+    const resultsEl = document.getElementById('hospnum-results'); if (resultsEl) resultsEl.style.display = 'none';
     const areaEl = document.getElementById('f-area'); if (areaEl) areaEl.value = '';
     populateAreaSelect(_allAreas);
     document.getElementById('f-name')?.classList.remove('required-empty');

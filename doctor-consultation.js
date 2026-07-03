@@ -150,6 +150,7 @@ async function selectVisit(v){
   await loadVitals(v);
   renderDemographics(v);
   loadHistory(v.hospital_number);
+  loadLabResults(v.hospital_number);
   loadTestDefs();
   // Pre-fill complaint from nurse
   if(v.chief_complaint) document.getElementById('c_complaint').value = v.chief_complaint;
@@ -281,8 +282,80 @@ async function loadHistory(hospNum){
 }
 
 // ============================================================
-// TAB SWITCHING
+// LAB RESULTS — bridges accession/pending_portal back to the doctor.
+// Samples are linked to this patient via hospital_number (set at
+// accession registration). We show anything not yet released as
+// "in progress" and anything released as viewable/downloadable.
 // ============================================================
+async function loadLabResults(hospNum){
+  const list = document.getElementById('labResultsList');
+  const badge = document.getElementById('labResultsBadge');
+  if(!hospNum){
+    list.innerHTML = `<div style="color:var(--muted);font-size:0.84rem;">No hospital number on this visit.</div>`;
+    badge.style.display='none';
+    return;
+  }
+
+  const { data, error } = await client
+    .from('samples')
+    .select('id, status, priority, collection_date, sample_tests(test_name, unit_name, status, result, result_json)')
+    .eq('hospital_number', hospNum)
+    .order('id', {ascending:false})
+    .limit(20);
+
+  if(error){
+    list.innerHTML = `<div style="color:var(--error);font-size:0.84rem;">Could not load lab results.</div>`;
+    console.error('[DC] loadLabResults error', error);
+    badge.style.display='none';
+    return;
+  }
+
+  if(!data || data.length===0){
+    list.innerHTML = `<div style="color:var(--muted);font-size:0.84rem;">No lab samples found for this patient yet.</div>`;
+    badge.style.display='none';
+    return;
+  }
+
+  const readyCount = data.filter(s=>s.status==='Result Released').length;
+  if(readyCount>0){
+    badge.textContent = readyCount;
+    badge.style.display='inline-block';
+  } else {
+    badge.style.display='none';
+  }
+
+  list.innerHTML = data.map(s=>{
+    const isReady = s.status==='Result Released';
+    const statusColor = isReady ? 'var(--green)' : (s.status==='Verifying' ? 'var(--warn)' : 'var(--muted)');
+    const testNames = (s.sample_tests||[]).map(t=>t.test_name).join(', ') || '—';
+    return `
+    <div class="past-consult" style="border-left:3px solid ${statusColor};">
+      <div class="pc-head">
+        <span>MU-${s.id}</span>
+        <span>${s.collection_date?new Date(s.collection_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):''}</span>
+        <span style="color:${statusColor};font-weight:700;">${esc(s.status||'—')}</span>
+      </div>
+      <div style="margin-top:4px;">🧪 ${esc(testNames)}</div>
+      ${isReady
+        ? `<div style="margin-top:8px;">
+             <button class="btn-view-result" data-sample-id="${s.id}" style="background:var(--purple);color:#1a0040;border:none;border-radius:6px;padding:6px 12px;font-weight:700;font-size:0.8rem;cursor:pointer;">
+               View / Print Result
+             </button>
+           </div>`
+        : `<div style="color:var(--muted);font-size:0.8rem;margin-top:4px;">Still in progress — check back once released.</div>`}
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.btn-view-result').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      // Opens the same pending-portal result view lab staff use, so the
+      // doctor sees the identical formatted/verified result and PDF.
+      window.open(`pending_portal.html?sample=${btn.dataset.sampleId}`, '_blank');
+    });
+  });
+}
+
+
 document.querySelectorAll('.ctab').forEach(btn=>{
   btn.addEventListener('click',()=>switchTab(btn.dataset.tab));
 });
