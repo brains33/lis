@@ -338,6 +338,11 @@ async function loadTestDefs(){
   testDefinitionsByUnit = {};
   allTestDefs.forEach(t=>{
     if(!testDefinitionsByUnit[t.unit_name]) testDefinitionsByUnit[t.unit_name]=[];
+    // Skip unit placeholder rows (inserted by management1.addUnit() so an
+    // empty unit still shows up in unit lists) — same filter management1.js
+    // applies in its loadTestDefinitions(). accession.js is missing this
+    // filter too, but doctor-consultation should not inherit that gap.
+    if(t.test_name === '__unit_placeholder__' || t.test_name.startsWith('__unit__')) return;
     testDefinitionsByUnit[t.unit_name].push(t.test_name);
   });
   TEST_GROUPS.forEach(g=>populateUnits(g.suf));
