@@ -16,6 +16,7 @@
   //  so doctor-consultation.js can later find results by hosp. no.)
   // --------------------------------------------------------------
   let _linkedPatient = null; // { hospital_number, name, age, gender, phone } once a match is picked
+  let _pulledLabRequestIds = []; // lab_requests.id values auto-added into this cart, marked fulfilled on save
   let _hospnumDebounce = null;
 
   function _initHospnumSearch() {
@@ -26,6 +27,7 @@
 
     input.addEventListener('input', () => {
       _linkedPatient = null; // any manual edit invalidates a prior match
+      _pulledLabRequestIds = []; // don't mark requests fulfilled if the link was abandoned
       if (statusEl) statusEl.textContent = '';
       clearTimeout(_hospnumDebounce);
       const q = input.value.trim();
@@ -82,6 +84,78 @@
     }
   }
 
+  function _findUnitForTest(testName) {
+    for (const [unit, tests] of Object.entries(testDefinitions.units)) {
+      if (tests.includes(testName)) return unit;
+    }
+    return null;
+  }
+
+  async function _autoAddPendingLabRequests(hospitalNumber) {
+    if (!db || !hospitalNumber) return;
+    // Guard against test_definitions still loading on a slow connection
+    if (Object.keys(testDefinitions.units).length === 0) {
+      await new Promise(r => setTimeout(r, 800));
+    }
+    try {
+      const { data: requests, error } = await db
+        .from('lab_requests')
+        .select('id, urgency, clinical_notes, lab_request_tests(test_name)')
+        .eq('hospital_number', hospitalNumber)
+        .eq('status', 'pending');
+      if (error) throw error;
+      if (!requests || requests.length === 0) return;
+
+      let added = 0, skipped = [];
+      const fulfilledRequestIds = new Set();
+      requests.forEach(r => {
+        (r.lab_request_tests || []).forEach(t => {
+          const testName = t.test_name;
+          const unit = _findUnitForTest(testName);
+          if (!unit) { skipped.push(testName); return; }
+          if (tempTests.find(x => x.unit_name === unit && x.test_name === testName)) { fulfilledRequestIds.add(r.id); return; } // already in cart, still counts as fulfilled
+          const testType = testDefinitions.testTypes[testName] || 'simple';
+          const sampleType = testDefinitions.sampleTypes[testName] || null;
+          const tube = testDefinitions.tubes[testName] || null;
+          tempTests.push({
+            unit_name: unit, test_name: testName, test_type: testType,
+            sample_type: sampleType, tube: tube,
+            result: '', result_json: null, tech_name: '', status: 'Collected', sort_order: tempTests.length
+          });
+          added++;
+          fulfilledRequestIds.add(r.id);
+        });
+      });
+      _pulledLabRequestIds = [...new Set([..._pulledLabRequestIds, ...fulfilledRequestIds])];
+
+      if (added > 0) { renderCart(); updateSampleSummary(); }
+
+      // Carry the doctor's urgency/notes into the accession form if set and not already filled
+      const firstReq = requests[0];
+      const priorityEl = document.getElementById('f-priority');
+      if (priorityEl && firstReq.urgency) {
+        const urgencyMap = { routine: 'Routine', urgent: 'Urgent', stat: 'STAT' };
+        const mapped = urgencyMap[(firstReq.urgency || '').toLowerCase()];
+        if (mapped) priorityEl.value = mapped;
+      }
+      const historyEl = document.getElementById('f-history');
+      if (historyEl && !historyEl.value.trim() && firstReq.clinical_notes) {
+        historyEl.value = firstReq.clinical_notes;
+      }
+
+      const statusEl = document.getElementById('hospnum-status');
+      if (statusEl) {
+        let msg = `✓ Linked. ${added} pending doctor-ordered test${added===1?'':'s'} auto-added to cart.`;
+        if (skipped.length > 0) msg += ` (${skipped.length} unmatched: ${skipped.join(', ')} — add manually)`;
+        statusEl.textContent = msg;
+      }
+      if (added > 0) toast(`${added} doctor-ordered test${added===1?'':'s'} auto-added`, 'success');
+      if (skipped.length > 0) toast(`Could not auto-match: ${skipped.join(', ')} — please add manually`, 'warn');
+    } catch (err) {
+      console.error('[AC] auto-add pending lab_requests failed', err);
+    }
+  }
+
   function _pickHospnumMatch(p) {
     const fullName = [p.surname, p.first_name, p.middle_name].filter(Boolean).join(' ');
     document.getElementById('f-hospnum').value = p.hospital_number;
@@ -94,9 +168,11 @@
     _linkedPatient = { hospital_number: p.hospital_number, name: fullName, age: p.age, gender: p.gender, phone: p.phone };
 
     const statusEl = document.getElementById('hospnum-status');
-    if (statusEl) statusEl.textContent = `✓ Linked to existing patient record — results will be visible to the ordering doctor.`;
+    if (statusEl) statusEl.textContent = `✓ Linked. Checking for pending doctor-ordered tests…`;
     const resultsBox = document.getElementById('hospnum-results');
     if (resultsBox) resultsBox.style.display = 'none';
+
+    _autoAddPendingLabRequests(p.hospital_number);
   }
 
   document.addEventListener('DOMContentLoaded', _initHospnumSearch);
@@ -478,6 +554,14 @@
           actor_name: null, occurred_at: now.toISOString() }
       ]);
 
+      // Mark any doctor-ordered lab_requests that fed this sample as fulfilled,
+      // so re-searching this patient later doesn't auto-add the same tests again.
+      if (_pulledLabRequestIds.length > 0) {
+        await db.from('lab_requests')
+          .update({ status: 'fulfilled', updated_at: now.toISOString() })
+          .in('id', _pulledLabRequestIds);
+      }
+
       await addAudit('Sample Registered', sampleId, `${tempTests.length} test(s) | Total: ${total} NGN | Mode: ${paymode} | Status: ${paystatus}`);
 
       toast(`MU-${sampleId} registered ✓`);
@@ -582,7 +666,7 @@
       const el = document.getElementById(id); if (el) el.value = '';
     });
     _linkedPatient = null;
-    const statusEl = document.getElementById('hospnum-status'); if (statusEl) statusEl.textContent = '';
+    _pulledLabRequestIds = [];
     const resultsEl = document.getElementById('hospnum-results'); if (resultsEl) resultsEl.style.display = 'none';
     const areaEl = document.getElementById('f-area'); if (areaEl) areaEl.value = '';
     populateAreaSelect(_allAreas);

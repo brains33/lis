@@ -348,11 +348,62 @@ async function loadLabResults(hospNum){
 
   list.querySelectorAll('.btn-view-result').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      // Opens the same pending-portal result view lab staff use, so the
-      // doctor sees the identical formatted/verified result and PDF.
-      window.open(`pending_portal.html?sample=${btn.dataset.sampleId}`, '_blank');
+      const sample = data.find(s => s.id === parseInt(btn.dataset.sampleId,10));
+      if(sample) renderResultModal(sample);
     });
   });
+}
+
+function renderResultModal(sample){
+  let modal = document.getElementById('drResultModal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'drResultModal';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:20px;';
+    document.body.appendChild(modal);
+  }
+
+  const rows = (sample.sample_tests||[]).map(t=>{
+    let display = t.result || '—';
+    // result_json holds structured panels (e.g. multi-parameter hormonal assays);
+    // fall back to flat key: value listing if present
+    if(t.result_json){
+      try {
+        const parsed = typeof t.result_json === 'string' ? JSON.parse(t.result_json) : t.result_json;
+        if(parsed && typeof parsed === 'object'){
+          display = Object.entries(parsed).map(([k,v])=>`${esc(k)}: ${esc(String(v))}`).join('<br>');
+        }
+      } catch(e){ /* leave as plain result text */ }
+    }
+    return `<tr>
+      <td style="padding:8px;border-bottom:1px solid var(--border);">${esc(t.test_name)}</td>
+      <td style="padding:8px;border-bottom:1px solid var(--border);color:var(--muted);">${esc(t.unit_name||'')}</td>
+      <td style="padding:8px;border-bottom:1px solid var(--border);">${display}</td>
+    </tr>`;
+  }).join('');
+
+  modal.innerHTML = `
+    <div style="background:var(--card,#1a1a2e);border-radius:12px;max-width:600px;width:100%;max-height:80vh;overflow-y:auto;padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="margin:0;">MU-${sample.id} — Results</h3>
+        <button id="drResultModalClose" style="background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;">&times;</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead>
+          <tr style="text-align:left;color:var(--muted);font-size:0.75rem;text-transform:uppercase;">
+            <th style="padding:8px;">Test</th><th style="padding:8px;">Unit</th><th style="padding:8px;">Result</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="3" style="padding:8px;color:var(--muted);">No test detail available.</td></tr>'}</tbody>
+      </table>
+      <div style="margin-top:14px;color:var(--muted);font-size:0.78rem;">
+        For the fully formatted, printable lab report (with reference ranges), ask lab reception for a printed copy of MU-${sample.id}.
+      </div>
+    </div>`;
+
+  modal.style.display = 'flex';
+  document.getElementById('drResultModalClose').onclick = () => modal.style.display = 'none';
+  modal.onclick = (e) => { if(e.target === modal) modal.style.display = 'none'; };
 }
 
 
