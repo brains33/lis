@@ -116,14 +116,15 @@
 
   .action-fields{display:none;} .action-fields.show{display:block;}
 
-  /* Lab test selector */
-  .test-search{margin-bottom:8px;}
-  .test-list{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--field);}
-  .test-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:0.82rem;cursor:pointer;}
-  .test-item:last-child{border-bottom:none;}
-  .test-item:hover{background:rgba(167,139,250,0.06);}
-  .test-item input[type=checkbox]{width:auto;cursor:pointer;}
-  .selected-tests{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;}
+  /* Lab test selector — mirrors accession.html's Unit → Test cascading dropdowns */
+  .unit-test-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+  .unit-test-row .fgroup{flex:1;min-width:150px;margin-bottom:0;}
+  .btn-add-test{background:rgba(167,139,250,0.15);border:1px solid var(--purple);color:var(--purple);
+    font-family:inherit;font-weight:600;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:0.82rem;white-space:nowrap;}
+  .btn-add-test:hover{background:rgba(167,139,250,0.25);}
+  .btn-add-test:disabled{opacity:0.5;cursor:not-allowed;}
+  .no-tests-notice{color:var(--warn);font-size:0.78rem;padding:6px 0 0;display:none;}
+  .selected-tests{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;}
   .test-tag{background:rgba(232,121,249,0.1);border:1px solid rgba(232,121,249,0.3);color:#e879f9;
     border-radius:12px;padding:3px 10px;font-size:0.74rem;display:flex;align-items:center;gap:4px;}
   .test-tag button{background:none;border:none;color:#e879f9;cursor:pointer;font-size:0.8rem;padding:0;}
@@ -297,10 +298,18 @@
             </div>
             <div class="fgroup">
               <label>Select Tests</label>
-              <div class="test-search">
-                <input type="text" id="testSearch" placeholder="Search test name..." style="margin-bottom:6px;">
+              <div class="unit-test-row">
+                <div class="fgroup">
+                  <label>Unit</label>
+                  <select id="c_unit"><option value="">Loading units...</option></select>
+                </div>
+                <div class="fgroup">
+                  <label>Test</label>
+                  <select id="c_test"></select>
+                </div>
+                <button type="button" class="btn-add-test" id="addTestBtn" disabled>+ Add Test</button>
               </div>
-              <div class="test-list" id="testList"><div style="padding:10px;color:var(--muted);font-size:0.82rem;">Loading tests...</div></div>
+              <div class="no-tests-notice" id="noTestsNotice">No test definitions found — contact admin.</div>
               <div class="selected-tests" id="selectedTests"></div>
             </div>
           </div>
@@ -321,10 +330,18 @@
             </div>
             <div class="fgroup">
               <label>Select Tests</label>
-              <div class="test-search">
-                <input type="text" id="testSearch2" placeholder="Search test name...">
+              <div class="unit-test-row">
+                <div class="fgroup">
+                  <label>Unit</label>
+                  <select id="c_unit2"><option value="">Loading units...</option></select>
+                </div>
+                <div class="fgroup">
+                  <label>Test</label>
+                  <select id="c_test2"></select>
+                </div>
+                <button type="button" class="btn-add-test" id="addTestBtn2" disabled>+ Add Test</button>
               </div>
-              <div class="test-list" id="testList2"><div style="padding:10px;color:var(--muted);font-size:0.82rem;">Loading tests...</div></div>
+              <div class="no-tests-notice" id="noTestsNotice2">No test definitions found — contact admin.</div>
               <div class="selected-tests" id="selectedTests2"></div>
             </div>
             <div class="fgroup">
@@ -385,10 +402,18 @@
             </div>
             <div class="fgroup">
               <label>Select Tests</label>
-              <div class="test-search">
-                <input type="text" id="testSearch3" placeholder="Search test name...">
+              <div class="unit-test-row">
+                <div class="fgroup">
+                  <label>Unit</label>
+                  <select id="c_unit3"><option value="">Loading units...</option></select>
+                </div>
+                <div class="fgroup">
+                  <label>Test</label>
+                  <select id="c_test3"></select>
+                </div>
+                <button type="button" class="btn-add-test" id="addTestBtn3" disabled>+ Add Test</button>
               </div>
-              <div class="test-list" id="testList3"><div style="padding:10px;color:var(--muted);font-size:0.82rem;">Loading tests...</div></div>
+              <div class="no-tests-notice" id="noTestsNotice3">No test definitions found — contact admin.</div>
               <div class="selected-tests" id="selectedTests3"></div>
             </div>
           </div>

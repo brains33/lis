@@ -308,10 +308,21 @@ document.querySelectorAll('.action-btn').forEach(btn=>{
 // ============================================================
 // TEST DEFINITIONS (from existing LIS test_definitions table)
 // ============================================================
-// Composite key — test_definitions has no usable surrogate id in this schema
-// (accession.js never keys off one either); unit_name+test_name is the real
-// natural key, same as accession's cart dedup check.
-function testKey(t){ return `${t.unit_name}||${t.test_name}`; }
+// Mirrors accession.js's populateUnits() / updateTests() / addTest() flow
+// exactly: flat rows -> grouped into testDefinitionsByUnit[unit_name] =
+// [test_names] -> Unit select populated from Object.keys() -> Test select
+// repopulated from testDefinitionsByUnit[selectedUnit] on unit change ->
+// addTest() reads both selects and pushes {id, name, unit_name} into the
+// group's cart array (same natural key accession uses for its cart dedup).
+let testDefinitionsByUnit = {};
+
+// suffix -> which group this control set belongs to: '' = lab_request,
+// '2' = lab_and_discharge, '3' = admit_and_lab (same three arrays as before)
+const TEST_GROUPS = [
+  { suf:'',  arr:()=>selectedTests  },
+  { suf:'2', arr:()=>selectedTests2 },
+  { suf:'3', arr:()=>selectedTests3 }
+];
 
 async function loadTestDefs(){
   if(allTestDefs.length>0) return; // already loaded
@@ -324,54 +335,70 @@ async function loadTestDefs(){
     toast?.('Failed to load test list','error');
   }
   allTestDefs = data||[];
-  renderTestList('testList','testSearch',selectedTests,'selectedTests');
-  renderTestList('testList2','testSearch2',selectedTests2,'selectedTests2');
-  renderTestList('testList3','testSearch3',selectedTests3,'selectedTests3');
-}
-
-function renderTestList(listId, searchId, selectedArr, selectedContainerId){
-  const search = document.getElementById(searchId)?.value?.toLowerCase()||'';
-  const list   = document.getElementById(listId);
-  const filtered = allTestDefs.filter(t=>!search
-    || t.test_name.toLowerCase().includes(search)
-    || (t.unit_name||'').toLowerCase().includes(search));
-  if(filtered.length===0){ list.innerHTML=`<div style="padding:10px;color:var(--muted);font-size:0.82rem;">No tests found.</div>`; return; }
-  list.innerHTML = filtered.map(t=>{
-    const key = testKey(t);
-    const checked = selectedArr.some(s=>s.id===key);
-    return `<div class="test-item">
-      <input type="checkbox" data-key="${esc(key)}" data-name="${esc(t.test_name)}" data-unit="${esc(t.unit_name)}" ${checked?'checked':''}>
-      <span>${esc(t.test_name)}</span>${t.unit_name?`<span style="color:var(--muted);font-size:0.72rem;margin-left:auto;">${esc(t.unit_name)}</span>`:''}
-    </div>`;
-  }).join('');
-
-  list.querySelectorAll('input[type=checkbox]').forEach(cb=>{
-    cb.addEventListener('change',()=>{
-      const key=cb.dataset.key, name=cb.dataset.name, unit=cb.dataset.unit;
-      if(cb.checked){
-        if(!selectedArr.some(s=>s.id===key)) selectedArr.push({id:key, name, unit_name:unit});
-      } else {
-        const idx=selectedArr.findIndex(s=>s.id===key);
-        if(idx>-1) selectedArr.splice(idx,1);
-      }
-      renderSelectedTags(selectedArr, selectedContainerId, listId, searchId);
-    });
+  testDefinitionsByUnit = {};
+  allTestDefs.forEach(t=>{
+    if(!testDefinitionsByUnit[t.unit_name]) testDefinitionsByUnit[t.unit_name]=[];
+    testDefinitionsByUnit[t.unit_name].push(t.test_name);
   });
+  TEST_GROUPS.forEach(g=>populateUnits(g.suf));
 }
 
-function renderSelectedTags(arr, containerId, listId, searchId){
-  const el=document.getElementById(containerId);
+// Fills the Unit select for a group, same as accession's populateUnits()
+function populateUnits(suf){
+  const units   = Object.keys(testDefinitionsByUnit);
+  const unitSel = document.getElementById(`c_unit${suf}`);
+  const addBtn  = document.getElementById(`addTestBtn${suf}`);
+  const notice  = document.getElementById(`noTestsNotice${suf}`);
+  if(!units.length){
+    if(unitSel) unitSel.innerHTML = '<option value="">No units found</option>';
+    if(addBtn) addBtn.disabled = true;
+    if(notice) notice.style.display = 'block';
+    return;
+  }
+  if(notice) notice.style.display = 'none';
+  if(addBtn) addBtn.disabled = false;
+  if(unitSel) unitSel.innerHTML = units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  updateTests(suf);
+}
+
+// Cascades the Test select to match the currently selected Unit, same as
+// accession's updateTests()
+function updateTests(suf){
+  const unit  = document.getElementById(`c_unit${suf}`)?.value;
+  const tests = testDefinitionsByUnit[unit] || [];
+  const testSel = document.getElementById(`c_test${suf}`);
+  if(testSel) testSel.innerHTML = tests.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+}
+
+// Reads both selects, dedupes against the group's cart, and pushes — same
+// shape/behaviour as accession's addTest()
+function addTestForGroup(suf, arr, containerId){
+  const unit = document.getElementById(`c_unit${suf}`)?.value;
+  const test = document.getElementById(`c_test${suf}`)?.value;
+  if(!unit || !test) return;
+  const key = `${unit}||${test}`;
+  if(arr.some(s=>s.id===key)){ toast?.('Test already added','warn'); return; }
+  arr.push({ id:key, name:test, unit_name:unit });
+  renderSelectedTags(arr, containerId);
+}
+
+function renderSelectedTags(arr, containerId){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  if(!arr.length){
+    el.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">No tests added yet.</span>';
+    return;
+  }
   el.innerHTML = arr.map(t=>`
     <div class="test-tag">${t.unit_name?`${esc(t.unit_name)}: `:''}${esc(t.name)}
       <button data-key="${esc(t.id)}" title="Remove">✕</button>
     </div>`).join('');
   el.querySelectorAll('button').forEach(btn=>{
     btn.addEventListener('click',()=>{
-      const key=btn.dataset.key;
-      const idx=arr.findIndex(s=>s.id===key);
+      const key = btn.dataset.key;
+      const idx = arr.findIndex(s=>s.id===key);
       if(idx>-1) arr.splice(idx,1);
-      renderSelectedTags(arr, containerId, listId, searchId);
-      renderTestList(listId, searchId, arr, containerId);
+      renderSelectedTags(arr, containerId);
     });
   });
 }
@@ -402,13 +429,14 @@ function populateWardSelects(){
 }
 
 [
-  ['testSearch','testList',selectedTests,'selectedTests'],
-  ['testSearch2','testList2',selectedTests2,'selectedTests2'],
-  ['testSearch3','testList3',selectedTests3,'selectedTests3']
-].forEach(([searchId,listId,arr,containerId])=>{
-  document.getElementById(searchId)?.addEventListener('input',()=>{
-    renderTestList(listId, searchId, arr, containerId);
-  });
+  ['', selectedTests, 'selectedTests'],
+  ['2', selectedTests2, 'selectedTests2'],
+  ['3', selectedTests3, 'selectedTests3']
+].forEach(([suf, arr, containerId])=>{
+  document.getElementById(`c_unit${suf}`)?.addEventListener('change', ()=>updateTests(suf));
+  document.getElementById(`addTestBtn${suf}`)?.addEventListener('click', ()=>addTestForGroup(suf, arr, containerId));
+  document.getElementById(`c_test${suf}`)?.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); addTestForGroup(suf, arr, containerId); } });
+  renderSelectedTags(arr, containerId); // shows "No tests added yet." on load
 });
 
 // ============================================================
