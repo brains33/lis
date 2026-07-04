@@ -37,8 +37,7 @@ async function loadFacilityMode(){
   const { data, error } = await client.from('hospital_settings').select('facility_mode').eq('id',1).single();
   if(!error && data) facilityMode = data.facility_mode;
   const isGeneral = facilityMode === 'general';
-  const tabBtn = document.getElementById('actionsTabBtn');
-  if(tabBtn) tabBtn.style.display = isGeneral ? 'inline-block' : 'none';
+  document.getElementById('actionsTabBtn').style.display = isGeneral ? 'inline-block' : 'none';
 }
 loadFacilityMode();
 
@@ -56,14 +55,6 @@ function esc(s){ if(s==null||s==='') return '—'; return String(s).replace(/[&<
 function nv(id){ const v=document.getElementById(id)?.value?.trim(); return v===''||v===undefined?null:Number(v); }
 function sv(id){ const v=document.getElementById(id)?.value?.trim(); return v===''?null:v; }
 function fmtTime(ts){ return ts ? new Date(ts).toLocaleString('en-NG',{dateStyle:'medium',timeStyle:'short'}) : '—'; }
-// Safe event binder: never throws if the target element doesn't exist yet
-// (e.g. an HTML panel that hasn't been added). Logs a console warning
-// instead so a missing element degrades that one feature, not the whole page.
-function on(id, event, handler){
-  const el = document.getElementById(id);
-  if(!el){ console.warn(`[ward-queue] #${id} not found — skipping ${event} handler.`); return; }
-  el.addEventListener(event, handler);
-}
 
 // Adult-only reference ranges for the ward vitals chip flagging.
 // (Ward patients skew adult; if pediatric wards are added later,
@@ -273,10 +264,12 @@ async function selectAdmission(a){
   naLabTests = [];
   document.querySelectorAll('.na-action-btn').forEach(b=>b.classList.remove('selected'));
   document.querySelectorAll('.na-panel').forEach(p=>p.style.display='none');
-  const naMsgEl = document.getElementById('naMsg'); if(naMsgEl) naMsgEl.style.display='none';
-  ['na_prescription','na_discharge_summary','na_refer_to','na_refer_reason'].forEach(id=>{
-    const el = document.getElementById(id); if(el) el.value='';
-  });
+  document.getElementById('naMsg').style.display='none';
+  document.getElementById('na_prescription').value='';
+  rxPickerInstance?.reset();
+  document.getElementById('na_discharge_summary').value='';
+  document.getElementById('na_refer_to').value='';
+  document.getElementById('na_refer_reason').value='';
   renderNaLabTags();
 
   await Promise.all([loadOrders(a.id), loadVitalsHistory(a.id), loadNotes(a.id), loadMar(a.id)]);
@@ -328,6 +321,110 @@ async function loadOrders(admissionId){
 // All actions call the single ward_nurse_action RPC.
 // ============================================================
 let naSelectedAction = null;
+
+// ============================================================
+// DRUG PICKER — searchable dropdown against drug_inventory, replaces
+// free-text prescribing with a structured pick + dose/frequency/
+// duration list. Serializes into the hidden na_prescription textarea
+// that na_prescribe_submit already reads from.
+// ============================================================
+let allDrugs = [];
+async function loadDrugInventory(){
+  if(allDrugs.length>0) return;
+  const { data, error } = await client.from('drug_inventory')
+    .select('id,drug_name,generic_name,category,dosage_form,strength,unit,quantity_in_stock,is_active')
+    .eq('is_active', true)
+    .order('drug_name');
+  if(error){ console.error('loadDrugInventory failed:', error); allDrugs=[]; return; }
+  allDrugs = data||[];
+}
+
+function initRxPicker(picker){
+  const searchInput = picker.querySelector('.rx-drug-search');
+  const dropdown = picker.querySelector('.rx-drug-dropdown');
+  const doseInput = picker.querySelector('.rx-dose');
+  const freqInput = picker.querySelector('.rx-frequency');
+  const durInput = picker.querySelector('.rx-duration');
+  const addBtn = picker.querySelector('.rx-add-btn');
+  const emptyNotice = picker.querySelector('.rx-empty-notice');
+  const listEl = picker.querySelector('.rx-selected-list');
+  const hiddenField = document.getElementById('na_prescription');
+
+  let selectedDrug = null;
+  let rxItems = [];
+
+  function renderDropdown(filterText){
+    const q = (filterText||'').trim().toLowerCase();
+    if(allDrugs.length===0){ emptyNotice.style.display='block'; dropdown.style.display='none'; return; }
+    emptyNotice.style.display='none';
+    const matches = q ? allDrugs.filter(d=>
+      d.drug_name.toLowerCase().includes(q) || (d.generic_name||'').toLowerCase().includes(q)
+    ) : allDrugs;
+    dropdown.innerHTML = matches.length===0
+      ? `<div style="padding:8px 10px;color:var(--muted);font-size:0.8rem;">No matching drugs in stock</div>`
+      : matches.slice(0,30).map(d=>{
+          const low = d.quantity_in_stock<=0;
+          return `<div class="rx-drug-row" data-id="${d.id}" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:0.82rem;${low?'opacity:0.5;':''}">
+            <div style="font-weight:600;">${esc(d.drug_name)}${d.strength?` — ${esc(d.strength)}`:''} ${low?'<span style="color:var(--error);font-size:0.72rem;">(OUT OF STOCK)</span>':''}</div>
+            <div style="color:var(--muted);font-size:0.74rem;">${esc(d.category||'—')} · ${esc(d.dosage_form||'—')}${d.generic_name?` · ${esc(d.generic_name)}`:''}</div>
+          </div>`;
+        }).join('');
+    dropdown.style.display='block';
+    dropdown.querySelectorAll('.rx-drug-row').forEach(row=>{
+      row.addEventListener('mouseenter',()=>row.style.background='var(--field)');
+      row.addEventListener('mouseleave',()=>row.style.background='transparent');
+      row.addEventListener('click',()=>{
+        const drug = allDrugs.find(d=>String(d.id)===row.dataset.id);
+        if(!drug) return;
+        selectedDrug = drug;
+        searchInput.value = `${drug.drug_name}${drug.strength?' — '+drug.strength:''}`;
+        if(drug.strength && !doseInput.value) doseInput.value = drug.strength;
+        dropdown.style.display='none';
+        addBtn.disabled=false;
+      });
+    });
+  }
+
+  searchInput.addEventListener('focus', ()=>renderDropdown(searchInput.value));
+  searchInput.addEventListener('input', ()=>{ selectedDrug=null; addBtn.disabled=true; renderDropdown(searchInput.value); });
+  searchInput.addEventListener('blur', ()=>setTimeout(()=>{dropdown.style.display='none';},150));
+
+  addBtn.addEventListener('click', ()=>{
+    if(!selectedDrug) return;
+    rxItems.push({
+      drugName: `${selectedDrug.drug_name}${selectedDrug.strength?' '+selectedDrug.strength:''}`,
+      dose: doseInput.value.trim(), frequency: freqInput.value.trim(), duration: durInput.value.trim()
+    });
+    searchInput.value=''; doseInput.value=''; freqInput.value=''; durInput.value='';
+    selectedDrug=null; addBtn.disabled=true;
+    renderRxList();
+  });
+
+  function renderRxList(){
+    listEl.innerHTML = rxItems.length===0
+      ? '<span style="color:var(--muted);font-size:0.8rem;">No drugs added yet.</span>'
+      : rxItems.map((item,i)=>{
+          const parts = [item.dose,item.frequency,item.duration].filter(Boolean).join(' · ');
+          return `<div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:0.78rem;display:flex;align-items:center;gap:6px;">
+            ${esc(item.drugName)}${parts?` (${esc(parts)})`:''} <button data-idx="${i}" style="background:none;border:none;color:var(--error);cursor:pointer;font-weight:700;">✕</button></div>`;
+        }).join('');
+    listEl.querySelectorAll('button').forEach(btn=>{
+      btn.addEventListener('click',()=>{ rxItems.splice(parseInt(btn.dataset.idx),1); renderRxList(); });
+    });
+    hiddenField.value = rxItems.map(item=>{
+      const parts = [item.dose,item.frequency,item.duration].filter(Boolean).join(' ');
+      return parts ? `${item.drugName} ${parts}` : item.drugName;
+    }).join('\n');
+  }
+  renderRxList();
+  return { reset: ()=>{ rxItems=[]; renderRxList(); } };
+}
+
+let rxPickerInstance = null;
+document.querySelectorAll('.rx-picker').forEach(p => { rxPickerInstance = initRxPicker(p); });
+loadDrugInventory();
+
+
 let naLabTests = []; // { unit_name, name }
 let naTestDefsByUnit = {};
 
@@ -336,8 +433,7 @@ document.querySelectorAll('.na-action-btn').forEach(btn=>{
     naSelectedAction = btn.dataset.action;
     document.querySelectorAll('.na-action-btn').forEach(b=>b.classList.toggle('selected', b===btn));
     document.querySelectorAll('.na-panel').forEach(p=>p.style.display='none');
-    const panel = document.getElementById(`na-${naSelectedAction}`);
-    if(panel) panel.style.display='block';
+    document.getElementById(`na-${naSelectedAction}`).style.display='block';
     if(naSelectedAction === 'lab_request') loadNaTestDefs();
     if(naSelectedAction === 'transfer_ward') populateNaWardSelect();
   });
@@ -345,7 +441,6 @@ document.querySelectorAll('.na-action-btn').forEach(btn=>{
 
 function naShowMsg(msg, isError){
   const el = document.getElementById('naMsg');
-  if(!el){ console.warn('[ward-queue] #naMsg not found:', msg); return; }
   el.textContent = msg;
   el.style.display = 'block';
   el.style.background = isError ? 'rgba(255,107,107,0.1)' : 'rgba(61,220,151,0.1)';
@@ -371,23 +466,20 @@ function populateNaUnits(){
   const units = Object.keys(naTestDefsByUnit);
   const unitSel = document.getElementById('na_lab_unit');
   const addBtn = document.getElementById('na_lab_addtest');
-  if(!unitSel || !addBtn) return;
   if(!units.length){ unitSel.innerHTML='<option value="">No units found</option>'; addBtn.disabled=true; return; }
   addBtn.disabled=false;
   unitSel.innerHTML = units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
   updateNaTests();
 }
 function updateNaTests(){
-  const unitSel = document.getElementById('na_lab_unit');
-  const testSel = document.getElementById('na_lab_test');
-  if(!unitSel || !testSel) return;
-  const tests = naTestDefsByUnit[unitSel.value]||[];
-  testSel.innerHTML = tests.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  const unit = document.getElementById('na_lab_unit').value;
+  const tests = naTestDefsByUnit[unit]||[];
+  document.getElementById('na_lab_test').innerHTML = tests.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
 }
-on('na_lab_unit', 'change', updateNaTests);
-on('na_lab_addtest', 'click', ()=>{
-  const unit = document.getElementById('na_lab_unit')?.value;
-  const test = document.getElementById('na_lab_test')?.value;
+document.getElementById('na_lab_unit').addEventListener('change', updateNaTests);
+document.getElementById('na_lab_addtest').addEventListener('click', ()=>{
+  const unit = document.getElementById('na_lab_unit').value;
+  const test = document.getElementById('na_lab_test').value;
   if(!unit || !test) return;
   if(naLabTests.some(t=>t.unit_name===unit && t.name===test)){ naShowMsg('Test already added', true); return; }
   naLabTests.push({unit_name:unit, name:test});
@@ -395,7 +487,6 @@ on('na_lab_addtest', 'click', ()=>{
 });
 function renderNaLabTags(){
   const el = document.getElementById('na_lab_tags');
-  if(!el) return;
   if(!naLabTests.length){ el.innerHTML='<span style="color:var(--muted);font-size:0.8rem;">No tests added yet.</span>'; return; }
   el.innerHTML = naLabTests.map((t,i)=>`
     <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:0.78rem;display:flex;align-items:center;gap:6px;">
@@ -409,7 +500,6 @@ function renderNaLabTags(){
 // ---- Ward select for transfer ----
 function populateNaWardSelect(){
   const sel = document.getElementById('na_transfer_ward');
-  if(!sel) return;
   const currentWard = selectedAdmission?.ward_id;
   sel.innerHTML = '<option value="">Select ward...</option>' +
     wards.filter(w=>w.id!==currentWard).map(w=>`<option value="${w.id}">${esc(w.ward_name)}</option>`).join('');
@@ -433,19 +523,20 @@ async function naSubmit(actionType, extraParams, successCallback){
   }catch(err){ naShowMsg(err.message||'Action failed.', true); }
 }
 
-on('na_prescribe_submit', 'click', async ()=>{
-  const text = document.getElementById('na_prescription')?.value.trim();
-  if(!text) return naShowMsg('Prescription text is required.', true);
+document.getElementById('na_prescribe_submit').addEventListener('click', async ()=>{
+  const text = document.getElementById('na_prescription').value.trim();
+  if(!text) return naShowMsg('Add at least one drug before submitting.', true);
   await naSubmit('prescribe', { p_prescription: text }, ()=>{
-    const el = document.getElementById('na_prescription'); if(el) el.value='';
+    document.getElementById('na_prescription').value='';
+    rxPickerInstance?.reset();
     loadOrders(selectedAdmission.id);
   });
 });
 
-on('na_lab_submit', 'click', async ()=>{
+document.getElementById('na_lab_submit').addEventListener('click', async ()=>{
   if(naLabTests.length===0) return naShowMsg('Add at least one test.', true);
-  const urgency = document.getElementById('na_lab_urgency')?.value;
-  const notes = document.getElementById('na_lab_notes')?.value.trim();
+  const urgency = document.getElementById('na_lab_urgency').value;
+  const notes = document.getElementById('na_lab_notes').value.trim();
   await naSubmit('lab_request', {
     p_lab_urgency: urgency,
     p_lab_clinical_notes: notes || null,
@@ -463,35 +554,43 @@ on('na_lab_submit', 'click', async ()=>{
       urgency, date: new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
     });
     naLabTests = []; renderNaLabTags();
-    const notesEl = document.getElementById('na_lab_notes'); if(notesEl) notesEl.value='';
+    document.getElementById('na_lab_notes').value='';
   });
 });
 
-function naCloseDetailPanel(){
-  document.getElementById('detailPanel')?.classList.remove('show');
-  const ph = document.getElementById('placeholder'); if(ph) ph.style.display = 'flex';
-  selectedAdmission = null;
-  loadAdmissions();
-}
-
-on('na_discharge_submit', 'click', async ()=>{
+document.getElementById('na_discharge_submit').addEventListener('click', async ()=>{
   if(!confirm(`Discharge ${selectedAdmission.hospital_number}? This frees their bed and ends the admission.`)) return;
-  const summary = document.getElementById('na_discharge_summary')?.value.trim();
-  await naSubmit('discharge', { p_discharge_summary: summary || null }, naCloseDetailPanel);
+  const summary = document.getElementById('na_discharge_summary').value.trim();
+  await naSubmit('discharge', { p_discharge_summary: summary || null }, ()=>{
+    document.getElementById('detailPanel').classList.remove('show');
+    document.getElementById('placeholder').style.display = 'flex';
+    selectedAdmission = null;
+    loadAdmissions();
+  });
 });
 
-on('na_refer_submit', 'click', async ()=>{
-  const referTo = document.getElementById('na_refer_to')?.value.trim();
+document.getElementById('na_refer_submit').addEventListener('click', async ()=>{
+  const referTo = document.getElementById('na_refer_to').value.trim();
   if(!referTo) return naShowMsg('Refer-to destination is required.', true);
-  const reason = document.getElementById('na_refer_reason')?.value.trim();
+  const reason = document.getElementById('na_refer_reason').value.trim();
   if(!confirm(`Refer ${selectedAdmission.hospital_number} to "${referTo}"? This discharges them from this ward.`)) return;
-  await naSubmit('refer', { p_refer_to: referTo, p_refer_reason: reason || null }, naCloseDetailPanel);
+  await naSubmit('refer', { p_refer_to: referTo, p_refer_reason: reason || null }, ()=>{
+    document.getElementById('detailPanel').classList.remove('show');
+    document.getElementById('placeholder').style.display = 'flex';
+    selectedAdmission = null;
+    loadAdmissions();
+  });
 });
 
-on('na_transfer_submit', 'click', async ()=>{
-  const newWardId = document.getElementById('na_transfer_ward')?.value;
+document.getElementById('na_transfer_submit').addEventListener('click', async ()=>{
+  const newWardId = document.getElementById('na_transfer_ward').value;
   if(!newWardId) return naShowMsg('Select a destination ward.', true);
-  await naSubmit('transfer_ward', { p_new_ward_id: newWardId }, naCloseDetailPanel);
+  await naSubmit('transfer_ward', { p_new_ward_id: newWardId }, ()=>{
+    document.getElementById('detailPanel').classList.remove('show');
+    document.getElementById('placeholder').style.display = 'flex';
+    selectedAdmission = null;
+    loadAdmissions();
+  });
 });
 
 // ---- Lab request slip generator — identical to doctor-consultation's,

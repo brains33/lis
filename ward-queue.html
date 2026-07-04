@@ -7,6 +7,7 @@
 <meta http-equiv="X-Frame-Options" content="DENY">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
   :root{--bg:#0e1320;--card:#161c2c;--field:#1e2538;--border:#2a324a;--text:#e8ecf4;--muted:#8b93a8;
     --accent:#38bdf8;--accent-dark:#0ea5e9;--green:#3ddc97;--error:#ff6b6b;--warn:#ffb347;}
@@ -43,6 +44,14 @@
   .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
   .btn-success{background:var(--green);color:#04221a;font-weight:700;}
   .btn-warn{background:var(--warn);color:#1a0e00;font-weight:700;}
+
+  .form-label{font-size:0.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px;}
+  .na-action-btn{background:var(--field);border:2px solid var(--border);border-radius:9px;padding:12px 6px;
+    cursor:pointer;font-family:inherit;font-size:0.76rem;font-weight:600;color:var(--text);text-align:center;line-height:1.6;}
+  .na-action-btn:hover{border-color:var(--accent);}
+  .na-action-btn.selected{border-color:var(--accent);background:rgba(56,189,248,0.1);}
+  .na-panel{border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--field);}
+  .na-panel textarea, .na-panel input, .na-panel select{width:100%;margin-bottom:0;}
   .btn-sm{padding:5px 10px;font-size:0.76rem;border-radius:6px;}
 
   .queue-search{display:flex;gap:8px;margin-bottom:12px;}
@@ -102,14 +111,6 @@
   .msg.show{display:block;}
   .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
   .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--green);color:var(--green);}
-
-  .na-action-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
-  .na-action-btn{background:var(--field);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:0.8rem;}
-  .na-action-btn.selected{border-color:var(--accent);color:var(--accent);background:rgba(56,189,248,0.08);}
-  .na-panel{display:none;border:1px solid var(--border);border-radius:9px;padding:12px;}
-  .na-lab-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;}
-  .na-lab-row{display:flex;gap:8px;align-items:flex-end;}
-  .na-lab-row .vfield{flex:1;}
 </style>
 </head>
 <body>
@@ -163,12 +164,92 @@
           <button class="tab-btn" data-tab="vitals">Vitals</button>
           <button class="tab-btn" data-tab="notes">Nursing Notes</button>
           <button class="tab-btn" data-tab="mar">MAR</button>
-          <button class="tab-btn" data-tab="actions" id="actionsTabBtn" style="display:none;">Nurse Actions</button>
+          <button class="tab-btn" data-tab="actions" id="actionsTabBtn" style="display:none;">⚡ Nurse Actions</button>
         </div>
 
         <!-- Doctor Orders (read-only) -->
         <div class="tab-pane active" id="pane-orders">
           <div id="ordersList"><div class="empty">No orders yet.</div></div>
+        </div>
+
+        <!-- NURSE ACTIONS (General Hospital mode only) — mirrors doctor-consultation's Plan panel -->
+        <div class="tab-pane" id="pane-actions">
+          <div id="naMsg" style="display:none;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:0.82rem;"></div>
+
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
+            <button class="na-action-btn" data-action="prescribe">💊<br>Prescribe</button>
+            <button class="na-action-btn" data-action="lab_request">🧪<br>Order Lab Tests</button>
+            <button class="na-action-btn" data-action="discharge">🏠<br>Discharge</button>
+            <button class="na-action-btn" data-action="refer">↗️<br>Refer</button>
+            <button class="na-action-btn" data-action="transfer_ward">🔀<br>Transfer Ward</button>
+          </div>
+
+          <!-- PRESCRIBE -->
+          <div class="na-panel" id="na-prescribe" style="display:none;">
+            <label class="form-label">Prescription</label>
+            <div class="rx-picker" style="position:relative;margin-bottom:10px;">
+              <div style="display:flex;gap:6px;position:relative;">
+                <div style="flex:2;position:relative;">
+                  <input type="text" class="rx-drug-search" placeholder="🔍 Search stocked drugs..." autocomplete="off" style="width:100%;">
+                  <div class="rx-drug-dropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.25);"></div>
+                </div>
+                <input type="text" class="rx-dose" placeholder="Dose" style="flex:1;">
+                <input type="text" class="rx-frequency" placeholder="Freq." style="flex:1;">
+                <input type="text" class="rx-duration" placeholder="Duration" style="flex:1;">
+                <button type="button" class="btn-primary rx-add-btn" disabled style="white-space:nowrap;">+ Add</button>
+              </div>
+              <div class="rx-empty-notice" style="display:none;color:var(--muted);font-size:0.8rem;margin-top:6px;">No drugs found in pharmacy inventory — contact pharmacy admin.</div>
+              <div class="rx-selected-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
+            </div>
+            <textarea id="na_prescription" style="display:none;"></textarea>
+            <button class="btn-primary" id="na_prescribe_submit">Add to Orders</button>
+          </div>
+
+          <!-- LAB REQUEST -->
+          <div class="na-panel" id="na-lab_request" style="display:none;">
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <div style="flex:1;">
+                <label class="form-label">Urgency</label>
+                <select id="na_lab_urgency" style="width:100%;">
+                  <option value="routine">Routine</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="stat">STAT</option>
+                </select>
+              </div>
+            </div>
+            <label class="form-label">Clinical Notes</label>
+            <input type="text" id="na_lab_notes" placeholder="Relevant clinical information for the lab" style="width:100%;margin-bottom:10px;">
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <select id="na_lab_unit" style="flex:1;"><option value="">Loading units...</option></select>
+              <select id="na_lab_test" style="flex:1;"></select>
+              <button type="button" class="btn-ghost btn-sm" id="na_lab_addtest" disabled>+ Add</button>
+            </div>
+            <div id="na_lab_tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;"><span style="color:var(--muted);font-size:0.8rem;">No tests added yet.</span></div>
+            <button class="btn-primary" id="na_lab_submit">Order Tests &amp; Print Slip</button>
+          </div>
+
+          <!-- DISCHARGE -->
+          <div class="na-panel" id="na-discharge" style="display:none;">
+            <label class="form-label">Discharge Summary</label>
+            <textarea id="na_discharge_summary" rows="3" placeholder="Condition on discharge, follow-up instructions..." style="width:100%;margin-bottom:10px;"></textarea>
+            <button class="btn-warn" id="na_discharge_submit">Confirm Discharge</button>
+          </div>
+
+          <!-- REFER -->
+          <div class="na-panel" id="na-refer" style="display:none;">
+            <label class="form-label">Refer To *</label>
+            <input type="text" id="na_refer_to" placeholder="e.g. General Hospital, Kano — Surgery" style="width:100%;margin-bottom:10px;">
+            <label class="form-label">Reason</label>
+            <textarea id="na_refer_reason" rows="2" placeholder="Reason for referral..." style="width:100%;margin-bottom:10px;"></textarea>
+            <button class="btn-warn" id="na_refer_submit">Confirm Referral</button>
+          </div>
+
+          <!-- TRANSFER WARD -->
+          <div class="na-panel" id="na-transfer_ward" style="display:none;">
+            <label class="form-label">Destination Ward *</label>
+            <select id="na_transfer_ward" style="width:100%;margin-bottom:10px;"><option value="">Select ward...</option></select>
+            <button class="btn-primary" id="na_transfer_submit">Confirm Transfer</button>
+          </div>
         </div>
 
         <!-- Vitals -->
@@ -223,70 +304,6 @@
           </div>
           <div class="btn-row">
             <button class="btn-primary" id="addMarBtn">Chart Dose</button>
-          </div>
-        </div>
-
-        <!-- Nurse Actions (General Hospital mode only) -->
-        <div class="tab-pane" id="pane-actions">
-          <div class="na-action-row">
-            <button class="na-action-btn" data-action="prescribe">💊 Prescribe</button>
-            <button class="na-action-btn" data-action="lab_request">🧪 Order Labs</button>
-            <button class="na-action-btn" data-action="discharge">🏥 Discharge</button>
-            <button class="na-action-btn" data-action="refer">↗️ Refer</button>
-            <button class="na-action-btn" data-action="transfer_ward">🛏️ Transfer Ward</button>
-          </div>
-
-          <div class="msg" id="naMsg"></div>
-
-          <!-- Prescribe -->
-          <div class="na-panel" id="na-prescribe">
-            <label>Prescription</label>
-            <textarea id="na_prescription" rows="3" placeholder="Drug name, dose, frequency, duration..."></textarea>
-            <div class="btn-row"><button class="btn-primary" id="na_prescribe_submit">Add to Orders</button></div>
-          </div>
-
-          <!-- Order Labs -->
-          <div class="na-panel" id="na-lab_request">
-            <div class="na-lab-row">
-              <div class="vfield"><label>Unit</label><select id="na_lab_unit"></select></div>
-              <div class="vfield"><label>Test</label><select id="na_lab_test"></select></div>
-              <button class="btn-ghost btn-sm" id="na_lab_addtest">+ Add</button>
-            </div>
-            <div class="na-lab-tags" id="na_lab_tags"></div>
-            <div class="vgrid">
-              <div class="vfield"><label>Urgency</label>
-                <select id="na_lab_urgency">
-                  <option value="routine">Routine</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="stat">STAT</option>
-                </select>
-              </div>
-              <div class="vfield full"><label>Clinical Notes (optional)</label><textarea id="na_lab_notes" rows="2"></textarea></div>
-            </div>
-            <div class="btn-row"><button class="btn-primary" id="na_lab_submit">Request Tests</button></div>
-          </div>
-
-          <!-- Discharge -->
-          <div class="na-panel" id="na-discharge">
-            <label>Discharge Summary (optional)</label>
-            <textarea id="na_discharge_summary" rows="3" placeholder="Condition on discharge, follow-up instructions..."></textarea>
-            <div class="btn-row"><button class="btn-warn" id="na_discharge_submit">Discharge Patient</button></div>
-          </div>
-
-          <!-- Refer -->
-          <div class="na-panel" id="na-refer">
-            <label>Refer To</label>
-            <input type="text" id="na_refer_to" placeholder="e.g. General Hospital Minna, ENT clinic...">
-            <label style="margin-top:8px;">Reason (optional)</label>
-            <textarea id="na_refer_reason" rows="2"></textarea>
-            <div class="btn-row"><button class="btn-warn" id="na_refer_submit">Refer Patient</button></div>
-          </div>
-
-          <!-- Transfer Ward -->
-          <div class="na-panel" id="na-transfer_ward">
-            <label>Destination Ward</label>
-            <select id="na_transfer_ward"><option value="">Select ward...</option></select>
-            <div class="btn-row"><button class="btn-primary" id="na_transfer_submit">Transfer Patient</button></div>
           </div>
         </div>
       </div>

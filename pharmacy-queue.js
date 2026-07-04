@@ -172,6 +172,57 @@ async function selectConsultation(c){
   }
 
   await loadDrugs();
+  autoMatchPrescription(c.prescription);
+}
+
+// ============================================================
+// AUTO-MATCH — parses the (now structured) prescription text line
+// by line and matches each against drug_inventory by name, so the
+// pharmacist doesn't have to manually re-search what was prescribed.
+// ============================================================
+function autoMatchPrescription(prescriptionText){
+  const area = document.getElementById('autoMatchArea');
+  const statusEl = document.getElementById('autoMatchStatus');
+  const btn = document.getElementById('autoMatchBtn');
+
+  if(!prescriptionText || !prescriptionText.trim() || allDrugs.length===0){
+    area.style.display='none';
+    return;
+  }
+
+  const lines = prescriptionText.split('\n').map(l=>l.trim()).filter(Boolean);
+  const matched = [];
+  const unmatched = [];
+
+  lines.forEach(line=>{
+    const lineLower = line.toLowerCase();
+    // Match if the prescription line contains the inventory drug's name
+    // (handles "Amoxicillin 500mg TDS 5 days" matching drug_name "Amoxicillin")
+    const found = allDrugs.find(d => lineLower.includes(d.drug_name.toLowerCase()));
+    if(found) matched.push({ line, drug: found }); else unmatched.push(line);
+  });
+
+  if(matched.length===0){
+    area.style.display='none';
+    return;
+  }
+
+  area.style.display='block';
+  statusEl.textContent = unmatched.length>0
+    ? `${matched.length} matched, ${unmatched.length} not found in inventory — add those manually.`
+    : `${matched.length} drug${matched.length===1?'':'s'} matched from prescription.`;
+
+  btn.onclick = ()=>{
+    matched.forEach(({drug})=>{
+      if(selectedDrugs.some(s=>s.id===drug.id)) return; // already added
+      if(drug.quantity_in_stock<=0) return; // skip out-of-stock, pharmacist sees it's unavailable in the list below
+      selectedDrugs.push({ id: drug.id, name: drug.drug_name, unit: drug.unit, available: drug.quantity_in_stock, qty: 1 });
+    });
+    renderSelectedDrugs();
+    renderDrugList();
+    btn.disabled = true;
+    btn.textContent = '✓ Added';
+  };
 }
 
 // ============================================================
@@ -299,6 +350,10 @@ function resetDispenseForm(){
   document.getElementById('drugSearch').value = '';
   document.getElementById('pharmacistNote').value = '';
   document.getElementById('allergyWarning').classList.remove('show');
+  document.getElementById('autoMatchArea').style.display = 'none';
+  const btn = document.getElementById('autoMatchBtn');
+  btn.disabled = false;
+  btn.textContent = '✓ Add All Matched Drugs';
 }
 
 document.getElementById('clearDispenseBtn').addEventListener('click', () => {

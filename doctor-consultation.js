@@ -605,6 +605,120 @@ function populateWardSelects(){
 });
 
 // ============================================================
+// DRUG PICKER — searchable dropdown against drug_inventory, replaces
+// free-text prescriptions with a structured pick + dose/frequency/
+// duration list. Serializes into the hidden textarea the existing
+// submit logic already reads from, so submit_consultation is unchanged.
+// ============================================================
+let allDrugs = [];
+async function loadDrugInventory(){
+  if(allDrugs.length>0) return;
+  const { data, error } = await client.from('drug_inventory')
+    .select('id,drug_name,generic_name,category,dosage_form,strength,unit,quantity_in_stock,is_active')
+    .eq('is_active', true)
+    .order('drug_name');
+  if(error){ console.error('loadDrugInventory failed:', error); allDrugs=[]; return; }
+  allDrugs = data||[];
+}
+
+function initRxPicker(picker){
+  const searchInput = picker.querySelector('.rx-drug-search');
+  const dropdown = picker.querySelector('.rx-drug-dropdown');
+  const doseInput = picker.querySelector('.rx-dose');
+  const freqInput = picker.querySelector('.rx-frequency');
+  const durInput = picker.querySelector('.rx-duration');
+  const addBtn = picker.querySelector('.rx-add-btn');
+  const emptyNotice = picker.querySelector('.rx-empty-notice');
+  const listEl = picker.querySelector('.rx-selected-list');
+  const suffix = picker.dataset.suffix;
+  const hiddenField = document.getElementById(`c_prescription${suffix}`);
+
+  let selectedDrug = null;
+  let rxItems = []; // { drugName, dose, frequency, duration }
+
+  function renderDropdown(filterText){
+    const q = (filterText||'').trim().toLowerCase();
+    if(allDrugs.length===0){ emptyNotice.style.display='block'; dropdown.style.display='none'; return; }
+    emptyNotice.style.display='none';
+    const matches = q ? allDrugs.filter(d=>
+      d.drug_name.toLowerCase().includes(q) || (d.generic_name||'').toLowerCase().includes(q)
+    ) : allDrugs;
+    if(matches.length===0){
+      dropdown.innerHTML = `<div style="padding:8px 10px;color:var(--muted);font-size:0.8rem;">No matching drugs in stock</div>`;
+    } else {
+      dropdown.innerHTML = matches.slice(0,30).map(d=>{
+        const low = d.quantity_in_stock<=0;
+        return `<div class="rx-drug-row" data-id="${d.id}" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:0.82rem;${low?'opacity:0.5;':''}">
+          <div style="font-weight:600;">${esc(d.drug_name)}${d.strength?` — ${esc(d.strength)}`:''} ${low?'<span style="color:var(--error);font-size:0.72rem;">(OUT OF STOCK)</span>':''}</div>
+          <div style="color:var(--muted);font-size:0.74rem;">${esc(d.category||'—')} · ${esc(d.dosage_form||'—')}${d.generic_name?` · ${esc(d.generic_name)}`:''}</div>
+        </div>`;
+      }).join('');
+    }
+    dropdown.style.display='block';
+    dropdown.querySelectorAll('.rx-drug-row').forEach(row=>{
+      row.addEventListener('mouseenter',()=>row.style.background='var(--field)');
+      row.addEventListener('mouseleave',()=>row.style.background='transparent');
+      row.addEventListener('click',()=>{
+        const drug = allDrugs.find(d=>String(d.id)===row.dataset.id);
+        if(!drug) return;
+        selectedDrug = drug;
+        searchInput.value = `${drug.drug_name}${drug.strength?' — '+drug.strength:''}`;
+        if(drug.strength && !doseInput.value) doseInput.value = drug.strength;
+        dropdown.style.display='none';
+        addBtn.disabled=false;
+      });
+    });
+  }
+
+  searchInput.addEventListener('focus', ()=>renderDropdown(searchInput.value));
+  searchInput.addEventListener('input', ()=>{
+    selectedDrug=null; addBtn.disabled=true;
+    renderDropdown(searchInput.value);
+  });
+  searchInput.addEventListener('blur', ()=>setTimeout(()=>{dropdown.style.display='none';},150));
+
+  addBtn.addEventListener('click', ()=>{
+    if(!selectedDrug) return;
+    rxItems.push({
+      drugName: `${selectedDrug.drug_name}${selectedDrug.strength?' '+selectedDrug.strength:''}`,
+      dose: doseInput.value.trim(),
+      frequency: freqInput.value.trim(),
+      duration: durInput.value.trim()
+    });
+    searchInput.value=''; doseInput.value=''; freqInput.value=''; durInput.value='';
+    selectedDrug=null; addBtn.disabled=true;
+    renderRxList();
+  });
+
+  function renderRxList(){
+    if(rxItems.length===0){
+      listEl.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">No drugs added yet.</span>';
+    } else {
+      listEl.innerHTML = rxItems.map((item,i)=>{
+        const parts = [item.dose, item.frequency, item.duration].filter(Boolean).join(' · ');
+        return `<div class="test-tag">${esc(item.drugName)}${parts?` (${esc(parts)})`:''}
+          <button data-idx="${i}" title="Remove">✕</button></div>`;
+      }).join('');
+      listEl.querySelectorAll('button').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          rxItems.splice(parseInt(btn.dataset.idx),1);
+          renderRxList();
+        });
+      });
+    }
+    // Serialize into hidden textarea — exact format the existing PDF/history/pharmacy views already expect (plain readable text)
+    hiddenField.value = rxItems.map(item=>{
+      const parts = [item.dose, item.frequency, item.duration].filter(Boolean).join(' ');
+      return parts ? `${item.drugName} ${parts}` : item.drugName;
+    }).join('\n');
+  }
+  renderRxList(); // shows "No drugs added yet." on load
+}
+
+document.querySelectorAll('.rx-picker').forEach(initRxPicker);
+loadDrugInventory();
+
+// ============================================================
 // LAB REQUEST SLIP — printable PDF, mirrors accession's unit grouping
 // but with NO prices. Patient carries this to the lab window instead
 // of the system pushing the order electronically.

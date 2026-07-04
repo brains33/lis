@@ -282,7 +282,22 @@
           <div class="action-fields" id="fields_opd_discharge">
             <div class="fgroup">
               <label>Prescription</label>
-              <textarea id="c_prescription" rows="4" placeholder="Drug name, dose, frequency, duration...&#10;e.g. Amoxicillin 500mg TDS x 5 days"></textarea>
+              <div class="rx-picker" data-suffix="">
+                <div class="unit-test-row" style="position:relative;">
+                  <div class="fgroup" style="flex:2;position:relative;">
+                    <label>Drug</label>
+                    <input type="text" class="rx-drug-search" placeholder="🔍 Search stocked drugs..." autocomplete="off">
+                    <div class="rx-drug-dropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.25);"></div>
+                  </div>
+                  <div class="fgroup"><label>Dose</label><input type="text" class="rx-dose" placeholder="e.g. 500mg"></div>
+                  <div class="fgroup"><label>Frequency</label><input type="text" class="rx-frequency" placeholder="e.g. TDS"></div>
+                  <div class="fgroup"><label>Duration</label><input type="text" class="rx-duration" placeholder="e.g. 5 days"></div>
+                  <button type="button" class="btn-add-test rx-add-btn" disabled>+ Add</button>
+                </div>
+                <div class="no-tests-notice rx-empty-notice" style="display:none;">No drugs found in pharmacy inventory — contact pharmacy admin.</div>
+                <div class="selected-tests rx-selected-list"></div>
+              </div>
+              <textarea id="c_prescription" rows="2" style="display:none;"></textarea>
             </div>
             <div class="fgroup">
               <label>Instructions / Advice</label>
@@ -354,7 +369,22 @@
             </div>
             <div class="fgroup">
               <label>Prescription</label>
-              <textarea id="c_prescription2" rows="3" placeholder="Drug name, dose, frequency, duration..."></textarea>
+              <div class="rx-picker" data-suffix="2">
+                <div class="unit-test-row" style="position:relative;">
+                  <div class="fgroup" style="flex:2;position:relative;">
+                    <label>Drug</label>
+                    <input type="text" class="rx-drug-search" placeholder="🔍 Search stocked drugs..." autocomplete="off">
+                    <div class="rx-drug-dropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.25);"></div>
+                  </div>
+                  <div class="fgroup"><label>Dose</label><input type="text" class="rx-dose" placeholder="e.g. 500mg"></div>
+                  <div class="fgroup"><label>Frequency</label><input type="text" class="rx-frequency" placeholder="e.g. TDS"></div>
+                  <div class="fgroup"><label>Duration</label><input type="text" class="rx-duration" placeholder="e.g. 5 days"></div>
+                  <button type="button" class="btn-add-test rx-add-btn" disabled>+ Add</button>
+                </div>
+                <div class="no-tests-notice rx-empty-notice" style="display:none;">No drugs found in pharmacy inventory — contact pharmacy admin.</div>
+                <div class="selected-tests rx-selected-list"></div>
+              </div>
+              <textarea id="c_prescription2" rows="2" style="display:none;"></textarea>
             </div>
             <div class="fgroup">
               <label>Instructions</label>
