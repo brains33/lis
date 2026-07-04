@@ -283,11 +283,17 @@
             <div class="fgroup">
               <label>Prescription</label>
               <div class="rx-picker" data-suffix="">
-                <div class="unit-test-row" style="position:relative;">
+                <div class="unit-test-row">
+                  <div class="fgroup"><label>Category</label><select class="rx-category"><option value="">All Categories</option></select></div>
+                  <div class="fgroup"><label>Medication Type</label><select class="rx-medtype"><option value="">All Types</option></select></div>
+                </div>
+                <div class="unit-test-row" style="position:relative;margin-top:8px;">
                   <div class="fgroup" style="flex:2;position:relative;">
                     <label>Drug</label>
-                    <input type="text" class="rx-drug-search" placeholder="🔍 Search stocked drugs..." autocomplete="off">
-                    <div class="rx-drug-dropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.25);"></div>
+                    <div style="display:flex;gap:6px;">
+                      <select class="rx-drug-select" style="flex:1;"><option value="">Select drug...</option></select>
+                      <input type="text" class="rx-drug-quicksearch" placeholder="🔍" title="Quick search" style="width:70px;flex-shrink:0;">
+                    </div>
                   </div>
                   <div class="fgroup"><label>Dose</label><input type="text" class="rx-dose" placeholder="e.g. 500mg"></div>
                   <div class="fgroup"><label>Frequency</label><input type="text" class="rx-frequency" placeholder="e.g. TDS"></div>
@@ -370,11 +376,17 @@
             <div class="fgroup">
               <label>Prescription</label>
               <div class="rx-picker" data-suffix="2">
-                <div class="unit-test-row" style="position:relative;">
+                <div class="unit-test-row">
+                  <div class="fgroup"><label>Category</label><select class="rx-category"><option value="">All Categories</option></select></div>
+                  <div class="fgroup"><label>Medication Type</label><select class="rx-medtype"><option value="">All Types</option></select></div>
+                </div>
+                <div class="unit-test-row" style="position:relative;margin-top:8px;">
                   <div class="fgroup" style="flex:2;position:relative;">
                     <label>Drug</label>
-                    <input type="text" class="rx-drug-search" placeholder="🔍 Search stocked drugs..." autocomplete="off">
-                    <div class="rx-drug-dropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.25);"></div>
+                    <div style="display:flex;gap:6px;">
+                      <select class="rx-drug-select" style="flex:1;"><option value="">Select drug...</option></select>
+                      <input type="text" class="rx-drug-quicksearch" placeholder="🔍" title="Quick search" style="width:70px;flex-shrink:0;">
+                    </div>
                   </div>
                   <div class="fgroup"><label>Dose</label><input type="text" class="rx-dose" placeholder="e.g. 500mg"></div>
                   <div class="fgroup"><label>Frequency</label><input type="text" class="rx-frequency" placeholder="e.g. TDS"></div>

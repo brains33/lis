@@ -187,12 +187,14 @@
           <!-- PRESCRIBE -->
           <div class="na-panel" id="na-prescribe" style="display:none;">
             <label class="form-label">Prescription</label>
-            <div class="rx-picker" style="position:relative;margin-bottom:10px;">
-              <div style="display:flex;gap:6px;position:relative;">
-                <div style="flex:2;position:relative;">
-                  <input type="text" class="rx-drug-search" placeholder="🔍 Search stocked drugs..." autocomplete="off" style="width:100%;">
-                  <div class="rx-drug-dropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.25);"></div>
-                </div>
+            <div class="rx-picker" style="margin-bottom:10px;">
+              <div style="display:flex;gap:6px;margin-bottom:6px;">
+                <select class="rx-category" style="flex:1;"><option value="">All Categories</option></select>
+                <select class="rx-medtype" style="flex:1;"><option value="">All Types</option></select>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <select class="rx-drug-select" style="flex:2;"><option value="">Select drug...</option></select>
+                <input type="text" class="rx-drug-quicksearch" placeholder="🔍" title="Quick search" style="width:50px;flex-shrink:0;">
                 <input type="text" class="rx-dose" placeholder="Dose" style="flex:1;">
                 <input type="text" class="rx-frequency" placeholder="Freq." style="flex:1;">
                 <input type="text" class="rx-duration" placeholder="Duration" style="flex:1;">

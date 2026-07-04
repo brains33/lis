@@ -117,7 +117,7 @@ function bedsForWard(wardId, statusFilter){
 // ============================================================
 async function loadAdmissions(){
   const { data, error } = await client.from('admissions')
-    .select('id,patient_id,hospital_number,ward_id,bed_id,admitting_doctor,admission_diagnosis,allergy_note,status,admitted_at,created_at,beds(bed_number)')
+    .select('id,patient_id,consultation_id,hospital_number,ward_id,bed_id,admitting_doctor,admission_diagnosis,allergy_note,status,admitted_at,created_at,beds(bed_number)')
     .in('status',['pending_bed','admitted'])
     .order('created_at',{ascending:true});
 
@@ -303,9 +303,32 @@ async function loadOrders(admissionId){
   mOrderSel.innerHTML = '<option value="">— Not linked to an order —</option>' +
     selectedOrders.map(o=>`<option value="${o.id}">${esc(o.order_text.slice(0,60))}</option>`).join('');
 
-  if(!data || data.length===0){ list.innerHTML = `<div class="empty">No orders yet.</div>`; return; }
+  // Original OPD prescription — written at the initial consultation before
+  // admission, lives on `consultations`, separate from doctor_orders which
+  // only holds orders written after admission (nurse or doctor).
+  let originalRxHtml = '';
+  if(selectedAdmission?.consultation_id){
+    const { data: consult, error: cErr } = await client.from('consultations')
+      .select('prescription,doctor_name,created_at')
+      .eq('id', selectedAdmission.consultation_id).single();
+    if(!cErr && consult?.prescription){
+      originalRxHtml = `
+        <div class="order-item" style="border-left:3px solid var(--accent);">
+          <div class="item-top">
+            <span><span class="type-badge">original opd prescription</span> Dr. ${esc(consult.doctor_name||'—')}</span>
+            <span>${fmtTime(consult.created_at)}</span>
+          </div>
+          <div style="white-space:pre-line;">${esc(consult.prescription)}</div>
+        </div>`;
+    }
+  }
 
-  list.innerHTML = data.map(o => `
+  if(!data || data.length===0){
+    list.innerHTML = originalRxHtml || `<div class="empty">No orders yet.</div>`;
+    return;
+  }
+
+  list.innerHTML = originalRxHtml + data.map(o => `
     <div class="order-item">
       <div class="item-top">
         <span><span class="type-badge">${esc(o.order_type)}</span> Dr. ${esc(o.doctor)}</span>
@@ -329,19 +352,28 @@ let naSelectedAction = null;
 // that na_prescribe_submit already reads from.
 // ============================================================
 let allDrugs = [];
+let drugLoadError = null;
 async function loadDrugInventory(){
   if(allDrugs.length>0) return;
   const { data, error } = await client.from('drug_inventory')
     .select('id,drug_name,generic_name,category,dosage_form,strength,unit,quantity_in_stock,is_active')
     .eq('is_active', true)
     .order('drug_name');
-  if(error){ console.error('loadDrugInventory failed:', error); allDrugs=[]; return; }
+  if(error){
+    console.error('loadDrugInventory failed:', error);
+    drugLoadError = error.message || 'Failed to load drug list.';
+    allDrugs=[];
+    return;
+  }
+  drugLoadError = null;
   allDrugs = data||[];
 }
 
 function initRxPicker(picker){
-  const searchInput = picker.querySelector('.rx-drug-search');
-  const dropdown = picker.querySelector('.rx-drug-dropdown');
+  const categorySel = picker.querySelector('.rx-category');
+  const medtypeSel = picker.querySelector('.rx-medtype');
+  const drugSel = picker.querySelector('.rx-drug-select');
+  const quickSearch = picker.querySelector('.rx-drug-quicksearch');
   const doseInput = picker.querySelector('.rx-dose');
   const freqInput = picker.querySelector('.rx-frequency');
   const durInput = picker.querySelector('.rx-duration');
@@ -350,53 +382,67 @@ function initRxPicker(picker){
   const listEl = picker.querySelector('.rx-selected-list');
   const hiddenField = document.getElementById('na_prescription');
 
-  let selectedDrug = null;
   let rxItems = [];
 
-  function renderDropdown(filterText){
-    const q = (filterText||'').trim().toLowerCase();
-    if(allDrugs.length===0){ emptyNotice.style.display='block'; dropdown.style.display='none'; return; }
-    emptyNotice.style.display='none';
-    const matches = q ? allDrugs.filter(d=>
-      d.drug_name.toLowerCase().includes(q) || (d.generic_name||'').toLowerCase().includes(q)
-    ) : allDrugs;
-    dropdown.innerHTML = matches.length===0
-      ? `<div style="padding:8px 10px;color:var(--muted);font-size:0.8rem;">No matching drugs in stock</div>`
-      : matches.slice(0,30).map(d=>{
-          const low = d.quantity_in_stock<=0;
-          return `<div class="rx-drug-row" data-id="${d.id}" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:0.82rem;${low?'opacity:0.5;':''}">
-            <div style="font-weight:600;">${esc(d.drug_name)}${d.strength?` — ${esc(d.strength)}`:''} ${low?'<span style="color:var(--error);font-size:0.72rem;">(OUT OF STOCK)</span>':''}</div>
-            <div style="color:var(--muted);font-size:0.74rem;">${esc(d.category||'—')} · ${esc(d.dosage_form||'—')}${d.generic_name?` · ${esc(d.generic_name)}`:''}</div>
-          </div>`;
-        }).join('');
-    dropdown.style.display='block';
-    dropdown.querySelectorAll('.rx-drug-row').forEach(row=>{
-      row.addEventListener('mouseenter',()=>row.style.background='var(--field)');
-      row.addEventListener('mouseleave',()=>row.style.background='transparent');
-      row.addEventListener('click',()=>{
-        const drug = allDrugs.find(d=>String(d.id)===row.dataset.id);
-        if(!drug) return;
-        selectedDrug = drug;
-        searchInput.value = `${drug.drug_name}${drug.strength?' — '+drug.strength:''}`;
-        if(drug.strength && !doseInput.value) doseInput.value = drug.strength;
-        dropdown.style.display='none';
-        addBtn.disabled=false;
-      });
-    });
+  function currentFiltered(){
+    const cat = categorySel.value;
+    const type = medtypeSel.value;
+    const q = quickSearch.value.trim().toLowerCase();
+    return allDrugs.filter(d =>
+      (!cat || d.category === cat) &&
+      (!type || d.dosage_form === type) &&
+      (!q || d.drug_name.toLowerCase().includes(q) || (d.generic_name||'').toLowerCase().includes(q))
+    );
   }
 
-  searchInput.addEventListener('focus', ()=>renderDropdown(searchInput.value));
-  searchInput.addEventListener('input', ()=>{ selectedDrug=null; addBtn.disabled=true; renderDropdown(searchInput.value); });
-  searchInput.addEventListener('blur', ()=>setTimeout(()=>{dropdown.style.display='none';},150));
+  function populateCategoryAndType(){
+    if(allDrugs.length===0){
+      emptyNotice.textContent = drugLoadError
+        ? `⚠️ Could not load drug list: ${drugLoadError}`
+        : 'No drugs found in pharmacy inventory — contact pharmacy admin.';
+      emptyNotice.style.display='block';
+      return;
+    }
+    emptyNotice.style.display='none';
+    const cats = [...new Set(allDrugs.map(d=>d.category).filter(Boolean))].sort();
+    const types = [...new Set(allDrugs.map(d=>d.dosage_form).filter(Boolean))].sort();
+    categorySel.innerHTML = '<option value="">All Categories</option>' + cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    medtypeSel.innerHTML = '<option value="">All Types</option>' + types.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    populateDrugSelect();
+  }
+
+  function populateDrugSelect(){
+    const filtered = currentFiltered();
+    if(filtered.length===0){
+      drugSel.innerHTML = '<option value="">No drugs match filter</option>';
+      addBtn.disabled = true;
+      return;
+    }
+    drugSel.innerHTML = '<option value="">Select drug...</option>' + filtered.map(d=>{
+      const low = d.quantity_in_stock<=0;
+      return `<option value="${d.id}"${low?' disabled':''}>${esc(d.drug_name)}${d.strength?' — '+esc(d.strength):''}${low?' (OUT OF STOCK)':''}</option>`;
+    }).join('');
+    addBtn.disabled = true;
+  }
+
+  categorySel.addEventListener('change', populateDrugSelect);
+  medtypeSel.addEventListener('change', populateDrugSelect);
+  quickSearch.addEventListener('input', populateDrugSelect);
+  drugSel.addEventListener('change', ()=>{
+    const drug = allDrugs.find(d=>String(d.id)===drugSel.value);
+    addBtn.disabled = !drug;
+    if(drug && drug.strength && !doseInput.value) doseInput.value = drug.strength;
+  });
 
   addBtn.addEventListener('click', ()=>{
-    if(!selectedDrug) return;
+    const drug = allDrugs.find(d=>String(d.id)===drugSel.value);
+    if(!drug) return;
     rxItems.push({
-      drugName: `${selectedDrug.drug_name}${selectedDrug.strength?' '+selectedDrug.strength:''}`,
+      drugName: `${drug.drug_name}${drug.strength?' '+drug.strength:''}`,
       dose: doseInput.value.trim(), frequency: freqInput.value.trim(), duration: durInput.value.trim()
     });
-    searchInput.value=''; doseInput.value=''; freqInput.value=''; durInput.value='';
-    selectedDrug=null; addBtn.disabled=true;
+    drugSel.value=''; doseInput.value=''; freqInput.value=''; durInput.value='';
+    addBtn.disabled=true;
     renderRxList();
   });
 
@@ -417,6 +463,10 @@ function initRxPicker(picker){
     }).join('\n');
   }
   renderRxList();
+
+  if(allDrugs.length>0) populateCategoryAndType();
+  else loadDrugInventory().then(populateCategoryAndType);
+
   return { reset: ()=>{ rxItems=[]; renderRxList(); } };
 }
 
