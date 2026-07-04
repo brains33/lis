@@ -612,6 +612,7 @@ function populateWardSelects(){
 // ============================================================
 let allDrugs = [];
 let drugLoadError = null;
+const rxPickerResets = [];
 async function loadDrugInventory(){
   if(allDrugs.length>0) return;
   const { data, error } = await client.from('drug_inventory')
@@ -730,6 +731,13 @@ function initRxPicker(picker){
     }).join('\n');
   }
   renderRxList();
+
+  rxPickerResets.push(()=>{
+    rxItems.length = 0;
+    doseInput.value=''; freqInput.value=''; durInput.value=''; quickSearch.value='';
+    drugSel.value=''; addBtn.disabled=true;
+    renderRxList();
+  });
 
   // Populate immediately if drugs are already loaded, else wait for load to finish
   if(allDrugs.length>0) populateCategoryAndType();
@@ -852,13 +860,24 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
     testsToSend = selectedTests; labUrgency = sv('c_lab_urgency'); labNotes = sv('c_lab_notes');
   }
 
-  const prescription = selectedAction==='lab_and_discharge' ? sv('c_prescription2') : sv('c_prescription');
-  const instructions  = selectedAction==='lab_and_discharge' ? sv('c_instructions2') : sv('c_instructions');
+  const prescription =
+    selectedAction==='lab_and_discharge' ? sv('c_prescription2') :
+    selectedAction==='admit_and_lab'     ? sv('c_prescription3') :
+    selectedAction==='admit'             ? sv('c_prescription4') :
+    sv('c_prescription');
 
   // Admission fields — admit_and_lab uses the suffix-3 fields, admit uses the original ones
   const admitWardId  = selectedAction==='admit_and_lab' ? sv('c_ward3')        : sv('c_ward');
   const admitDiag    = selectedAction==='admit_and_lab' ? sv('c_admit_diag3') : sv('c_admit_diag');
   const admitOrders  = selectedAction==='admit_and_lab' ? sv('c_admit_orders3') : sv('c_admit_orders');
+
+  // Admit/Admit+Lab now have their own structured prescription (drug picker),
+  // so the free-text admission orders go into "instructions" instead of being
+  // smuggled into p_prescription as before.
+  const instructions =
+    selectedAction==='lab_and_discharge' ? sv('c_instructions2') :
+    (selectedAction==='admit'||selectedAction==='admit_and_lab') ? admitOrders :
+    sv('c_instructions');
 
   try{
     const { data, error } = await client.rpc('submit_consultation',{
@@ -874,7 +893,7 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
       p_diagnosis:            sv('c_diagnosis'),
       p_icd10_code:           sv('c_icd10'),
       p_action_type:          selectedAction,
-      p_prescription:         prescription || ((selectedAction==='admit'||selectedAction==='admit_and_lab')?admitOrders:null),
+      p_prescription:         prescription || null,
       p_instructions:         instructions,
       p_admit_ward:           allWards.find(w=>w.id===admitWardId)?.ward_name || admitWardId,
       p_admit_diagnosis:      admitDiag,
@@ -986,8 +1005,10 @@ function resetForm(){
    'c_diagnosis','c_icd10','c_prescription','c_instructions','c_ward','c_admit_diag',
    'c_admit_orders','c_refer_to','c_refer_reason','c_doctor_note','c_prescription2',
    'c_instructions2','c_lab_notes','c_lab_notes2','c_doctor_note',
-   'c_ward3','c_admit_diag3','c_admit_orders3','c_lab_urgency3','c_lab_notes3']
+   'c_ward3','c_admit_diag3','c_admit_orders3','c_lab_urgency3','c_lab_notes3',
+   'c_prescription3','c_prescription4']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  rxPickerResets.forEach(fn=>fn());
   document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('selected'));
   document.querySelectorAll('.action-fields').forEach(f=>f.classList.remove('show'));
   selectedAction=null;

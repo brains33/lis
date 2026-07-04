@@ -415,10 +415,35 @@
                 <label>Admitting Diagnosis</label>
                 <input type="text" id="c_admit_diag" placeholder="Primary admitting diagnosis">
               </div>
-              <div class="fgroup full">
-                <label>Admission Orders / Instructions</label>
-                <textarea id="c_admit_orders" rows="3" placeholder="IV fluids, monitoring, medications, nursing instructions..."></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Prescription</label>
+              <div class="rx-picker" data-suffix="4">
+                <div class="unit-test-row">
+                  <div class="fgroup"><label>Category</label><select class="rx-category"><option value="">All Categories</option></select></div>
+                  <div class="fgroup"><label>Medication Type</label><select class="rx-medtype"><option value="">All Types</option></select></div>
+                </div>
+                <div class="unit-test-row" style="position:relative;margin-top:8px;">
+                  <div class="fgroup" style="flex:2;position:relative;">
+                    <label>Drug</label>
+                    <div style="display:flex;gap:6px;">
+                      <select class="rx-drug-select" style="flex:1;"><option value="">Select drug...</option></select>
+                      <input type="text" class="rx-drug-quicksearch" placeholder="🔍" title="Quick search" style="width:70px;flex-shrink:0;">
+                    </div>
+                  </div>
+                  <div class="fgroup"><label>Dose</label><input type="text" class="rx-dose" placeholder="e.g. 500mg"></div>
+                  <div class="fgroup"><label>Frequency</label><input type="text" class="rx-frequency" placeholder="e.g. TDS"></div>
+                  <div class="fgroup"><label>Duration</label><input type="text" class="rx-duration" placeholder="e.g. 5 days"></div>
+                  <button type="button" class="btn-add-test rx-add-btn" disabled>+ Add</button>
+                </div>
+                <div class="no-tests-notice rx-empty-notice" style="display:none;">No drugs found in pharmacy inventory — contact pharmacy admin.</div>
+                <div class="selected-tests rx-selected-list"></div>
               </div>
+              <textarea id="c_prescription4" rows="2" style="display:none;"></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Admission Orders / Instructions</label>
+              <textarea id="c_admit_orders" rows="3" placeholder="IV fluids, monitoring, nursing instructions..."></textarea>
             </div>
           </div>
 
@@ -433,10 +458,35 @@
                 <label>Admitting Diagnosis</label>
                 <input type="text" id="c_admit_diag3" placeholder="Primary admitting diagnosis">
               </div>
-              <div class="fgroup full">
-                <label>Admission Orders / Instructions</label>
-                <textarea id="c_admit_orders3" rows="3" placeholder="IV fluids, monitoring, medications, nursing instructions..."></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Prescription</label>
+              <div class="rx-picker" data-suffix="3">
+                <div class="unit-test-row">
+                  <div class="fgroup"><label>Category</label><select class="rx-category"><option value="">All Categories</option></select></div>
+                  <div class="fgroup"><label>Medication Type</label><select class="rx-medtype"><option value="">All Types</option></select></div>
+                </div>
+                <div class="unit-test-row" style="position:relative;margin-top:8px;">
+                  <div class="fgroup" style="flex:2;position:relative;">
+                    <label>Drug</label>
+                    <div style="display:flex;gap:6px;">
+                      <select class="rx-drug-select" style="flex:1;"><option value="">Select drug...</option></select>
+                      <input type="text" class="rx-drug-quicksearch" placeholder="🔍" title="Quick search" style="width:70px;flex-shrink:0;">
+                    </div>
+                  </div>
+                  <div class="fgroup"><label>Dose</label><input type="text" class="rx-dose" placeholder="e.g. 500mg"></div>
+                  <div class="fgroup"><label>Frequency</label><input type="text" class="rx-frequency" placeholder="e.g. TDS"></div>
+                  <div class="fgroup"><label>Duration</label><input type="text" class="rx-duration" placeholder="e.g. 5 days"></div>
+                  <button type="button" class="btn-add-test rx-add-btn" disabled>+ Add</button>
+                </div>
+                <div class="no-tests-notice rx-empty-notice" style="display:none;">No drugs found in pharmacy inventory — contact pharmacy admin.</div>
+                <div class="selected-tests rx-selected-list"></div>
               </div>
+              <textarea id="c_prescription3" rows="2" style="display:none;"></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Admission Orders / Instructions</label>
+              <textarea id="c_admit_orders3" rows="3" placeholder="IV fluids, monitoring, nursing instructions..."></textarea>
             </div>
             <div class="fgroup">
               <label>Test Urgency</label>
