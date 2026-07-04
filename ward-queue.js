@@ -27,6 +27,20 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 document.getElementById('userLabel').textContent = session.name || session.username;
+
+// ============================================================
+// FACILITY MODE — controls whether nurse-led prescribe/discharge
+// controls are shown. Set hospital-wide from doctor-consultation.js.
+// ============================================================
+let facilityMode = 'federal';
+async function loadFacilityMode(){
+  const { data, error } = await client.from('hospital_settings').select('facility_mode').eq('id',1).single();
+  if(!error && data) facilityMode = data.facility_mode;
+  const isGeneral = facilityMode === 'general';
+  document.getElementById('actionsTabBtn').style.display = isGeneral ? 'inline-block' : 'none';
+}
+loadFacilityMode();
+
 document.getElementById('logoutBtn').addEventListener('click', () => {
   sessionStorage.removeItem(SESSION_KEY);
   window.location.replace('ward-login.html');
@@ -65,6 +79,7 @@ let beds = [];           // {id, ward_id, bed_number, status}
 let pendingAdmissions = [];
 let activeAdmissions  = [];
 let selectedAdmission = null;
+let selectedPatientInfo = null; // { surname, first_name, middle_name, gender, age, date_of_birth } once fetched
 let selectedOrders    = [];  // cached for MAR "from order" dropdown
 
 // ============================================================
@@ -102,7 +117,7 @@ function bedsForWard(wardId, statusFilter){
 // ============================================================
 async function loadAdmissions(){
   const { data, error } = await client.from('admissions')
-    .select('id,hospital_number,ward_id,bed_id,admitting_doctor,admission_diagnosis,allergy_note,status,admitted_at,created_at,beds(bed_number)')
+    .select('id,patient_id,hospital_number,ward_id,bed_id,admitting_doctor,admission_diagnosis,allergy_note,status,admitted_at,created_at,beds(bed_number)')
     .in('status',['pending_bed','admitted'])
     .order('created_at',{ascending:true});
 
@@ -208,6 +223,7 @@ document.getElementById('wardFilter').addEventListener('change', renderActive);
 // ============================================================
 async function selectAdmission(a){
   selectedAdmission = a;
+  selectedPatientInfo = null; // reset; populated below once fetched
   clearMsgs();
   document.getElementById('placeholder').style.display = 'none';
   document.getElementById('detailPanel').classList.add('show');
@@ -220,10 +236,40 @@ async function selectAdmission(a){
     ${a.allergy_note ? `<div class="allergy-warning show">⚠️ <b>Known allergy:</b> ${esc(a.allergy_note)}</div>` : ''}
   `;
 
+  // Fetch full patient demographics for display + lab slip use. Best-effort:
+  // if it fails, hospital number alone still works everywhere as fallback.
+  if(a.patient_id){
+    client.from('patient_registry')
+      .select('surname,first_name,middle_name,gender,age,date_of_birth')
+      .eq('id', a.patient_id).single()
+      .then(({data,error})=>{
+        if(error || !data) return;
+        selectedPatientInfo = data;
+        const fullName = [data.surname,data.first_name,data.middle_name].filter(Boolean).join(' ');
+        if(fullName && selectedAdmission?.id===a.id){
+          const nameEl = document.querySelector('#patientBanner .name');
+          if(nameEl) nameEl.textContent = `${fullName} — ${a.hospital_number}`;
+        }
+      });
+  }
+
   resetVitalsForm();
   resetNoteForm();
   resetMarForm();
   switchTab('orders');
+  loadFacilityMode(); // re-check in case mode changed since last selection
+
+  // Reset Nurse Actions panel for the newly selected patient
+  naSelectedAction = null;
+  naLabTests = [];
+  document.querySelectorAll('.na-action-btn').forEach(b=>b.classList.remove('selected'));
+  document.querySelectorAll('.na-panel').forEach(p=>p.style.display='none');
+  document.getElementById('naMsg').style.display='none';
+  document.getElementById('na_prescription').value='';
+  document.getElementById('na_discharge_summary').value='';
+  document.getElementById('na_refer_to').value='';
+  document.getElementById('na_refer_reason').value='';
+  renderNaLabTags();
 
   await Promise.all([loadOrders(a.id), loadVitalsHistory(a.id), loadNotes(a.id), loadMar(a.id)]);
 }
@@ -266,6 +312,241 @@ async function loadOrders(admissionId){
       </div>
       <div>${esc(o.order_text)}${o.status==='discontinued'?' <i style="color:var(--error)">(discontinued)</i>':''}</div>
     </div>`).join('');
+}
+
+// ============================================================
+// NURSE ACTIONS (General Hospital mode only) — mirrors the doctor's
+// Plan panel: Prescribe / Order Labs / Discharge / Refer / Transfer Ward.
+// All actions call the single ward_nurse_action RPC.
+// ============================================================
+let naSelectedAction = null;
+let naLabTests = []; // { unit_name, name }
+let naTestDefsByUnit = {};
+
+document.querySelectorAll('.na-action-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    naSelectedAction = btn.dataset.action;
+    document.querySelectorAll('.na-action-btn').forEach(b=>b.classList.toggle('selected', b===btn));
+    document.querySelectorAll('.na-panel').forEach(p=>p.style.display='none');
+    document.getElementById(`na-${naSelectedAction}`).style.display='block';
+    if(naSelectedAction === 'lab_request') loadNaTestDefs();
+    if(naSelectedAction === 'transfer_ward') populateNaWardSelect();
+  });
+});
+
+function naShowMsg(msg, isError){
+  const el = document.getElementById('naMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background = isError ? 'rgba(255,107,107,0.1)' : 'rgba(61,220,151,0.1)';
+  el.style.color = isError ? 'var(--error)' : 'var(--green)';
+  el.style.border = `1px solid ${isError ? 'var(--error)' : 'var(--green)'}`;
+}
+
+// ---- Lab test picker (mirrors doctor-consultation's unit/test cascade) ----
+async function loadNaTestDefs(){
+  if(Object.keys(naTestDefsByUnit).length>0){ populateNaUnits(); return; }
+  const { data, error } = await client.from('test_definitions')
+    .select('unit_name,test_name').order('unit_name').order('test_name');
+  if(error){ naShowMsg('Failed to load test list: '+error.message, true); return; }
+  naTestDefsByUnit = {};
+  (data||[]).forEach(t=>{
+    if(t.test_name==='__unit_placeholder__' || t.test_name.startsWith('__unit__')) return;
+    if(!naTestDefsByUnit[t.unit_name]) naTestDefsByUnit[t.unit_name]=[];
+    naTestDefsByUnit[t.unit_name].push(t.test_name);
+  });
+  populateNaUnits();
+}
+function populateNaUnits(){
+  const units = Object.keys(naTestDefsByUnit);
+  const unitSel = document.getElementById('na_lab_unit');
+  const addBtn = document.getElementById('na_lab_addtest');
+  if(!units.length){ unitSel.innerHTML='<option value="">No units found</option>'; addBtn.disabled=true; return; }
+  addBtn.disabled=false;
+  unitSel.innerHTML = units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  updateNaTests();
+}
+function updateNaTests(){
+  const unit = document.getElementById('na_lab_unit').value;
+  const tests = naTestDefsByUnit[unit]||[];
+  document.getElementById('na_lab_test').innerHTML = tests.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+}
+document.getElementById('na_lab_unit').addEventListener('change', updateNaTests);
+document.getElementById('na_lab_addtest').addEventListener('click', ()=>{
+  const unit = document.getElementById('na_lab_unit').value;
+  const test = document.getElementById('na_lab_test').value;
+  if(!unit || !test) return;
+  if(naLabTests.some(t=>t.unit_name===unit && t.name===test)){ naShowMsg('Test already added', true); return; }
+  naLabTests.push({unit_name:unit, name:test});
+  renderNaLabTags();
+});
+function renderNaLabTags(){
+  const el = document.getElementById('na_lab_tags');
+  if(!naLabTests.length){ el.innerHTML='<span style="color:var(--muted);font-size:0.8rem;">No tests added yet.</span>'; return; }
+  el.innerHTML = naLabTests.map((t,i)=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:0.78rem;display:flex;align-items:center;gap:6px;">
+      ${esc(t.unit_name)}: ${esc(t.name)} <button data-idx="${i}" style="background:none;border:none;color:var(--error);cursor:pointer;font-weight:700;">✕</button>
+    </div>`).join('');
+  el.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ naLabTests.splice(parseInt(btn.dataset.idx),1); renderNaLabTags(); });
+  });
+}
+
+// ---- Ward select for transfer ----
+function populateNaWardSelect(){
+  const sel = document.getElementById('na_transfer_ward');
+  const currentWard = selectedAdmission?.ward_id;
+  sel.innerHTML = '<option value="">Select ward...</option>' +
+    wards.filter(w=>w.id!==currentWard).map(w=>`<option value="${w.id}">${esc(w.ward_name)}</option>`).join('');
+}
+
+// ---- Shared submit helper ----
+async function naSubmit(actionType, extraParams, successCallback){
+  if(!selectedAdmission) return;
+  try{
+    const { data, error } = await client.rpc('ward_nurse_action', {
+      p_token: session.token,
+      p_admission_id: selectedAdmission.id,
+      p_action_type: actionType,
+      ...extraParams
+    });
+    if(error) throw error;
+    const r = Array.isArray(data)?data[0]:data;
+    if(!r?.success) throw new Error(r?.message||'Action failed.');
+    naShowMsg(r.message, false);
+    if(successCallback) successCallback(r);
+  }catch(err){ naShowMsg(err.message||'Action failed.', true); }
+}
+
+document.getElementById('na_prescribe_submit').addEventListener('click', async ()=>{
+  const text = document.getElementById('na_prescription').value.trim();
+  if(!text) return naShowMsg('Prescription text is required.', true);
+  await naSubmit('prescribe', { p_prescription: text }, ()=>{
+    document.getElementById('na_prescription').value='';
+    loadOrders(selectedAdmission.id);
+  });
+});
+
+document.getElementById('na_lab_submit').addEventListener('click', async ()=>{
+  if(naLabTests.length===0) return naShowMsg('Add at least one test.', true);
+  const urgency = document.getElementById('na_lab_urgency').value;
+  const notes = document.getElementById('na_lab_notes').value.trim();
+  await naSubmit('lab_request', {
+    p_lab_urgency: urgency,
+    p_lab_clinical_notes: notes || null,
+    p_lab_test_names: naLabTests.map(t=>t.name)
+  }, ()=>{
+    const fullName = selectedPatientInfo
+      ? [selectedPatientInfo.surname, selectedPatientInfo.first_name, selectedPatientInfo.middle_name].filter(Boolean).join(' ')
+      : null;
+    generateLabRequestSlip(naLabTests, {
+      patientName: fullName || selectedAdmission.hospital_number,
+      gender: selectedPatientInfo?.gender || '',
+      hospitalNumber: selectedAdmission.hospital_number,
+      diagnosis: selectedAdmission.admission_diagnosis,
+      doctorName: (session.name||session.username)+' (nurse)',
+      urgency, date: new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
+    });
+    naLabTests = []; renderNaLabTags();
+    document.getElementById('na_lab_notes').value='';
+  });
+});
+
+document.getElementById('na_discharge_submit').addEventListener('click', async ()=>{
+  if(!confirm(`Discharge ${selectedAdmission.hospital_number}? This frees their bed and ends the admission.`)) return;
+  const summary = document.getElementById('na_discharge_summary').value.trim();
+  await naSubmit('discharge', { p_discharge_summary: summary || null }, ()=>{
+    document.getElementById('detailPanel').classList.remove('show');
+    document.getElementById('placeholder').style.display = 'flex';
+    selectedAdmission = null;
+    loadAdmissions();
+  });
+});
+
+document.getElementById('na_refer_submit').addEventListener('click', async ()=>{
+  const referTo = document.getElementById('na_refer_to').value.trim();
+  if(!referTo) return naShowMsg('Refer-to destination is required.', true);
+  const reason = document.getElementById('na_refer_reason').value.trim();
+  if(!confirm(`Refer ${selectedAdmission.hospital_number} to "${referTo}"? This discharges them from this ward.`)) return;
+  await naSubmit('refer', { p_refer_to: referTo, p_refer_reason: reason || null }, ()=>{
+    document.getElementById('detailPanel').classList.remove('show');
+    document.getElementById('placeholder').style.display = 'flex';
+    selectedAdmission = null;
+    loadAdmissions();
+  });
+});
+
+document.getElementById('na_transfer_submit').addEventListener('click', async ()=>{
+  const newWardId = document.getElementById('na_transfer_ward').value;
+  if(!newWardId) return naShowMsg('Select a destination ward.', true);
+  await naSubmit('transfer_ward', { p_new_ward_id: newWardId }, ()=>{
+    document.getElementById('detailPanel').classList.remove('show');
+    document.getElementById('placeholder').style.display = 'flex';
+    selectedAdmission = null;
+    loadAdmissions();
+  });
+});
+
+// ---- Lab request slip generator — identical to doctor-consultation's,
+// duplicated here since ward-queue.js and doctor-consultation.js are
+// separate bundles with no shared module system. ----
+function generateLabRequestSlip(tests, meta){
+  if(!tests || tests.length===0) return;
+  if(!window.jspdf || !window.jspdf.jsPDF){ console.error('jsPDF not loaded'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'mm', format:'a5' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  let y = 14;
+  function checkPage(minSpace){ if(y > pageH - minSpace){ doc.addPage(); y = 14; } }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text("MU'UJIZA DIAGNOSTICS", pageW/2, y, { align:'center' }); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text('Laboratory Request Slip', pageW/2, y, { align:'center' }); y+=3;
+  doc.setDrawColor(180); doc.line(10,y,pageW-10,y); y+=6;
+
+  doc.setFontSize(9.5);
+  function row(label, value){
+    checkPage(20);
+    doc.setFont('helvetica','bold'); doc.text(`${label}:`, 10, y);
+    doc.setFont('helvetica','normal');
+    const lines = doc.splitTextToSize(String(value||'—'), pageW-42);
+    doc.text(lines, 40, y);
+    y += 5*lines.length;
+  }
+  row('Patient', meta.patientName);
+  row('Sex', meta.gender);
+  row('Hospital No.', meta.hospitalNumber);
+  row('Diagnosis / Impression', meta.diagnosis);
+  row('Ordering Nurse', meta.doctorName);
+  row('Urgency', (meta.urgency||'routine').toUpperCase());
+  row('Date', meta.date);
+
+  y += 2;
+  doc.setDrawColor(180); doc.line(10,y,pageW-10,y); y+=6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
+  doc.text('Tests Requested', 10, y); y+=6;
+
+  const byUnit = {};
+  tests.forEach(t=>{ const u=t.unit_name||'General'; if(!byUnit[u]) byUnit[u]=[]; byUnit[u].push(t.name); });
+  doc.setFontSize(9.5);
+  Object.entries(byUnit).forEach(([unit, names])=>{
+    checkPage(15);
+    doc.setFont('helvetica','bold'); doc.text(unit.toUpperCase(), 10, y); y+=5;
+    doc.setFont('helvetica','normal');
+    names.forEach(n=>{ checkPage(10); const lines=doc.splitTextToSize(`•  ${n}`, pageW-24); doc.text(lines,14,y); y+=5*lines.length; });
+    y+=1;
+  });
+
+  y += 3; checkPage(20);
+  doc.setDrawColor(180); doc.line(10,y,pageW-10,y); y+=6;
+  doc.setFont('helvetica','italic'); doc.setFontSize(8);
+  doc.text('Present this slip at the laboratory reception window.', 10, y); y+=4;
+  doc.text('No fees are shown here — payment is processed at accession.', 10, y);
+
+  const safeHosp = String(meta.hospitalNumber||'patient').replace(/[^a-zA-Z0-9-]/g,'');
+  doc.save(`lab-request-${safeHosp}-${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // ============================================================

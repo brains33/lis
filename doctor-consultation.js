@@ -15,6 +15,36 @@ const client  = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 document.getElementById('userLabel').textContent = `Dr. ${session.name||session.username}`;
+
+// ============================================================
+// FACILITY MODE — hospital-wide switch between Federal/OPD style
+// (nurses execute doctor orders only) and General Hospital style
+// (ward nurses can admit/prescribe/discharge independently).
+// ============================================================
+async function loadFacilityMode(){
+  const { data, error } = await client.from('hospital_settings').select('facility_mode').eq('id',1).single();
+  const sel = document.getElementById('facilityModeSelect');
+  if(error || !data){ console.error('[DC] load facility mode failed', error); return; }
+  sel.value = data.facility_mode;
+}
+
+document.getElementById('facilityModeSelect').addEventListener('change', async (e)=>{
+  const newMode = e.target.value;
+  const label = newMode === 'general' ? 'General Hospital' : 'Federal / OPD';
+  if(!confirm(`Switch the whole hospital to "${label}" mode?\n\nThis changes what ward nurses are allowed to do, hospital-wide, immediately.`)){
+    loadFacilityMode(); // revert dropdown to actual saved value
+    return;
+  }
+  const { data, error } = await client.rpc('set_facility_mode', { p_token: session.token, p_mode: newMode });
+  if(error){ alert('Failed to change mode: '+error.message); loadFacilityMode(); return; }
+  const r = Array.isArray(data)?data[0]:data;
+  if(!r?.success){ alert(r?.message||'Failed to change mode.'); loadFacilityMode(); return; }
+  alert(r.message);
+});
+
+loadFacilityMode();
+
+
 document.getElementById('logoutBtn').addEventListener('click', () => {
   sessionStorage.removeItem('muujiza_doctor_session');
   window.location.replace('doctor-login.html');

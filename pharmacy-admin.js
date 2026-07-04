@@ -126,7 +126,72 @@ async function updateLowStockBadge(){
   else { badge.classList.remove('show'); }
 }
 
-// ---- Add new drug ----
+// ============================================================
+// CATEGORY & MEDICATION TYPE — searchable dropdowns backed by
+// drug_categories / medication_types lookup tables, with inline
+// "add new" so the lists grow from the UI, no code changes needed.
+// ============================================================
+function makeLookupDropdown({ inputId, dropdownId, tableName }) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+  if (!input || !dropdown) return;
+  let cache = [];
+  let debounceTimer = null;
+
+  async function loadAll() {
+    const { data, error } = await client.from(tableName).select('id,name').order('name', { ascending: true });
+    if (!error) cache = data || [];
+  }
+  loadAll();
+
+  function render(filterText) {
+    const q = (filterText || '').trim().toLowerCase();
+    const matches = q ? cache.filter(c => c.name.toLowerCase().includes(q)) : cache;
+    let html = matches.map(c =>
+      `<div class="lookup-row" data-name="${esc(c.name)}" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:0.85rem;color:var(--text);">${esc(c.name)}</div>`
+    ).join('');
+
+    const exactMatch = cache.some(c => c.name.toLowerCase() === q);
+    if (q && !exactMatch) {
+      html += `<div class="lookup-add-row" data-name="${esc(filterText.trim())}" style="padding:9px 12px;cursor:pointer;color:var(--primary-dark);font-weight:700;font-size:0.85rem;">+ Add "${esc(filterText.trim())}"</div>`;
+    }
+    if (!html) html = `<div style="padding:9px 12px;color:var(--text2);font-size:0.85rem;">Type to add a new entry</div>`;
+
+    dropdown.innerHTML = html;
+    dropdown.style.display = 'block';
+
+    dropdown.querySelectorAll('.lookup-row').forEach(row => {
+      row.addEventListener('mouseenter', () => row.style.background = 'var(--primary-light)');
+      row.addEventListener('mouseleave', () => row.style.background = 'var(--surface)');
+      row.addEventListener('click', () => { input.value = row.dataset.name; dropdown.style.display = 'none'; });
+    });
+    const addRow = dropdown.querySelector('.lookup-add-row');
+    if (addRow) {
+      addRow.addEventListener('click', async () => {
+        const name = addRow.dataset.name;
+        addRow.textContent = 'Adding...';
+        const { error } = await client.from(tableName).insert({ name });
+        if (error) { showError(`Could not add "${name}": ${error.message}`); return; }
+        cache.push({ name });
+        input.value = name;
+        dropdown.style.display = 'none';
+        showSuccess(`"${name}" added to ${tableName === 'drug_categories' ? 'categories' : 'medication types'}.`);
+      });
+    }
+  }
+
+  input.addEventListener('focus', () => render(input.value));
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => render(input.value), 150);
+  });
+  input.addEventListener('blur', () => setTimeout(() => { dropdown.style.display = 'none'; }, 150));
+}
+
+makeLookupDropdown({ inputId: 'newDrugCategory', dropdownId: 'categoryDropdown', tableName: 'drug_categories' });
+makeLookupDropdown({ inputId: 'newDrugForm', dropdownId: 'medTypeDropdown', tableName: 'medication_types' });
+
+
 document.getElementById('addDrugBtn').addEventListener('click', async () => {
   clearMsgs();
   const name = document.getElementById('newDrugName').value.trim();

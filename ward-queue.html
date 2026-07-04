@@ -149,6 +149,11 @@
 
       <div class="detail" id="detailPanel">
         <div class="patient-banner" id="patientBanner"></div>
+        <div id="nurseDischargeArea" style="display:none;padding:0 0 12px;">
+          <button id="nurseDischargeBtn" class="btn-ghost btn-small" style="border-color:var(--error,#e5484d);color:var(--error,#e5484d);">
+            🏥 Discharge Patient (General Hospital mode)
+          </button>
+        </div>
 
         <div class="tab-row">
           <button class="tab-btn active" data-tab="orders">Doctor Orders</button>
@@ -159,6 +164,11 @@
 
         <!-- Doctor Orders (read-only) -->
         <div class="tab-pane active" id="pane-orders">
+          <div id="nursePrescribeArea" style="display:none;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
+            <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px;color:var(--accent);">➕ Add Prescription (General Hospital mode)</div>
+            <textarea id="nursePrescribeText" rows="2" placeholder="Drug name, dose, frequency, duration..." style="width:100%;margin-bottom:8px;"></textarea>
+            <button id="nursePrescribeBtn" class="btn-ghost btn-small">Add to Orders</button>
+          </div>
           <div id="ordersList"><div class="empty">No orders yet.</div></div>
         </div>
 

@@ -148,6 +148,13 @@
 <nav>
   <span class="nav-brand">🩺 MU'UJIZA — Doctor Consultation</span>
   <div class="nav-right">
+    <div id="facilityModeWidget" style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:5px 10px;margin-right:8px;">
+      <span>Mode:</span>
+      <select id="facilityModeSelect" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:0.78rem;">
+        <option value="federal">Federal / OPD</option>
+        <option value="general">General Hospital</option>
+      </select>
+    </div>
     <span id="userLabel"></span>
     <button class="logout-btn" id="logoutBtn">Log out</button>
   </div>
