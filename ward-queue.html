@@ -102,6 +102,14 @@
   .msg.show{display:block;}
   .msg.error{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);}
   .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--green);color:var(--green);}
+
+  .na-action-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+  .na-action-btn{background:var(--field);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:0.8rem;}
+  .na-action-btn.selected{border-color:var(--accent);color:var(--accent);background:rgba(56,189,248,0.08);}
+  .na-panel{display:none;border:1px solid var(--border);border-radius:9px;padding:12px;}
+  .na-lab-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;}
+  .na-lab-row{display:flex;gap:8px;align-items:flex-end;}
+  .na-lab-row .vfield{flex:1;}
 </style>
 </head>
 <body>
@@ -149,26 +157,17 @@
 
       <div class="detail" id="detailPanel">
         <div class="patient-banner" id="patientBanner"></div>
-        <div id="nurseDischargeArea" style="display:none;padding:0 0 12px;">
-          <button id="nurseDischargeBtn" class="btn-ghost btn-small" style="border-color:var(--error,#e5484d);color:var(--error,#e5484d);">
-            🏥 Discharge Patient (General Hospital mode)
-          </button>
-        </div>
 
         <div class="tab-row">
           <button class="tab-btn active" data-tab="orders">Doctor Orders</button>
           <button class="tab-btn" data-tab="vitals">Vitals</button>
           <button class="tab-btn" data-tab="notes">Nursing Notes</button>
           <button class="tab-btn" data-tab="mar">MAR</button>
+          <button class="tab-btn" data-tab="actions" id="actionsTabBtn" style="display:none;">Nurse Actions</button>
         </div>
 
         <!-- Doctor Orders (read-only) -->
         <div class="tab-pane active" id="pane-orders">
-          <div id="nursePrescribeArea" style="display:none;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
-            <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px;color:var(--accent);">➕ Add Prescription (General Hospital mode)</div>
-            <textarea id="nursePrescribeText" rows="2" placeholder="Drug name, dose, frequency, duration..." style="width:100%;margin-bottom:8px;"></textarea>
-            <button id="nursePrescribeBtn" class="btn-ghost btn-small">Add to Orders</button>
-          </div>
           <div id="ordersList"><div class="empty">No orders yet.</div></div>
         </div>
 
@@ -224,6 +223,70 @@
           </div>
           <div class="btn-row">
             <button class="btn-primary" id="addMarBtn">Chart Dose</button>
+          </div>
+        </div>
+
+        <!-- Nurse Actions (General Hospital mode only) -->
+        <div class="tab-pane" id="pane-actions">
+          <div class="na-action-row">
+            <button class="na-action-btn" data-action="prescribe">💊 Prescribe</button>
+            <button class="na-action-btn" data-action="lab_request">🧪 Order Labs</button>
+            <button class="na-action-btn" data-action="discharge">🏥 Discharge</button>
+            <button class="na-action-btn" data-action="refer">↗️ Refer</button>
+            <button class="na-action-btn" data-action="transfer_ward">🛏️ Transfer Ward</button>
+          </div>
+
+          <div class="msg" id="naMsg"></div>
+
+          <!-- Prescribe -->
+          <div class="na-panel" id="na-prescribe">
+            <label>Prescription</label>
+            <textarea id="na_prescription" rows="3" placeholder="Drug name, dose, frequency, duration..."></textarea>
+            <div class="btn-row"><button class="btn-primary" id="na_prescribe_submit">Add to Orders</button></div>
+          </div>
+
+          <!-- Order Labs -->
+          <div class="na-panel" id="na-lab_request">
+            <div class="na-lab-row">
+              <div class="vfield"><label>Unit</label><select id="na_lab_unit"></select></div>
+              <div class="vfield"><label>Test</label><select id="na_lab_test"></select></div>
+              <button class="btn-ghost btn-sm" id="na_lab_addtest">+ Add</button>
+            </div>
+            <div class="na-lab-tags" id="na_lab_tags"></div>
+            <div class="vgrid">
+              <div class="vfield"><label>Urgency</label>
+                <select id="na_lab_urgency">
+                  <option value="routine">Routine</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="stat">STAT</option>
+                </select>
+              </div>
+              <div class="vfield full"><label>Clinical Notes (optional)</label><textarea id="na_lab_notes" rows="2"></textarea></div>
+            </div>
+            <div class="btn-row"><button class="btn-primary" id="na_lab_submit">Request Tests</button></div>
+          </div>
+
+          <!-- Discharge -->
+          <div class="na-panel" id="na-discharge">
+            <label>Discharge Summary (optional)</label>
+            <textarea id="na_discharge_summary" rows="3" placeholder="Condition on discharge, follow-up instructions..."></textarea>
+            <div class="btn-row"><button class="btn-warn" id="na_discharge_submit">Discharge Patient</button></div>
+          </div>
+
+          <!-- Refer -->
+          <div class="na-panel" id="na-refer">
+            <label>Refer To</label>
+            <input type="text" id="na_refer_to" placeholder="e.g. General Hospital Minna, ENT clinic...">
+            <label style="margin-top:8px;">Reason (optional)</label>
+            <textarea id="na_refer_reason" rows="2"></textarea>
+            <div class="btn-row"><button class="btn-warn" id="na_refer_submit">Refer Patient</button></div>
+          </div>
+
+          <!-- Transfer Ward -->
+          <div class="na-panel" id="na-transfer_ward">
+            <label>Destination Ward</label>
+            <select id="na_transfer_ward"><option value="">Select ward...</option></select>
+            <div class="btn-row"><button class="btn-primary" id="na_transfer_submit">Transfer Patient</button></div>
           </div>
         </div>
       </div>

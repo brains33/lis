@@ -37,7 +37,8 @@ async function loadFacilityMode(){
   const { data, error } = await client.from('hospital_settings').select('facility_mode').eq('id',1).single();
   if(!error && data) facilityMode = data.facility_mode;
   const isGeneral = facilityMode === 'general';
-  document.getElementById('actionsTabBtn').style.display = isGeneral ? 'inline-block' : 'none';
+  const tabBtn = document.getElementById('actionsTabBtn');
+  if(tabBtn) tabBtn.style.display = isGeneral ? 'inline-block' : 'none';
 }
 loadFacilityMode();
 
@@ -55,6 +56,14 @@ function esc(s){ if(s==null||s==='') return '—'; return String(s).replace(/[&<
 function nv(id){ const v=document.getElementById(id)?.value?.trim(); return v===''||v===undefined?null:Number(v); }
 function sv(id){ const v=document.getElementById(id)?.value?.trim(); return v===''?null:v; }
 function fmtTime(ts){ return ts ? new Date(ts).toLocaleString('en-NG',{dateStyle:'medium',timeStyle:'short'}) : '—'; }
+// Safe event binder: never throws if the target element doesn't exist yet
+// (e.g. an HTML panel that hasn't been added). Logs a console warning
+// instead so a missing element degrades that one feature, not the whole page.
+function on(id, event, handler){
+  const el = document.getElementById(id);
+  if(!el){ console.warn(`[ward-queue] #${id} not found — skipping ${event} handler.`); return; }
+  el.addEventListener(event, handler);
+}
 
 // Adult-only reference ranges for the ward vitals chip flagging.
 // (Ward patients skew adult; if pediatric wards are added later,
@@ -264,11 +273,10 @@ async function selectAdmission(a){
   naLabTests = [];
   document.querySelectorAll('.na-action-btn').forEach(b=>b.classList.remove('selected'));
   document.querySelectorAll('.na-panel').forEach(p=>p.style.display='none');
-  document.getElementById('naMsg').style.display='none';
-  document.getElementById('na_prescription').value='';
-  document.getElementById('na_discharge_summary').value='';
-  document.getElementById('na_refer_to').value='';
-  document.getElementById('na_refer_reason').value='';
+  const naMsgEl = document.getElementById('naMsg'); if(naMsgEl) naMsgEl.style.display='none';
+  ['na_prescription','na_discharge_summary','na_refer_to','na_refer_reason'].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.value='';
+  });
   renderNaLabTags();
 
   await Promise.all([loadOrders(a.id), loadVitalsHistory(a.id), loadNotes(a.id), loadMar(a.id)]);
@@ -328,7 +336,8 @@ document.querySelectorAll('.na-action-btn').forEach(btn=>{
     naSelectedAction = btn.dataset.action;
     document.querySelectorAll('.na-action-btn').forEach(b=>b.classList.toggle('selected', b===btn));
     document.querySelectorAll('.na-panel').forEach(p=>p.style.display='none');
-    document.getElementById(`na-${naSelectedAction}`).style.display='block';
+    const panel = document.getElementById(`na-${naSelectedAction}`);
+    if(panel) panel.style.display='block';
     if(naSelectedAction === 'lab_request') loadNaTestDefs();
     if(naSelectedAction === 'transfer_ward') populateNaWardSelect();
   });
@@ -336,6 +345,7 @@ document.querySelectorAll('.na-action-btn').forEach(btn=>{
 
 function naShowMsg(msg, isError){
   const el = document.getElementById('naMsg');
+  if(!el){ console.warn('[ward-queue] #naMsg not found:', msg); return; }
   el.textContent = msg;
   el.style.display = 'block';
   el.style.background = isError ? 'rgba(255,107,107,0.1)' : 'rgba(61,220,151,0.1)';
@@ -361,20 +371,23 @@ function populateNaUnits(){
   const units = Object.keys(naTestDefsByUnit);
   const unitSel = document.getElementById('na_lab_unit');
   const addBtn = document.getElementById('na_lab_addtest');
+  if(!unitSel || !addBtn) return;
   if(!units.length){ unitSel.innerHTML='<option value="">No units found</option>'; addBtn.disabled=true; return; }
   addBtn.disabled=false;
   unitSel.innerHTML = units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
   updateNaTests();
 }
 function updateNaTests(){
-  const unit = document.getElementById('na_lab_unit').value;
-  const tests = naTestDefsByUnit[unit]||[];
-  document.getElementById('na_lab_test').innerHTML = tests.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  const unitSel = document.getElementById('na_lab_unit');
+  const testSel = document.getElementById('na_lab_test');
+  if(!unitSel || !testSel) return;
+  const tests = naTestDefsByUnit[unitSel.value]||[];
+  testSel.innerHTML = tests.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
 }
-document.getElementById('na_lab_unit').addEventListener('change', updateNaTests);
-document.getElementById('na_lab_addtest').addEventListener('click', ()=>{
-  const unit = document.getElementById('na_lab_unit').value;
-  const test = document.getElementById('na_lab_test').value;
+on('na_lab_unit', 'change', updateNaTests);
+on('na_lab_addtest', 'click', ()=>{
+  const unit = document.getElementById('na_lab_unit')?.value;
+  const test = document.getElementById('na_lab_test')?.value;
   if(!unit || !test) return;
   if(naLabTests.some(t=>t.unit_name===unit && t.name===test)){ naShowMsg('Test already added', true); return; }
   naLabTests.push({unit_name:unit, name:test});
@@ -382,6 +395,7 @@ document.getElementById('na_lab_addtest').addEventListener('click', ()=>{
 });
 function renderNaLabTags(){
   const el = document.getElementById('na_lab_tags');
+  if(!el) return;
   if(!naLabTests.length){ el.innerHTML='<span style="color:var(--muted);font-size:0.8rem;">No tests added yet.</span>'; return; }
   el.innerHTML = naLabTests.map((t,i)=>`
     <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:0.78rem;display:flex;align-items:center;gap:6px;">
@@ -395,6 +409,7 @@ function renderNaLabTags(){
 // ---- Ward select for transfer ----
 function populateNaWardSelect(){
   const sel = document.getElementById('na_transfer_ward');
+  if(!sel) return;
   const currentWard = selectedAdmission?.ward_id;
   sel.innerHTML = '<option value="">Select ward...</option>' +
     wards.filter(w=>w.id!==currentWard).map(w=>`<option value="${w.id}">${esc(w.ward_name)}</option>`).join('');
@@ -418,19 +433,19 @@ async function naSubmit(actionType, extraParams, successCallback){
   }catch(err){ naShowMsg(err.message||'Action failed.', true); }
 }
 
-document.getElementById('na_prescribe_submit').addEventListener('click', async ()=>{
-  const text = document.getElementById('na_prescription').value.trim();
+on('na_prescribe_submit', 'click', async ()=>{
+  const text = document.getElementById('na_prescription')?.value.trim();
   if(!text) return naShowMsg('Prescription text is required.', true);
   await naSubmit('prescribe', { p_prescription: text }, ()=>{
-    document.getElementById('na_prescription').value='';
+    const el = document.getElementById('na_prescription'); if(el) el.value='';
     loadOrders(selectedAdmission.id);
   });
 });
 
-document.getElementById('na_lab_submit').addEventListener('click', async ()=>{
+on('na_lab_submit', 'click', async ()=>{
   if(naLabTests.length===0) return naShowMsg('Add at least one test.', true);
-  const urgency = document.getElementById('na_lab_urgency').value;
-  const notes = document.getElementById('na_lab_notes').value.trim();
+  const urgency = document.getElementById('na_lab_urgency')?.value;
+  const notes = document.getElementById('na_lab_notes')?.value.trim();
   await naSubmit('lab_request', {
     p_lab_urgency: urgency,
     p_lab_clinical_notes: notes || null,
@@ -448,43 +463,35 @@ document.getElementById('na_lab_submit').addEventListener('click', async ()=>{
       urgency, date: new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
     });
     naLabTests = []; renderNaLabTags();
-    document.getElementById('na_lab_notes').value='';
+    const notesEl = document.getElementById('na_lab_notes'); if(notesEl) notesEl.value='';
   });
 });
 
-document.getElementById('na_discharge_submit').addEventListener('click', async ()=>{
+function naCloseDetailPanel(){
+  document.getElementById('detailPanel')?.classList.remove('show');
+  const ph = document.getElementById('placeholder'); if(ph) ph.style.display = 'flex';
+  selectedAdmission = null;
+  loadAdmissions();
+}
+
+on('na_discharge_submit', 'click', async ()=>{
   if(!confirm(`Discharge ${selectedAdmission.hospital_number}? This frees their bed and ends the admission.`)) return;
-  const summary = document.getElementById('na_discharge_summary').value.trim();
-  await naSubmit('discharge', { p_discharge_summary: summary || null }, ()=>{
-    document.getElementById('detailPanel').classList.remove('show');
-    document.getElementById('placeholder').style.display = 'flex';
-    selectedAdmission = null;
-    loadAdmissions();
-  });
+  const summary = document.getElementById('na_discharge_summary')?.value.trim();
+  await naSubmit('discharge', { p_discharge_summary: summary || null }, naCloseDetailPanel);
 });
 
-document.getElementById('na_refer_submit').addEventListener('click', async ()=>{
-  const referTo = document.getElementById('na_refer_to').value.trim();
+on('na_refer_submit', 'click', async ()=>{
+  const referTo = document.getElementById('na_refer_to')?.value.trim();
   if(!referTo) return naShowMsg('Refer-to destination is required.', true);
-  const reason = document.getElementById('na_refer_reason').value.trim();
+  const reason = document.getElementById('na_refer_reason')?.value.trim();
   if(!confirm(`Refer ${selectedAdmission.hospital_number} to "${referTo}"? This discharges them from this ward.`)) return;
-  await naSubmit('refer', { p_refer_to: referTo, p_refer_reason: reason || null }, ()=>{
-    document.getElementById('detailPanel').classList.remove('show');
-    document.getElementById('placeholder').style.display = 'flex';
-    selectedAdmission = null;
-    loadAdmissions();
-  });
+  await naSubmit('refer', { p_refer_to: referTo, p_refer_reason: reason || null }, naCloseDetailPanel);
 });
 
-document.getElementById('na_transfer_submit').addEventListener('click', async ()=>{
-  const newWardId = document.getElementById('na_transfer_ward').value;
+on('na_transfer_submit', 'click', async ()=>{
+  const newWardId = document.getElementById('na_transfer_ward')?.value;
   if(!newWardId) return naShowMsg('Select a destination ward.', true);
-  await naSubmit('transfer_ward', { p_new_ward_id: newWardId }, ()=>{
-    document.getElementById('detailPanel').classList.remove('show');
-    document.getElementById('placeholder').style.display = 'flex';
-    selectedAdmission = null;
-    loadAdmissions();
-  });
+  await naSubmit('transfer_ward', { p_new_ward_id: newWardId }, naCloseDetailPanel);
 });
 
 // ---- Lab request slip generator — identical to doctor-consultation's,
