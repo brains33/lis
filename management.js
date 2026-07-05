@@ -977,12 +977,13 @@ function _csvDate() {
     // "January 2024" never silently fetches the wrong rows.
     let samples = [];
     try {
+      // Read date filters first — needed for both cache check and DB query
+      const dateFrom = document.getElementById('analyticsDateFrom')?.value || '';
+      const dateTo   = document.getElementById('analyticsDateTo')?.value   || '';
+
       if (_analyticsCacheValid(dateFrom, dateTo)) {
         samples = _analyticsCache;
       } else {
-        // Read date filters now so they can be applied at DB level
-        const dateFrom = document.getElementById('analyticsDateFrom')?.value || '';
-        const dateTo   = document.getElementById('analyticsDateTo')?.value   || '';
 
         const PAGE = 1000;
         let page = 0, done = false;
