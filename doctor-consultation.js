@@ -456,6 +456,9 @@ document.querySelectorAll('.action-btn').forEach(btn=>{
     selectedAction = btn.dataset.action;
     const fieldEl = document.getElementById(`fields_${selectedAction}`);
     if(fieldEl) fieldEl.classList.add('show');
+    // Bed occupancy changes constantly through a shift — refresh live counts
+    // right when the doctor is about to pick a ward, not just once at page load.
+    if(selectedAction==='admit' || selectedAction==='admit_and_lab') refreshBedAvailability();
   });
 });
 
@@ -574,7 +577,7 @@ function renderSelectedTags(arr, containerId){
 async function loadWards(){
   if(allWards.length>0){ populateWardSelects(); return; }
   const { data, error } = await client.from('wards')
-    .select('id,ward_name,department,bed_count')
+    .select('id,ward_name,department')
     .eq('is_active', true)
     .order('ward_name',{ascending:true});
   if(error){
@@ -584,12 +587,38 @@ async function loadWards(){
   }
   allWards = data||[];
   populateWardSelects();
+  refreshBedAvailability();
 }
+
+// Live bed counts, pulled straight from the `beds` table rather than the
+// static wards.bed_count column (which is only set on ward creation / bed
+// add and never recalculated — it drifts from reality as beds are
+// occupied/freed/deactivated). Bug found 2026-07-04: doctors were picking
+// a ward with zero visibility into whether any bed was actually free.
+let bedAvailabilityByWard = {}; // ward_id -> {total, free}
+async function refreshBedAvailability(){
+  const { data, error } = await client.from('beds').select('ward_id,status');
+  if(error){ console.error('refreshBedAvailability failed:', error); return; }
+  const map = {};
+  (data||[]).forEach(b=>{
+    if(!map[b.ward_id]) map[b.ward_id] = {total:0, free:0};
+    map[b.ward_id].total++;
+    if(b.status==='available') map[b.ward_id].free++;
+  });
+  bedAvailabilityByWard = map;
+  populateWardSelects();
+}
+
 function populateWardSelects(){
   const opts = allWards.length===0
     ? '<option value="">No active wards found</option>'
     : '<option value="">Select ward...</option>' +
-      allWards.map(w=>`<option value="${w.id}">${esc(w.ward_name)}${w.department?` — ${esc(w.department)}`:''}</option>`).join('');
+      allWards.map(w=>{
+        const avail = bedAvailabilityByWard[w.id];
+        const bedLabel = avail ? ` (${avail.free}/${avail.total} beds free)` : '';
+        const full = avail && avail.free===0;
+        return `<option value="${w.id}"${full?' style="color:#ff6b6b;"':''}>${esc(w.ward_name)}${w.department?` — ${esc(w.department)}`:''}${bedLabel}${full?' — FULL':''}</option>`;
+      }).join('');
   ['c_ward','c_ward3'].forEach(id=>{ const sel=document.getElementById(id); if(sel) sel.innerHTML=opts; });
 }
 

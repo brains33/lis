@@ -272,7 +272,7 @@ async function selectAdmission(a){
   document.getElementById('na_refer_reason').value='';
   renderNaLabTags();
 
-  await Promise.all([loadOrders(a.id), loadVitalsHistory(a.id), loadNotes(a.id), loadMar(a.id)]);
+  await Promise.all([loadOrders(a.id), loadVitalsHistory(a), loadNotes(a.id), loadMar(a.id)]);
 }
 
 // ============================================================
@@ -708,27 +708,35 @@ function generateLabRequestSlip(tests, meta){
 // ============================================================
 // VITALS
 // ============================================================
-async function loadVitalsHistory(admissionId){
+// Bug found 2026-07-04: OPD vitals are keyed by visit_id, ward vitals by
+// admission_id — two disjoint keys on the same `vitals` table. The ward
+// nurse was only ever shown ward-recorded vitals, so a freshly admitted
+// patient showed "No vitals recorded yet" even though OPD triage vitals
+// (the numbers that justified the admission) existed. Bridge:
+// admissions.consultation_id -> consultations.visit_id -> vitals.visit_id.
+async function loadOpdTriageVitals(consultationId){
+  if(!consultationId) return null;
+  const { data: consult, error: cErr } = await client.from('consultations')
+    .select('visit_id').eq('id', consultationId).single();
+  if(cErr || !consult?.visit_id) return null;
   const { data, error } = await client.from('vitals')
-    .select('*').eq('admission_id', admissionId)
+    .select('*').eq('visit_id', consult.visit_id)
     .order('recorded_at',{ascending:false}).limit(1);
+  if(error || !data || data.length===0) return null;
+  return data[0];
+}
 
-  const hist = document.getElementById('vitalsHistory');
-  if(error || !data || data.length===0){
-    hist.innerHTML = `<div class="empty" style="grid-column:1/-1;">No vitals recorded yet.</div>`;
-    return;
-  }
-  const v = data[0];
-  function chip(label, value, unit, param){
+function renderVitalsCard(v, label, accentColor){
+  function chip(lbl, value, unit, param){
     if(value==null) return '';
     const flag = flagValue(value, param);
     const cls = flag==='high'?'flag-high':flag==='low'?'flag-low':'';
-    return `<div class="vital-chip ${cls}"><div class="vc-label">${label}</div><div class="vc-value">${value}</div><div class="unit">${unit}</div></div>`;
+    return `<div class="vital-chip ${cls}"><div class="vc-label">${lbl}</div><div class="vc-value">${value}</div><div class="unit">${unit}</div></div>`;
   }
   const bp = (v.bp_systolic!=null && v.bp_diastolic!=null) ?
     `<div class="vital-chip ${flagValue(v.bp_systolic,'bp_sys')==='high'||flagValue(v.bp_diastolic,'bp_dia')==='high'?'flag-high':''}">
        <div class="vc-label">BP</div><div class="vc-value">${v.bp_systolic}/${v.bp_diastolic}</div><div class="unit">mmHg</div></div>` : '';
-  hist.innerHTML = [
+  const chips = [
     bp,
     chip('Temp', v.temperature, '°C', 'temp'),
     chip('Pulse', v.pulse, 'bpm', 'pulse'),
@@ -736,7 +744,33 @@ async function loadVitalsHistory(admissionId){
     chip('SPO2', v.spo2, '%', 'spo2'),
     chip('Weight', v.weight, 'kg', null),
     v.pain_score!=null ? `<div class="vital-chip ${v.pain_score>=7?'flag-high':''}"><div class="vc-label">Pain</div><div class="vc-value">${v.pain_score}/10</div></div>` : ''
-  ].join('') || `<div class="empty" style="grid-column:1/-1;">No vitals recorded yet.</div>`;
+  ].join('');
+  return `
+    <div style="grid-column:1/-1;font-size:0.72rem;color:${accentColor};font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin:${label==='OPD Triage (at admission)'?'0':'10px'} 0 4px;">
+      ${esc(label)} ${v.recorded_at?`· ${fmtTime(v.recorded_at)}`:''}
+    </div>${chips}`;
+}
+
+async function loadVitalsHistory(admission){
+  const admissionId = admission.id;
+  const [{ data, error }, opdVitals] = await Promise.all([
+    client.from('vitals').select('*').eq('admission_id', admissionId)
+      .order('recorded_at',{ascending:false}).limit(1),
+    loadOpdTriageVitals(admission.consultation_id)
+  ]);
+
+  const hist = document.getElementById('vitalsHistory');
+  const wardHasVitals = !error && data && data.length>0;
+
+  let html = '';
+  if(opdVitals) html += renderVitalsCard(opdVitals, 'OPD Triage (at admission)', 'var(--purple)');
+  if(wardHasVitals) html += renderVitalsCard(data[0], 'Latest Ward Vitals', 'var(--accent)');
+
+  if(!html){
+    hist.innerHTML = `<div class="empty" style="grid-column:1/-1;">No vitals recorded yet.</div>`;
+    return;
+  }
+  hist.innerHTML = html;
 }
 
 document.getElementById('saveVitalsBtn').addEventListener('click', async () => {
@@ -764,7 +798,7 @@ document.getElementById('saveVitalsBtn').addEventListener('click', async () => {
     if(!r?.success) throw new Error(r?.message || 'Failed to save vitals.');
     showSuccess('✅ Vitals recorded.');
     resetVitalsForm();
-    await loadVitalsHistory(selectedAdmission.id);
+    await loadVitalsHistory(selectedAdmission);
   }catch(err){ showError(err.message||'Failed to save vitals.'); }
   finally{ btn.disabled=false; btn.textContent='Save Vitals'; }
 });
@@ -918,7 +952,7 @@ async function refreshAll(){
   await loadAdmissions();
   if(selectedAdmission){
     // keep chart in sync without losing form input the nurse is mid-typing
-    await Promise.all([loadOrders(selectedAdmission.id), loadVitalsHistory(selectedAdmission.id),
+    await Promise.all([loadOrders(selectedAdmission.id), loadVitalsHistory(selectedAdmission),
       loadNotes(selectedAdmission.id), loadMar(selectedAdmission.id)]);
   }
 }

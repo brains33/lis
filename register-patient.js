@@ -139,6 +139,11 @@ form.addEventListener('submit', async (e) => {
     occupation:         val('occupation'),
     primary_care_giver: val('primary_care_giver'),
     care_giver_contact: val('care_giver_contact'),
+    next_of_kin_name:         val('nok_name'),
+    next_of_kin_relationship: val('nok_relationship'),
+    next_of_kin_phone:        fullPhone('nok_phone_code', 'nok_phone'),
+    next_of_kin_occupation:   val('nok_occupation'),
+    next_of_kin_address:      val('nok_address'),
     billing_currency:   'NAIRA',
     credit_limit:       0,
     discount_percent:   0,
@@ -152,7 +157,7 @@ form.addEventListener('submit', async (e) => {
     const { data, error } = await client
       .from('patient_registry')
       .insert(payload)
-      .select('hospital_number, surname, first_name, middle_name, date_of_birth, age, gender, nin, blood_group, genotype, phone, address, patient_department, patient_type, assigned_doctor, created_at')
+      .select('hospital_number, surname, first_name, middle_name, date_of_birth, age, gender, nin, blood_group, genotype, phone, address, patient_department, patient_type, assigned_doctor, next_of_kin_name, next_of_kin_relationship, next_of_kin_phone, created_at')
       .single();
 
     if (error) throw error;
@@ -189,6 +194,9 @@ function populatePrintCard(d) {
   document.getElementById('pc_dept').textContent    = d.patient_department || '—';
   document.getElementById('pc_type').textContent    = d.patient_type || '—';
   document.getElementById('pc_doctor').textContent  = d.assigned_doctor || '—';
+  document.getElementById('pc_nok').textContent     = d.next_of_kin_name
+    ? `${d.next_of_kin_name}${d.next_of_kin_relationship ? ' (' + d.next_of_kin_relationship + ')' : ''}${d.next_of_kin_phone ? ' — ' + d.next_of_kin_phone : ''}`
+    : '—';
   document.getElementById('pc_date').textContent    = new Date(d.created_at).toLocaleDateString('en-GB');
 }
 

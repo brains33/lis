@@ -211,6 +211,27 @@
       </div>
     </div>
 
+    <!-- NEXT OF KIN -->
+    <div class="card">
+      <h2>Next of Kin</h2>
+      <div class="grid">
+        <div class="field"><label>Full Name</label><input type="text" id="nok_name"></div>
+        <div class="field"><label>Relationship to Patient</label>
+          <select id="nok_relationship">
+            <option value="">Select</option>
+            <option>Spouse</option><option>Parent</option><option>Child</option>
+            <option>Sibling</option><option>Guardian</option><option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Phone Number</label>
+          <div class="phone-row"><select id="nok_phone_code"><option>+234</option></select><input type="tel" id="nok_phone"></div>
+        </div>
+        <div class="field"><label>Occupation</label><input type="text" id="nok_occupation"></div>
+        <div class="field full"><label>Address</label><textarea id="nok_address"></textarea></div>
+      </div>
+    </div>
+
     <div class="actions">
       <button type="button" class="btn-ghost" id="resetBtn">Clear Form</button>
       <button type="button" class="btn-print" id="printBtn" style="display:none;">🖨 Print Card</button>
@@ -238,6 +259,7 @@
     <div class="pc-row"><span class="pc-label">Department:</span><span class="pc-val" id="pc_dept">—</span></div>
     <div class="pc-row"><span class="pc-label">Patient Type:</span><span class="pc-val" id="pc_type">—</span></div>
     <div class="pc-row"><span class="pc-label">Assigned Doctor:</span><span class="pc-val" id="pc_doctor">—</span></div>
+    <div class="pc-row"><span class="pc-label">Next of Kin:</span><span class="pc-val" id="pc_nok">—</span></div>
     <div class="pc-row"><span class="pc-label">Registered:</span><span class="pc-val" id="pc_date">—</span></div>
   </div>
   <div class="pc-footer">This card is the property of MU'UJIZA Hospital. Please present it at every visit.</div>
