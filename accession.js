@@ -76,7 +76,16 @@
       resultsBox.querySelectorAll('.hospnum-result-row').forEach((row, idx) => {
         row.addEventListener('mouseenter', () => row.style.background = '#f5f5f5');
         row.addEventListener('mouseleave', () => row.style.background = '#fff');
-        row.addEventListener('click', () => _pickHospnumMatch(data[idx]));
+        // mousedown fires BEFORE the input's blur event, so it can never lose
+        // the race against the blur handler's setTimeout that hides this
+        // dropdown. Plain 'click' meant on slower/touch devices the row could
+        // already be display:none by the time click fired, silently dropping
+        // the selection — so patient details AND pending lab_requests never
+        // got pulled in.
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          _pickHospnumMatch(data[idx]);
+        });
       });
     } catch (err) {
       console.error('[AC] hospnum search failed', err);
