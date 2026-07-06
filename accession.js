@@ -107,11 +107,37 @@
       await new Promise(r => setTimeout(r, 800));
     }
     try {
-      const { data: requests, error } = await db
+      // Scope to the CURRENT VISIT only. A hospital number can have several
+      // pending lab_requests rows from the same visit (doctor adds tests in
+      // more than one submission), so we can't just take the single latest
+      // row — but we also must not pull requests from a DIFFERENT, older
+      // visit that never got marked 'fulfilled' (e.g. stale test names after
+      // a params rebuild). Fix: find the most recent pending request, read
+      // its visit_id, then pull all pending requests sharing that visit_id.
+      const { data: latest, error: latestErr } = await db
         .from('lab_requests')
-        .select('id, urgency, clinical_notes, lab_request_tests(test_name)')
+        .select('id, visit_id, created_at')
+        .eq('hospital_number', hospitalNumber)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestErr) throw latestErr;
+      if (!latest) return;
+
+      let reqQuery = db
+        .from('lab_requests')
+        .select('id, urgency, clinical_notes, created_at, lab_request_tests(test_name)')
         .eq('hospital_number', hospitalNumber)
         .eq('status', 'pending');
+      // visit_id is nullable — if the most recent request has none, fall
+      // back to just that single row instead of grouping by null (which
+      // would otherwise match every other visit_id-less request too).
+      reqQuery = latest.visit_id
+        ? reqQuery.eq('visit_id', latest.visit_id)
+        : reqQuery.eq('id', latest.id);
+
+      const { data: requests, error } = await reqQuery;
       if (error) throw error;
       if (!requests || requests.length === 0) return;
 
