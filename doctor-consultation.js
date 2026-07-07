@@ -106,11 +106,15 @@ let selectedAction   = null;
 // QUEUE
 // ============================================================
 async function loadQueue(){
-  const today = new Date().toISOString().split('T')[0];
+  // NOTE: no visit_date filter here on purpose. A patient sent for lab tests
+  // (status stays 'with_doctor') must remain visible regardless of which day
+  // they were originally registered — otherwise they silently vanish from
+  // the queue the moment the date rolls over, even though nothing about
+  // their status changed. visit_date is still stored for reporting/history,
+  // just not used to gate who's currently waiting.
   const { data, error } = await client.from('opd_visits')
     .select(`id,hospital_number,status,triage_category,chief_complaint,assigned_doctor,queued_at,
              patient_registry(id,surname,first_name,gender,date_of_birth,age,blood_group,genotype,phone,address,occupation,state_of_origin,nin)`)
-    .eq('visit_date', today)
     .eq('status','with_doctor')
     .order('queued_at',{ascending:true});
 
@@ -164,6 +168,54 @@ async function updateStats(visits){
 }
 
 document.getElementById('queueFilter').addEventListener('input', loadQueue);
+
+// ---- Recall / doctor-initiated queue add -------------------------------
+// Single entry point for a doctor adding someone to their own queue:
+// - patient already has an open visit today  -> reactivated (recalled)
+// - patient has no visit today               -> a fresh 'with_doctor' visit
+//   is created, skipping the nurse triage/vitals step
+// Both cases are handled server-side by doctor_queue_patient so this stays
+// a one-click action regardless of which situation applies.
+const recallBtn  = document.getElementById('recallBtn');
+const recallInp  = document.getElementById('recallHospNo');
+const recallMsg  = document.getElementById('recallMsg');
+
+function showRecallMsg(text, ok){
+  recallMsg.textContent = text;
+  recallMsg.style.display = 'block';
+  recallMsg.style.color = ok ? 'var(--green,#2e7d32)' : 'var(--error,#c62828)';
+  setTimeout(()=>{ recallMsg.style.display='none'; }, 4000);
+}
+
+async function handleRecall(){
+  const hospNo = recallInp.value.trim();
+  if(!hospNo){ showRecallMsg('Enter a hospital number.', false); return; }
+
+  recallBtn.disabled = true;
+  recallBtn.textContent = 'Adding...';
+  try{
+    const { data, error } = await client.rpc('doctor_queue_patient', {
+      p_token: session.token,
+      p_hospital_number: hospNo
+    });
+    if(error) throw error;
+    const r = Array.isArray(data) ? data[0] : data;
+    if(!r?.success){ showRecallMsg(r?.message || 'Could not add patient.', false); return; }
+
+    showRecallMsg(r.message || 'Patient added to your queue.', true);
+    recallInp.value = '';
+    await loadQueue();
+  }catch(err){
+    console.error('doctor_queue_patient failed:', err);
+    showRecallMsg(err.message || 'Failed to add patient.', false);
+  }finally{
+    recallBtn.disabled = false;
+    recallBtn.textContent = '+ Add to Queue';
+  }
+}
+
+recallBtn.addEventListener('click', handleRecall);
+recallInp.addEventListener('keydown', e=>{ if(e.key==='Enter') handleRecall(); });
 
 // ============================================================
 // SELECT VISIT — load vitals, demographics, history

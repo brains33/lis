@@ -174,6 +174,11 @@
         <input type="text" id="queueFilter" placeholder="Filter by name / hosp no..." style="font-size:0.82rem;padding:7px 9px;">
       </div>
     </div>
+    <div class="recall-box" style="display:flex;gap:6px;margin:8px 0;">
+      <input type="text" id="recallHospNo" placeholder="Hosp no. — recall / add patient" style="flex:1;font-size:0.8rem;padding:7px 9px;">
+      <button id="recallBtn" type="button" style="font-size:0.78rem;padding:7px 10px;white-space:nowrap;">+ Add to Queue</button>
+    </div>
+    <div id="recallMsg" style="font-size:0.75rem;margin:0 0 6px;display:none;"></div>
     <div class="queue-list" id="queueList"><div class="empty-queue">Loading...</div></div>
   </div>
 
