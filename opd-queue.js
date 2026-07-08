@@ -56,13 +56,21 @@ let selectedOrder  = null;
 
 async function loadDoctorOrders() {
   const { data, error } = await client.from('consultations')
-    .select('id,hospital_number,visit_id,doctor_name,diagnosis,prescription,instructions,allergy_note,action_type,created_at')
-    .or('prescription.not.is.null,instructions.not.is.null')
+    .select('id,hospital_number,visit_id,doctor_name,diagnosis,prescription,instructions,allergy_note,action_type,created_at,administered_at')
     .is('administered_at', null)
     .order('created_at', { ascending: true });
 
-  if (error) { console.error('Failed to load doctor\'s orders:', error); return; }
-  doctorOrders = data || [];
+  if (error) {
+    console.error('Failed to load doctor\'s orders:', error);
+    showError('Doctor\'s Orders failed to load: ' + error.message);
+    return;
+  }
+
+  doctorOrders = (data || []).filter(o =>
+    (o.prescription && o.prescription.trim() !== '') ||
+    (o.instructions && o.instructions.trim() !== '')
+  );
+
   renderOrdersList();
   document.getElementById('s_orders').textContent = doctorOrders.length;
   document.getElementById('ordersTabCount').textContent = doctorOrders.length;
