@@ -122,6 +122,29 @@
   .prev-vitals-panel.show{display:block;}
   .prev-vitals-panel .pv-title{color:var(--accent);font-weight:600;margin-bottom:6px;font-size:0.74rem;}
   .prev-vitals-panel .pv-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 10px;}
+
+  /* Tabs */
+  .tabs{display:flex;gap:8px;margin-bottom:14px;}
+  .tab-btn{background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:0.84rem;font-weight:600;padding:9px 16px;border-radius:9px;cursor:pointer;font-family:inherit;}
+  .tab-btn.active{background:var(--accent);color:#04131d;border-color:var(--accent);}
+  .tab-content{display:none;}
+  .tab-content.show{display:block;}
+
+  /* Doctor's Orders */
+  .order-item{background:var(--field);border:1px solid var(--border);border-radius:10px;padding:11px 13px;cursor:pointer;transition:border-color 0.15s;border-left:3px solid var(--accent);}
+  .order-item:hover{border-color:var(--accent);}
+  .order-item.selected{border-color:var(--accent);background:rgba(56,189,248,0.06);}
+  .oi-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .oi-hospno{font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--accent);font-weight:700;}
+  .oi-dx{font-size:0.85rem;margin-top:3px;}
+  .oi-doc{font-size:0.74rem;color:var(--muted);margin-top:2px;}
+  .order-detail{display:none;}
+  .order-detail.show{display:block;}
+  .order-placeholder{display:flex;align-items:center;justify-content:center;height:200px;color:var(--muted);font-size:0.85rem;text-align:center;}
+  .order-block{background:var(--field);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;}
+  .order-block .ob-label{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:4px;}
+  .order-block .ob-text{font-size:0.88rem;white-space:pre-wrap;}
+  .allergy-flag{background:rgba(255,107,107,0.1);border:1px solid var(--error);color:var(--error);border-radius:8px;padding:8px 10px;font-size:0.8rem;margin-bottom:12px;}
 </style>
 </head>
 <body>
@@ -139,11 +162,18 @@
     <div class="stat"><div class="stat-val warn" id="s_vitals">—</div><div class="stat-lbl">Awaiting Doctor</div></div>
     <div class="stat"><div class="stat-val green" id="s_done">—</div><div class="stat-lbl">Done Today</div></div>
     <div class="stat"><div class="stat-val red" id="s_emergency">—</div><div class="stat-lbl">🔴 Emergency</div></div>
+    <div class="stat"><div class="stat-val warn" id="s_orders">—</div><div class="stat-lbl">💊 Pending Orders</div></div>
   </div>
 
   <div class="msg error" id="errorMsg"></div>
   <div class="msg success" id="successMsg"></div>
 
+  <div class="tabs">
+    <button class="tab-btn active" id="tabBtnVitals">Vitals Queue</button>
+    <button class="tab-btn" id="tabBtnOrders">Doctor's Orders <span class="count" id="ordersTabCount">0</span></button>
+  </div>
+
+  <div class="tab-content show" id="tabVitals">
   <div class="main-grid">
     <!-- LEFT: Queue -->
     <div class="card">
@@ -266,9 +296,61 @@
       </div>
     </div>
   </div>
+  </div>
+  <!-- /tabVitals -->
+
+  <div class="tab-content" id="tabOrders">
+  <div class="main-grid">
+    <!-- LEFT: Orders list -->
+    <div class="card">
+      <h2>Pending Doctor's Orders <span class="count" id="ordersCount">0</span></h2>
+      <div class="queue-search">
+        <input type="text" id="ordersFilter" placeholder="Filter by name or hospital no...">
+      </div>
+      <div class="queue-list" id="ordersList">
+        <div class="empty">Loading orders...</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Order detail -->
+    <div class="card">
+      <h2>Order Details</h2>
+      <div class="order-placeholder" id="orderPlaceholder">
+        ← Select a patient to view what the doctor prescribed
+      </div>
+      <div class="order-detail" id="orderDetail">
+        <div class="patient-banner" id="orderBanner"></div>
+        <div class="allergy-flag" id="orderAllergyFlag" style="display:none;"></div>
+
+        <div class="order-block" id="orderPrescriptionBlock" style="display:none;">
+          <div class="ob-label">Prescription</div>
+          <div class="ob-text" id="orderPrescriptionText"></div>
+        </div>
+        <div class="order-block" id="orderInstructionsBlock" style="display:none;">
+          <div class="ob-label">Instructions / Stat Orders</div>
+          <div class="ob-text" id="orderInstructionsText"></div>
+        </div>
+        <div class="order-block" id="orderDiagBlock" style="display:none;">
+          <div class="ob-label">Diagnosis</div>
+          <div class="ob-text" id="orderDiagText"></div>
+        </div>
+
+        <div class="vfield full">
+          <label>Administration / Explanation Note</label>
+          <textarea id="orderNote" rows="3" placeholder="What was given/administered and explained to the patient..."></textarea>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-primary" id="markAdministeredBtn">✓ Mark Administered</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <!-- /tabOrders -->
 </div>
 
 <script src="opd-auth-guard.js"></script>
-<script src="opd-queue.js?v=20260701d"></script>
+<script src="opd-queue.js?v=20260708a"></script>
 </body>
 </html>

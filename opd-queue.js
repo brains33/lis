@@ -31,6 +31,142 @@ let selectedVisit = null;
 let previousVitals = null; // cached previous visit vitals for the selected patient
 
 // ============================================================
+// TABS — Vitals Queue / Doctor's Orders
+// ============================================================
+document.getElementById('tabBtnVitals').addEventListener('click', () => {
+  document.getElementById('tabBtnVitals').classList.add('active');
+  document.getElementById('tabBtnOrders').classList.remove('active');
+  document.getElementById('tabVitals').classList.add('show');
+  document.getElementById('tabOrders').classList.remove('show');
+});
+document.getElementById('tabBtnOrders').addEventListener('click', () => {
+  document.getElementById('tabBtnOrders').classList.add('active');
+  document.getElementById('tabBtnVitals').classList.remove('active');
+  document.getElementById('tabOrders').classList.add('show');
+  document.getElementById('tabVitals').classList.remove('show');
+});
+
+// ============================================================
+// DOCTOR'S ORDERS — prescriptions/instructions pending stat
+// administration or explanation back at OPD, regardless of date
+// (patients may delay before returning from pharmacy).
+// ============================================================
+let doctorOrders   = [];
+let selectedOrder  = null;
+
+async function loadDoctorOrders() {
+  const { data, error } = await client.from('consultations')
+    .select('id,hospital_number,visit_id,doctor_name,diagnosis,prescription,instructions,allergy_note,action_type,created_at')
+    .or('prescription.not.is.null,instructions.not.is.null')
+    .is('administered_at', null)
+    .order('created_at', { ascending: true });
+
+  if (error) { console.error('Failed to load doctor\'s orders:', error); return; }
+  doctorOrders = data || [];
+  renderOrdersList();
+  document.getElementById('s_orders').textContent = doctorOrders.length;
+  document.getElementById('ordersTabCount').textContent = doctorOrders.length;
+}
+
+function renderOrdersList() {
+  const filter = document.getElementById('ordersFilter').value.toLowerCase();
+  const list = document.getElementById('ordersList');
+  const items = doctorOrders.filter(o =>
+    !filter || o.hospital_number.toLowerCase().includes(filter) || (o.diagnosis||'').toLowerCase().includes(filter));
+
+  document.getElementById('ordersCount').textContent = items.length;
+
+  if (items.length === 0) { list.innerHTML = `<div class="empty">No pending doctor's orders</div>`; return; }
+
+  list.innerHTML = items.map(o => {
+    const time = o.created_at ? new Date(o.created_at).toLocaleString('en-NG',{dateStyle:'medium',timeStyle:'short'}) : '';
+    return `
+      <div class="order-item ${selectedOrder?.id===o.id?'selected':''}" data-id="${o.id}">
+        <div class="oi-top">
+          <span class="oi-hospno">${esc(o.hospital_number)}</span>
+          <span>⏰ ${time}</span>
+        </div>
+        <div class="oi-dx">${esc(o.diagnosis)}</div>
+        <div class="oi-doc">Dr. ${esc(o.doctor_name)}</div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('.order-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const o = doctorOrders.find(x => x.id === el.dataset.id);
+      if (o) selectOrder(o);
+    });
+  });
+}
+
+function selectOrder(o) {
+  selectedOrder = o;
+  renderOrdersList();
+
+  document.getElementById('orderPlaceholder').style.display = 'none';
+  document.getElementById('orderDetail').classList.add('show');
+
+  const time = o.created_at ? new Date(o.created_at).toLocaleString('en-NG',{dateStyle:'medium',timeStyle:'short'}) : '—';
+  document.getElementById('orderBanner').innerHTML = `
+    <div class="name">${esc(o.hospital_number)}</div>
+    <div class="meta">Dr. ${esc(o.doctor_name)} &nbsp;|&nbsp; ${time}</div>`;
+
+  const allergyEl = document.getElementById('orderAllergyFlag');
+  if (o.allergy_note) {
+    allergyEl.style.display = 'block';
+    allergyEl.textContent = `⚠️ Allergy: ${o.allergy_note}`;
+  } else {
+    allergyEl.style.display = 'none';
+  }
+
+  const rxBlock = document.getElementById('orderPrescriptionBlock');
+  if (o.prescription) { rxBlock.style.display='block'; document.getElementById('orderPrescriptionText').textContent = o.prescription; }
+  else rxBlock.style.display = 'none';
+
+  const instrBlock = document.getElementById('orderInstructionsBlock');
+  if (o.instructions) { instrBlock.style.display='block'; document.getElementById('orderInstructionsText').textContent = o.instructions; }
+  else instrBlock.style.display = 'none';
+
+  const dxBlock = document.getElementById('orderDiagBlock');
+  if (o.diagnosis) { dxBlock.style.display='block'; document.getElementById('orderDiagText').textContent = o.diagnosis; }
+  else dxBlock.style.display = 'none';
+
+  document.getElementById('orderNote').value = '';
+}
+
+document.getElementById('ordersFilter').addEventListener('input', renderOrdersList);
+
+document.getElementById('markAdministeredBtn').addEventListener('click', async () => {
+  clearMsgs();
+  if (!selectedOrder) return showError('No order selected.');
+
+  const btn = document.getElementById('markAdministeredBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+
+  try {
+    const { data, error } = await client.rpc('mark_orders_administered', {
+      p_token:            session.token,
+      p_consultation_id:  selectedOrder.id,
+      p_note:             document.getElementById('orderNote').value.trim() || null
+    });
+    if (error) throw error;
+    const r = Array.isArray(data) ? data[0] : data;
+    if (!r?.success) throw new Error(r?.message || 'Failed to mark as administered.');
+
+    showSuccess('✅ ' + r.message);
+    selectedOrder = null;
+    document.getElementById('orderDetail').classList.remove('show');
+    document.getElementById('orderPlaceholder').style.display = 'flex';
+    await loadDoctorOrders();
+
+  } catch (err) {
+    showError(err.message || 'Failed to mark as administered.');
+  } finally {
+    btn.disabled = false; btn.textContent = '✓ Mark Administered';
+  }
+});
+
+// ============================================================
 // Age-based vital reference ranges (attention thresholds, not
 // "ideal" ranges — set wide enough to avoid flagging normal
 // variation, tight enough to catch what a nurse should act on).
@@ -513,4 +649,6 @@ document.getElementById('statusFilter').addEventListener('change', renderQueue);
 
 // Auto-refresh every 30 seconds
 loadQueue();
+loadDoctorOrders();
 setInterval(loadQueue, 30000);
+setInterval(loadDoctorOrders, 30000);
