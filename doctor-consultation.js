@@ -436,6 +436,1087 @@ async function loadLabResults(hospNum){
   });
 }
 
+// ============================================================
+// FULL RESULTS RENDERING ENGINE — ported verbatim from
+// pending_portal.js so doctors see the exact same clean,
+// sectioned, reference-range-flagged layout patients/lab staff
+// see there (all ~30 panel types), before the doctor ever needs
+// to download/print anything.
+// ============================================================
+
+// testDefinitions mirrors pending_portal.js's global: test_type,
+// unit, and (for simple_numeric) stored reference range per test
+// name, loaded once in loadTestDefs() below.
+let testDefinitions = { testTypes: {}, testUnits: {}, refRanges: {} };
+
+function getReferenceRange(testName, age, gender) {
+  const patientAge = (age && !isNaN(age)) ? parseInt(age) : 30;
+  const isMale = (gender === 'Male');
+  const isFemale = (gender === 'Female');
+
+  switch (testName) {
+    case 'PCV':
+    case 'Packed Cell Volume':
+    case 'Hematocrit':
+    case 'HCT':
+      if (isMale) return { low: 40, high: 54, unit: '%' };
+      if (isFemale) return { low: 36, high: 46, unit: '%' };
+      return { low: 36, high: 46, unit: '%' };
+    case 'Hb':
+    case 'Hemoglobin':
+      if (isMale) return { low: 13.5, high: 17.5, unit: 'g/dL' };
+      if (isFemale) return { low: 12.0, high: 15.5, unit: 'g/dL' };
+      return { low: 12.0, high: 15.5, unit: 'g/dL' };
+    case 'ESR':
+    case 'Erythrocyte Sedimentation Rate':
+      if (isMale) return { low: 0, high: 5, unit: 'mm/hr' };
+      if (isFemale) return { low: 0, high: 10, unit: 'mm/hr' };
+      return { low: 0, high: 15, unit: 'mm/hr' };
+    case 'RBS':
+    case 'Random Blood Sugar':
+      return { low: 6.0, high: 9.0, unit: 'mmol/L' };
+    case 'FBS':
+    case 'Fasting Blood Sugar':
+      return { low: 3.0, high: 6.0, unit: 'mmol/L' };
+    default:
+      return null;
+  }
+}
+
+const CBC_PARAMS = [
+  // Main indices
+  {key:'hb',           name:'HB (Haemoglobin)',      unit:'g/dL',       low:11.5, high:15.5, note:'F: 11.5–15.5 | M: 13.5–18.0 g/dL'},
+  {key:'pcv',          name:'PCV',                   unit:'%',          low:35,   high:54,   note:'M: 40–54% | F: 35–45%'},
+  {key:'twbc',         name:'TWBC',                  unit:'×10⁹/L',     low:4.0,  high:11.0},
+  {key:'rbc',          name:'RBC',                   unit:'×10¹²/L',    low:4.5,  high:5.5},
+  {key:'mcv',          name:'MCV',                   unit:'fL',         low:76,   high:98},
+  {key:'mch',          name:'MCH',                   unit:'pg',         low:27,   high:31},
+  {key:'mchc',         name:'MCHC',                  unit:'g/dL',       low:31,   high:36},
+  {key:'plt',          name:'Platelets (PLC)',        unit:'×10⁹/L',     low:150,  high:400},
+  {key:'retics',       name:'Retics',                unit:'%',          low:0.2,  high:2.0},
+  {key:'esr',          name:'ESR',                   unit:'mm/Hr',      low:0,    high:10,   note:'M: 0–5 | F: 0–10 mm/Hr'},
+  {key:'bleeding_time',name:'Bleeding Time',         unit:'min',        low:0,    high:11},
+  {key:'clotting_time',name:'Clotting Time',         unit:'min',        low:5,    high:11},
+  // Differential Count
+  {key:'neut',         name:'Neutrophils',           unit:'%',          low:40,   high:75},
+  {key:'lymph',        name:'Lymphocytes',           unit:'%',          low:20,   high:45},
+  {key:'eo',           name:'Eosinophils',           unit:'%',          low:1,    high:6},
+  {key:'baso',         name:'Basophils',             unit:'%',          low:0,    high:2},
+  {key:'mono',         name:'Monocytes',             unit:'%',          low:2,    high:10}
+];
+// Kontagora Clinical Chemistry Panels
+const EUCR_PARAMS = [
+  {key:'sodium',    name:'Sodium (Na+)',              unit:'mmol/L', low:136,  high:150},
+  {key:'potassium', name:'Potassium (K+)',             unit:'mmol/L', low:3.5,  high:5.0},
+  {key:'bicarb',    name:'Bicarbonate (HCO3-)',        unit:'mmol/L', low:22,   high:30},
+  {key:'chloride',  name:'Chloride (Cl-)',             unit:'mmol/L', low:96,   high:108},
+  {key:'urea',      name:'Urea',                           unit:'mmol/L', low:2.1,  high:7.0},
+  {key:'creat',     name:'Creatinine (Male)',               unit:'mg/dL',  low:0.9,  high:1.50},
+  {key:'creat_f',   name:'Creatinine (Female)',             unit:'mg/dL',  low:0.7,  high:1.37}
+];
+const CALCIUM_PARAMS = [
+  {key:'calcium', name:'Calcium', unit:'mmol/L', low:2.2, high:2.7}
+];
+const PHOSPHATE_PARAMS = [
+  {key:'phosphate_adult',    name:'Inorganic Phosphate (Adult)',    unit:'mmol/L', low:0.9, high:1.6},
+  {key:'phosphate_children', name:'Inorganic Phosphate (Children)', unit:'mmol/L', low:1.1, high:2.0}
+];
+const URIC_ACID_PARAMS = [
+  {key:'uric_female', name:'Uric Acid (Female)', unit:'mg/dL', low:1.5, high:7.0},
+  {key:'uric_male',   name:'Uric Acid (Male)',   unit:'mmol/L', low:1.5, high:7.0}
+];
+const LFT_PARAMS_FULL = [
+  {key:'tbil',  name:'Total Bilirubin',                  unit:'mg/dL', low:0,   high:1.11},
+  {key:'dbil',  name:'Direct Bilirubin',                 unit:'mg/dL', low:0,   high:0.023},
+  {key:'alp',   name:'Alkaline Phosphatase (Adult)',      unit:'U/L',   low:9,   high:35},
+  {key:'alp_c', name:'Alkaline Phosphatase (Children)',   unit:'U/L',   low:35,  high:100},
+  {key:'ast',   name:'AST (GOT)',                         unit:'U/L',   low:3.5, high:35},
+  {key:'alt',   name:'ALT (GPT)',                         unit:'U/L',   low:2.5, high:37}
+];
+const TOTAL_PROTEIN_PARAMS = [
+  {key:'prot', name:'Total Protein', unit:'g/dL', low:5.8, high:8.2},
+  {key:'alb',  name:'Albumin',       unit:'g/dL', low:3.5, high:5.2},
+  {key:'glob', name:'Globulin',      unit:'g/dL', low:2.2, high:3.2, calc:true}
+];
+const PSA_PARAMS = [
+  {key:'psa_qual', name:'PSA (Qualitative)', unit:'', type:'select', options:['Non-reactive','Reactive','Borderline']}
+];
+const DIABETES_PARAMS = [
+  {key:'fbs',   name:'FBS (Fasting Blood Sugar)',    unit:'mmol/L', low:3.0, high:6.0},
+  {key:'rbs',   name:'RBS (Random Blood Sugar)',      unit:'mmol/L', low:3.0, high:9.0},
+  {key:'hpp2',  name:'2HPP (2-Hour Post-Prandial)',  unit:'mmol/L', low:3.0, high:9.0},
+  {key:'ogtt',  name:'OGTT',                          unit:'mmol/L', low:3.0, high:7.8},
+  {key:'hba1c', name:'HbA1c',                         unit:'%',      low:3.0, high:6.0}
+];
+const RF_PARAMS = [
+  {key:'rf', name:'Rheumatoid Factor (RF)', unit:'', type:'select', options:['Negative','Positive','Weakly Positive']}
+];
+// Hormone Panel — LH, FSH, Testosterone, Progesterone, Prolactin (Kontagora GH form)
+const HORMONE_PARAMS = [
+  {key:'lh',           name:'LH',           unit:'mIU/mL', low:null, high:null,
+   note:'M: 1.70–8.60 | F Follicular: 2.95–13.65 | Ovulation: 13.65–95.75 | Luteal: 1.25–11.00 | Menopause: 8.24–55.23'},
+  {key:'fsh',          name:'FSH',          unit:'mIU/mL', low:null, high:null,
+   note:'M: 1.70–8.60 | F Follicular: 4.46–12.43 | Ovulation: 4.88–20.96 | Luteal: 1.96–7.70 | Menopause: 22.70–1300.00'},
+  {key:'testosterone', name:'Testosterone', unit:'ng/mL',  low:null, high:null,
+   note:'M: 0.2–1.5 | F 19–39yr: 2.64–9.16 | 40–59yr: 1.96–8.59 | 60+yr: 1.96–8.59'},
+  {key:'progesterone', name:'Progesterone', unit:'ng/Ml',  low:null, high:null,
+   note:'M: 3.45–17.42 | F Follicular: 0.2–2.0 | Ovulation: 0.7–3.5 | Luteal: 3.0–30 | Menopause: 0.1–0.9 | Preg 9–12wk: 17.5–31.5 | Preg >12wk: 25.0–51.0'},
+  {key:'prolactin',    name:'Prolactin',    unit:'ng/mL',  low:null, high:null,
+   note:'M: 3.45–17.42 | F: 4.60–25.07'}
+];
+// Marry Panel — HBsAg, HCV, RVS, SHCG, Hb Genotype, Blood Group
+const MARRY_PARAMS = [
+  {key:'hbsag',       name:'HBsAg',        unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'hcv',         name:'HCV',          unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'rvs',         name:'RVS',          unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'shcg',        name:'SHCG',         unit:'', type:'select', options:['Negative','Positive']},
+  {key:'hb_genotype', name:'Hb Genotype',  unit:'', type:'select', options:['AA','AS','SS','AC','SC','CC']},
+  {key:'blood_group', name:'Blood Group',  unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']}
+];
+// Antenatal Panel — PCV, Hb Genotype, Blood Group, Protein, Glucose, HBsAg, HCV
+const ANTENATAL_PARAMS = [
+  {key:'pcv',         name:'PCV',              unit:'%',  low:33, high:47},
+  {key:'hb_genotype', name:'Hb Genotype',      unit:'', type:'select', options:['AA','AS','SS','AC','SC','CC']},
+  {key:'blood_group', name:'Blood Group',       unit:'', type:'select', options:['A RH-D Positive','A RH-D Negative','B RH-D Positive','B RH-D Negative','AB RH-D Positive','AB RH-D Negative','O RH-D Positive','O RH-D Negative']},
+  {key:'protein',     name:'Protein (Urine)',   unit:'', type:'select', options:['Negative','Trace','1+','2+','3+','4+']},
+  {key:'glucose',     name:'Glucose (Urine)',   unit:'', type:'select', options:['Negative','Trace','1+','2+','3+','4+']},
+  {key:'hbsag',       name:'HBsAg',             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'hcv',         name:'HCV',               unit:'', type:'select', options:['Non-Reactive','Reactive']}
+];
+// Blood Transfusion — Grouping & Crossmatch
+// Matches BTS-REQ-XM/v1 form exactly (Sections 2, 3, 5, 6, 7, 8)
+const BLOOD_TRANSFUSION_PARAMS = [
+  // ── Section 2: Clinical Request Details ──
+  {key:'transfusion_reason',     name:'Reason for Transfusion',                    unit:'', type:'text'},
+  {key:'inv_hb_electrophoresis', name:'Investigation: Hb Electrophoresis',         unit:'', type:'select', options:['Requested','Not Requested']},
+  {key:'inv_type_screen',        name:'Investigation: Type & Screen',              unit:'', type:'select', options:['Requested','Not Requested']},
+  {key:'inv_full_crossmatch',    name:'Investigation: Full Crossmatch',            unit:'', type:'select', options:['Requested','Not Requested']},
+  {key:'result_hb',              name:'Result: HB',                                unit:'g/dL', type:'number', low:null, high:null},
+  {key:'result_pcv',             name:'Result: PCV',                               unit:'%',    type:'number', low:null, high:null},
+
+  // ── Section 3: Blood Products Required ──
+  {key:'bp_whole_blood',         name:'Blood Product: Whole Blood',                unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_packed_cells',        name:'Blood Product: Packed Cells',               unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_platelet_concentrate',name:'Blood Product: Platelet Concentrate',       unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_ffp',                 name:'Blood Product: Fresh Frozen Plasma (FFP)', unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_cryoprecipitate',     name:'Blood Product: Cryoprecipitate',            unit:'', type:'select', options:['Yes','No']},
+  {key:'bp_retroviral_screening',name:'Blood Product: Retroviral Screening',       unit:'', type:'select', options:['Yes','No']},
+  {key:'units_required',         name:'No. of Units Required',                     unit:'', type:'number', low:null, high:null},
+  {key:'units_donated',          name:'No. of Units Donated',                      unit:'', type:'number', low:null, high:null},
+  {key:'date_required',          name:'Date Required',                             unit:'', type:'text'},
+  {key:'time_required',          name:'Time Required',                             unit:'', type:'text'},
+
+  // ── Section 5: Autologous Blood (if applicable) ──
+  {key:'autologous_units',       name:'Autologous: No. of Units to be Collected',  unit:'', type:'number', low:null, high:null},
+  {key:'type_of_surgery',        name:'Type of Surgery',                           unit:'', type:'text'},
+
+  // ── Section 6: Patient Blood Group & Serological Screening ──
+  {key:'patient_blood_group', name:"Patient Blood Group",     unit:'', type:'select', options:['A Rhesus "D" Positive','A Rhesus "D" Negative','B Rhesus "D" Positive','B Rhesus "D" Negative','AB Rhesus "D" Positive','AB Rhesus "D" Negative','O Rhesus "D" Positive','O Rhesus "D" Negative']},
+  {key:'patient_hbsag',       name:"Patient HBsAg",           unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'patient_hcv',         name:"Patient HCV",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'patient_rvs',         name:"Patient RVS",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+
+  // ── Section 6: Donor Blood Group & Serological Screening ──
+  {key:'donor_blood_group',   name:"Donor Blood Group",       unit:'', type:'select', options:['A Rhesus "D" Positive','A Rhesus "D" Negative','B Rhesus "D" Positive','B Rhesus "D" Negative','AB Rhesus "D" Positive','AB Rhesus "D" Negative','O Rhesus "D" Positive','O Rhesus "D" Negative']},
+  {key:'donor_pcv',           name:"Donor PCV",               unit:'%', type:'number', low:35, high:54},
+  {key:'donor_hbsag',         name:"Donor HBsAg",             unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'donor_hcv',           name:"Donor HCV",               unit:'', type:'select', options:['Non-Reactive','Reactive']},
+  {key:'donor_vdrl',          name:"Donor VDRL",              unit:'', type:'select', options:['Negative','Positive']},
+  {key:'donor_rvs',           name:"Donor RVS",               unit:'', type:'select', options:['Non-Reactive','Reactive']},
+
+  // ── Section 7: Major Crossmatch (Phase / Result / Remarks) ──
+  {key:'xm_ns_result',        name:"Normal Saline (37\u00b0C) \u2014 Result",      unit:'', type:'select', options:['Compatible','Incompatible','Weakly Incompatible']},
+  {key:'xm_ns_remarks',       name:"Normal Saline (37\u00b0C) \u2014 Remarks",     unit:'', type:'text'},
+  {key:'xm_ba_result',        name:"Bovine Albumin \u2014 Result",                  unit:'', type:'select', options:['Compatible','Incompatible','Weakly Incompatible']},
+  {key:'xm_ba_remarks',       name:"Bovine Albumin \u2014 Remarks",                 unit:'', type:'text'},
+  {key:'xm_ahg_result',       name:"AHG (Anti-Human Globulin) \u2014 Result",      unit:'', type:'select', options:['Compatible','Incompatible','Weakly Incompatible']},
+  {key:'xm_ahg_remarks',      name:"AHG (Anti-Human Globulin) \u2014 Remarks",     unit:'', type:'text'},
+
+  // ── Section 8: Compatibility / Crossmatch Outcome ──
+  {key:'blood_bag_no',        name:'Blood Unit / Bag No.',                          unit:'', type:'text'},
+  {key:'crossmatch',          name:'Grouping & Crossmatch Result',                  unit:'', type:'select', options:['Compatible with Patient','Incompatible with Patient']},
+
+  // ── Issue / Return times ──
+  {key:'time_issued',         name:'Time Issued',                                   unit:'', type:'text'},
+  {key:'time_returned',       name:'Time Returned',                                 unit:'', type:'text'},
+  {key:'time_reissued',       name:'Time Reissued',                                 unit:'', type:'text'}
+];
+const RFT_PARAMS_FULL = [
+  {key:'sodium',    name:'Sodium (Na+)',              unit:'mmol/L', low:136,  high:150},
+  {key:'potassium', name:'Potassium (K+)',             unit:'mmol/L', low:3.5,  high:5.0},
+  {key:'bicarb',    name:'Bicarbonate (HCO3-)',        unit:'mmol/L', low:22,   high:30},
+  {key:'chloride',  name:'Chloride (Cl-)',             unit:'mmol/L', low:96,   high:108},
+  {key:'urea',      name:'Urea',                         unit:'mmol/L', low:2.1,  high:7.0},
+  {key:'creat',     name:'Creatinine',                   unit:'mg/dL',  low:0.9,  high:1.5},
+  {key:'calcium',   name:'Calcium',                      unit:'mmol/L', low:2.2,  high:2.7},
+  {key:'phosphate', name:'Inorganic Phosphate',          unit:'mmol/L', low:0.9,  high:1.6}
+];
+// Thyroid Function Test — Kontagora GH form
+const THYROID_PARAMS = [
+  {key:'tsh', name:'TSH', unit:'mIU/L',  low:0.3,  high:4.2},
+  {key:'t3',  name:'T3',  unit:'nmol/L', low:1.23, high:3.07},
+  {key:'t4',  name:'T4',  unit:'nmol/L', low:66,   high:181}
+];
+const LIPID_PARAMS = [
+  {key:'chol', name:'Total Cholesterol', unit:'mmol/L', low:2.5,  high:6.0},
+  {key:'hdl',  name:'HDL-C',            unit:'mmol/L', low:0.91, high:1.43},
+  {key:'ldl',  name:'LDL-C',            unit:'mmol/L', low:1.8,  high:4.4},
+  {key:'tg',   name:'Triglycerides',    unit:'mmol/L', low:1.8,  high:2.2},
+  {key:'vldl', name:'VLDL',            unit:'mmol/L', low:0.2,  high:0.8, calc:true},
+  {key:'ratio',name:'Total/HDL Ratio',  unit:'',       low:0,    high:5,   calc:true}
+];
+const COAG_PARAMS = [
+  {key:'pt', name:'Prothrombin Time', unit:'sec', low:11, high:13.5},
+  {key:'inr', name:'INR', unit:'', low:0.8, high:1.2},
+  {key:'aptt', name:'APTT', unit:'sec', low:25, high:35},
+  {key:'tt', name:'Thrombin Time', unit:'sec', low:14, high:21},
+  {key:'fibrinogen', name:'Fibrinogen', unit:'mg/dL', low:200, high:400},
+  {key:'bleeding_time', name:'Bleeding Time (Ivy)', unit:'min', low:1, high:9},
+  {key:'clotting_time', name:'Clotting Time (Lee‑White)', unit:'min', low:5, high:10},
+  {key:'d_dimer', name:'D‑Dimer', unit:'µg/mL', low:0, high:0.5}
+];
+const URINALYSIS_MICRO_PARAMS = [
+  {key:'colour', name:'Colour', unit:'', type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown']},
+  {key:'appearance', name:'Appearance', unit:'', type:'select', options:['Clear','Turbid','Cloudy']},
+  {key:'ph', name:'pH', unit:'', low:5.0, high:8.0, type:'number', step:0.5},
+  {key:'sg', name:'Specific Gravity', unit:'', low:1.005, high:1.030, type:'number', step:0.001},
+  {key:'protein', name:'Protein', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'glucose', name:'Glucose', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'ketones', name:'Ketones', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'blood', name:'Blood', unit:'', type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'bilirubin', name:'Bilirubin', unit:'', type:'select', options:['Negative','+','++']},
+  {key:'urobilinogen', name:'Urobilinogen', unit:'mg/dL', low:0.1, high:1.0, type:'number', step:0.1},
+  {key:'ascorbic_acid', name:'Ascorbic Acid', unit:'', type:'select', options:['Negative','Positive']},
+  {key:'nitrite', name:'Nitrite', unit:'', type:'select', options:['Negative','Positive']},
+  {key:'leuko', name:'Leukocyte Esterase', unit:'', type:'select', options:['Negative','Trace','+','++','+++']}
+];
+const IRON_PARAMS = [
+  {key:'iron', name:'Serum Iron', unit:'µg/dL', low:50, high:150},
+  {key:'tibc', name:'TIBC', unit:'µg/dL', low:250, high:400},
+  {key:'uibc', name:'UIBC', unit:'µg/dL', low:150, high:300},
+  {key:'transferrinSat', name:'Transferrin Saturation', unit:'%', low:20, high:50},
+  {key:'ferritin', name:'Ferritin', unit:'ng/mL', low:20, high:300}
+];
+const BONE_PARAMS = [
+  {key:'calcium', name:'Calcium', unit:'mg/dL', low:8.5, high:10.2},
+  {key:'phosphate', name:'Phosphate', unit:'mg/dL', low:2.5, high:4.5},
+  {key:'alkaline_phosphatase', name:'ALP', unit:'U/L', low:30, high:120},
+  {key:'albumin', name:'Albumin', unit:'g/dL', low:3.5, high:5.0},
+  {key:'magnesium', name:'Magnesium', unit:'mg/dL', low:1.7, high:2.2},
+  {key:'vitaminD', name:'Vitamin D (25-OH)', unit:'ng/mL', low:30, high:80}
+];
+const CARDIAC_PARAMS = [
+  {key:'ckmb', name:'CK-MB', unit:'U/L', low:0, high:25},
+  {key:'troponinI', name:'Troponin I', unit:'ng/mL', low:0, high:0.04},
+  {key:'troponinT', name:'Troponin T', unit:'ng/mL', low:0, high:0.01},
+  {key:'ldh', name:'LDH', unit:'U/L', low:100, high:200},
+  {key:'ast_cardiac', name:'AST', unit:'U/L', low:10, high:35}
+];
+const OGTT_PARAMS = [
+  {key:'fasting', name:'Fasting', unit:'mg/dL', low:70, high:100},
+  {key:'one_hour', name:'1 Hour', unit:'mg/dL', low:0, high:180},
+  {key:'two_hour', name:'2 Hours', unit:'mg/dL', low:0, high:140},
+  {key:'three_hour', name:'3 Hours', unit:'mg/dL', low:0, high:120}
+];
+const MALARIA_PARAMS = [
+  {key:'species', name:'Species', type:'select', options:['Plasmodium falciparum','Plasmodium vivax','Plasmodium ovale','Plasmodium malariae','Mixed infection','None']},
+  {key:'stage', name:'Stage', type:'select', options:['Ring','Trophozoite','Schizont','Gametocyte','Not applicable']},
+  {key:'density', name:'Parasite Density', unit:'parasites/µL', type:'number', low:0, high:1000000}
+];
+const TB_GX_PARAMS = [
+  {key:'mtb_detected', name:'MTB Detected', type:'select', options:['Detected','Not detected','Invalid']},
+  {key:'rif_resistance', name:'Rifampicin Resistance', type:'select', options:['Detected','Not detected','Invalid']},
+  {key:'probeA_ct', name:'Probe A Ct', unit:'', type:'number'},
+  {key:'probeB_ct', name:'Probe B Ct', unit:'', type:'number'},
+  {key:'probeC_ct', name:'Probe C Ct', unit:'', type:'number'},
+  {key:'probeD_ct', name:'Probe D Ct', unit:'', type:'number'},
+  {key:'probeE_ct', name:'Probe E Ct', unit:'', type:'number'}
+];
+const CSF_PARAMS = [
+  {key:'appearance', name:'Appearance', type:'select', options:['Clear','Cloudy','Xanthochromic','Bloody']},
+  {key:'wbc', name:'WBC', unit:'/mm³', low:0, high:5, type:'number'},
+  {key:'rbc', name:'RBC', unit:'/mm³', low:0, high:0, type:'number'},
+  {key:'protein', name:'Protein', unit:'mg/dL', low:15, high:45, type:'number'},
+  {key:'glucose', name:'Glucose', unit:'mg/dL', low:40, high:80, type:'number'},
+  {key:'gram_stain', name:'Gram Stain', type:'select', options:['No organisms seen','Gram positive cocci','Gram negative rods','Fungi','Other']},
+  {key:'india_ink', name:'India Ink', type:'select', options:['Negative','Positive']},
+  {key:'crypto_ag', name:'Cryptococcal Antigen', type:'select', options:['Negative','Positive']}
+];
+const ABG_PARAMS = [
+  {key:'ph', name:'pH', unit:'', low:7.35, high:7.45, type:'number', step:0.01},
+  {key:'pco2', name:'pCO2', unit:'mmHg', low:35, high:45, type:'number'},
+  {key:'po2', name:'pO2', unit:'mmHg', low:80, high:100, type:'number'},
+  {key:'hco3', name:'HCO3', unit:'mmol/L', low:22, high:26, type:'number'},
+  {key:'base_excess', name:'Base Excess', unit:'mmol/L', low:-2, high:2, type:'number'},
+  {key:'o2sat', name:'O2 Saturation', unit:'%', low:95, high:100, type:'number'},
+  {key:'lactate', name:'Lactate', unit:'mmol/L', low:0.5, high:2.0, type:'number'}
+];
+const SEMEN_PARAMS = [
+  // Semen Collection
+  {key:'time_produced', name:'Time Produced', type:'text'},
+  {key:'time_received', name:'Time Received', type:'text'},
+  {key:'time_analysed', name:'Time Analysed', type:'text'},
+  {key:'abstinence', name:'Abstinence', type:'text'},
+
+  // Macroscopy
+  {key:'appearance', name:'Appearance', type:'select', options:['Greyish-Opalescent','Yellowish','Reddish/Bloody','Clear','Brownish']},
+  {key:'volume', name:'Volume', unit:'mL', low:1.5, high:6.0, type:'number', step:0.1},
+  {key:'viscosity', name:'Viscosity', type:'select', options:['Normal','High','Low']},
+  {key:'consistency', name:'Consistency', type:'select', options:['Normal','Watery','Thick']},
+  {key:'liquefaction', name:'Liquefaction', type:'select', options:['Normal (<60 min)','Delayed (>60 min)','Incomplete']},
+
+  // Microscopy — counts & vitality
+  {key:'sperm_count', name:'Sperm Count', unit:'\u00d710\u2076/mL', low:15, high:200, type:'number'},
+  {key:'viability', name:'Viability (%)', unit:'%', low:58, high:100, type:'number'},
+
+  // Motility
+  {key:'motility_a', name:'Grade A — Progressive Motility', unit:'%', low:32, high:null, type:'number'},
+  {key:'motility_b', name:'Grade B — Non-Progressive Motility', unit:'%', low:null, high:null, type:'number'},
+  {key:'motility_c', name:'Grade C — Non-Linear Motility', unit:'%', low:null, high:null, type:'number'},
+  {key:'motility_d', name:'Grade D — Immotile Sperm Cells', unit:'%', low:null, high:null, type:'number'},
+
+  // Morphology — Head defects
+  {key:'morph_microcephalic', name:'Microcephalic', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_macrocephalic', name:'Macrocephalic', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_pinhead', name:'Pin Head', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_pyriform', name:'Pyriform', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_double_head', name:'Double Head', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_acrosomal', name:'Acrosomal Condensation', unit:'%', low:null, high:null, type:'number'},
+
+  // Morphology — Tail defects
+  {key:'morph_tailless', name:'Tailless', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_short_tail', name:'Short Tail', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_long_tail', name:'Long Tail', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_double_tail', name:'Double Tail', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_coiled_tail', name:'Coiled Tail', unit:'%', low:null, high:null, type:'number'},
+
+  // Morphology — Others
+  {key:'morph_cytoplasmic_droplets', name:'Cytoplasmic Droplets', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_midpiece_abnormality', name:'Mid Piece Abnormality', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_neck_defect', name:'Neck Defect', unit:'%', low:null, high:null, type:'number'},
+  {key:'morph_normal', name:'Normal Morphology', unit:'%', low:4, high:14, type:'number'},
+
+  // Wet Preparation / Gram's Stain
+  // Wet Preparation (urine microscopy style)
+  {key:'wp_epithelial_cells', name:'Epithelial Cells', unit:'/HPF', type:'text'},
+  {key:'wp_pus_cells', name:'Pus Cells (WBC)', unit:'/HPF', type:'text'},
+  {key:'wp_rbc', name:'RBC', unit:'/HPF', type:'text'},
+  {key:'wp_parasite', name:'Parasite / Ova', type:'select', options:['None seen','Trichomonas vaginalis','Other — see comments']},
+  {key:'wp_other', name:'Other Findings', type:'text'},
+
+  // Gram's Stain
+  {key:'gram_stain', name:'Gram\'s Stain', type:'text'},
+
+  // Comments
+  {key:'comments', name:'Comments', type:'text'}
+];
+const SEROLOGY_PARAMS = [
+  {key:'hbsag', name:'HBsAg', type:'select', options:['Non-reactive','Reactive']},
+  {key:'anti_hbs', name:'Anti-HBs', type:'select', options:['Non-reactive','Reactive']},
+  {key:'hbeag', name:'HBeAg', type:'select', options:['Non-reactive','Reactive']},
+  {key:'anti_hbe', name:'Anti-HBe', type:'select', options:['Non-reactive','Reactive']},
+  {key:'anti_hbc', name:'Anti-HBc (Total)', type:'select', options:['Non-reactive','Reactive']},
+];
+
+// ── HISTOPATHOLOGY (Biopsy / Surgical Pathology) ──
+const HISTOPATH_PARAMS = [
+  {key:'specimen_site',   name:'Specimen / Site',              unit:'', type:'text',   section:'Request'},
+  {key:'laterality',      name:'Laterality',                   unit:'', type:'select', section:'Request',
+   options:['Right','Left','Bilateral','Midline','Not Applicable']},
+  {key:'clinical_info',   name:'Clinical History',             unit:'', type:'text',   section:'Request'},
+  {key:'nature_specimen', name:'Nature of Specimen',           unit:'', type:'select', section:'Request',
+   options:['Incision Biopsy','Excision Biopsy','Core Needle Biopsy',
+            'Wide Local Excision','Radical Resection','Endoscopic Biopsy',
+            'Curettage','Amputation Specimen','Polypectomy','Other']},
+  {key:'fixative',        name:'Fixative Used',                unit:'', type:'select', section:'Request',
+   options:["10% Formalin","Formal Saline","Bouin's Solution","Fresh (Unfixed)","Other"]},
+  {key:'macro_desc',      name:'Macroscopic Description',      unit:'', type:'textarea', section:'Report'},
+  {key:'micro_desc',      name:'Microscopic Description',      unit:'', type:'textarea', section:'Report'},
+  {key:'special_stains',  name:'Special Stains',               unit:'', type:'text',   section:'Report'},
+  {key:'diagnosis',       name:'Histopathological Diagnosis',  unit:'', type:'textarea', section:'Report'},
+  {key:'grade',           name:'Tumour Grade (if applicable)', unit:'', type:'select', section:'Report',
+   options:['Not Applicable','Grade I — Well Differentiated','Grade II — Moderately Differentiated',
+            'Grade III — Poorly Differentiated','Grade IV — Undifferentiated']},
+  {key:'margins',         name:'Surgical Margins — Status',    unit:'', type:'select', section:'Report',
+   options:['Not Applicable','Clear (>1mm)','Close (<1mm)','Involved','Cannot Assess']},
+  {key:'margin_distance', name:'Closest Margin (specify site & distance)', unit:'', type:'text', section:'Report'},
+  {key:'lymph_nodes',     name:'Lymph Node Status',            unit:'', type:'text',   section:'Report'},
+  {key:'staging',         name:'Pathologic Staging (pTNM, if applicable)', unit:'', type:'text', section:'Report'},
+  {key:'comments',        name:'Comments / Recommendation',    unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',     name:'Reporting Pathologist',        unit:'', type:'text',   section:'Report'}
+];
+
+// ── FNAC — Fine Needle Aspiration Cytology ──
+const FNAC_PARAMS = [
+  {key:'site',          name:'Site of Aspiration',         unit:'', type:'text',   section:'Request'},
+  {key:'laterality',    name:'Laterality',                 unit:'', type:'select', section:'Request',
+   options:['Right','Left','Bilateral','Midline','Not Applicable']},
+  {key:'lesion_size',   name:'Lesion Size (cm)',            unit:'cm', type:'number', low:0, high:30, section:'Request'},
+  {key:'clinical_info', name:'Clinical Information',        unit:'', type:'text',   section:'Request'},
+  {key:'adequacy',      name:'Adequacy of Sample',         unit:'', type:'select', section:'Report',
+   options:['Adequate for Diagnosis','Inadequate — Scanty Cellularity',
+            'Inadequate — Haemorrhagic','Repeat Aspiration Advised']},
+  {key:'stain',         name:'Stain Used',                 unit:'', type:'select', section:'Report',
+   options:['Papanicolaou (Pap)','Diff-Quik (DQ)','Both Pap and DQ','H&E','MGG']},
+  {key:'cytology',      name:'Cytological Diagnosis',      unit:'', type:'select', section:'Report',
+   options:['Benign / Reactive','Inflammatory / Infective — See Comments',
+            'Colloid Goitre (Thyroid)','Follicular Neoplasm (Thyroid)',
+            'Papillary Thyroid Carcinoma','Reactive Lymphadenopathy',
+            'Granulomatous Lymphadenitis (? TB)','Suspicious for Lymphoma',
+            'Fibrocystic Disease (Breast)','Fibroadenoma (Breast)',
+            'Suspicious for Malignancy','Malignant — See Microscopic Description',
+            'Abscess / Necrotic Material','No Diagnostic Material — Repeat']},
+  {key:'micro_desc',    name:'Microscopic Description',    unit:'', type:'textarea', section:'Report'},
+  {key:'comments',      name:'Comments / Recommendation',  unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
+];
+
+// ── PAP Smear — Bethesda 2014 system ──
+const PAP_SMEAR_PARAMS = [
+  {key:'specimen_type', name:'Specimen Type',              unit:'', type:'select', section:'Request',
+   options:['Conventional Pap Smear','Liquid-Based Cytology (LBC)',
+            'Endocervical Brush','Cervical Scrape + ECS']},
+  {key:'lmp',           name:'LMP (Last Menstrual Period)',unit:'', type:'text',   section:'Request'},
+  {key:'clinical_info', name:'Clinical Information',       unit:'', type:'text',   section:'Request'},
+  {key:'adequacy',      name:'Specimen Adequacy',          unit:'', type:'select', section:'Report',
+   options:['Satisfactory for Evaluation','Unsatisfactory — Insufficient Squamous Cells',
+            'Unsatisfactory — Obscuring Blood','Unsatisfactory — Obscuring Inflammation',
+            'Unsatisfactory — Broken / Unfixed Slide']},
+  {key:'cytology',      name:'Cytological Findings (Bethesda)', unit:'', type:'select', section:'Report',
+   options:['Negative for Intraepithelial Lesion or Malignancy (NILM)',
+            'Atypical cells of unknown significance (ASC-US)',
+            'Atypical squamous cells cannot exclude HSIL (ASC-H)',
+            'Low-grade squamous intraepithelial lesion LSIL (CIN I)',
+            'High-grade squamous intraepithelial lesion HSIL (CIN II / CIN III)',
+            'Squamous Cell Carcinoma','Atypical Glandular Cells (AGC)',
+            'Adenocarcinoma In Situ (AIS)','Endocervical Adenocarcinoma',
+            'Endometrial Cells (patient ≥45 yrs)']},
+  {key:'organisms',     name:'Organisms / Infection',      unit:'', type:'select', section:'Report',
+   options:['None Identified','Trichomonas vaginalis','Bacterial Vaginosis',
+            'Candida spp.','HSV Cytopathic Effect','Actinomyces spp.']},
+  {key:'hormonal',      name:'Hormonal Assessment',        unit:'', type:'select', section:'Report',
+   options:['Compatible with Age and History','Atrophic Pattern',
+            'Estrogenic Effect','Incompatible — See Comments']},
+  {key:'recommendation',name:'Recommendation',             unit:'', type:'select', section:'Report',
+   options:['Routine Repeat in 3 Years','Repeat in 6 Months',
+            'Colposcopy Recommended','Biopsy Recommended',
+            'HPV Testing Recommended','Refer to Gynaecologist — Urgent']},
+  {key:'comments',      name:'Cytologist Comments',        unit:'', type:'textarea', section:'Report'},
+  {key:'pathologist',   name:'Reporting Pathologist',      unit:'', type:'text',   section:'Report'}
+];
+
+const URINE_MICRO_PARAMS = [
+  {key:'colour',      name:'Colour',             unit:'', section:'Physical',  type:'select', options:['Yellow','Straw','Clear','Dark Yellow','Red','Brown']},
+  {key:'appearance',  name:'Appearance',          unit:'', section:'Physical',  type:'select', options:['Clear','Turbid','Cloudy']},
+  {key:'ph',          name:'pH',                  unit:'', section:'Chemical',  type:'number', low:5.0, high:8.0},
+  {key:'sg',          name:'Specific Gravity',    unit:'', section:'Chemical',  type:'number', low:1.005, high:1.030},
+  {key:'protein',     name:'Protein',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'glucose',     name:'Glucose',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'ketones',     name:'Ketones',             unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'blood',       name:'Blood',               unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'bilirubin',   name:'Bilirubin',           unit:'', section:'Chemical',  type:'select', options:['Negative','+','++']},
+  {key:'urobilinogen',name:'Urobilinogen',        unit:'mg/dL', section:'Chemical', type:'number', low:0.1, high:1.0},
+  {key:'nitrite',     name:'Nitrite',             unit:'', section:'Chemical',  type:'select', options:['Negative','Positive']},
+  {key:'leuko',       name:'Leukocyte Esterase',  unit:'', section:'Chemical',  type:'select', options:['Negative','Trace','+','++','+++']},
+  {key:'wbc_micro',   name:'WBC (Pus Cells)',     unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-5','6-10','11-20','21-50','>50']},
+  {key:'rbc_micro',   name:'RBC',                 unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-2','3-5','6-10','>10']},
+  {key:'epithelial',  name:'Epithelial Cells',    unit:'/HPF', section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'casts',       name:'Casts',               unit:'/LPF', section:'Microscopy', type:'select', options:['None','Hyaline','Granular','Waxy','RBC','WBC']},
+  {key:'crystals',    name:'Crystals',            unit:'',     section:'Microscopy', type:'select', options:['None','Amorphous urates','Amorphous phosphates','Calcium oxalate','Uric acid','Cystine']},
+  {key:'bacteria',    name:'Bacteria',            unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'yeast',       name:'Yeast Cells',         unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'parasite',    name:'Parasite / Ova',      unit:'',     section:'Microscopy', type:'select', options:['None','Trichomonas vaginalis','Schistosoma haematobium','Others']},
+  {key:'mucus',       name:'Mucus Threads',       unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'micro_comment',name:'Microscopy Comment', unit:'',     section:'Microscopy', type:'text'}
+];
+const STOOL_MICRO_PARAMS = [
+  {key:'consistency',  name:'Consistency',          unit:'', section:'Macroscopy', type:'select', options:['Formed','Soft','Loose','Watery','Mucoid','Bloody']},
+  {key:'colour_stool', name:'Colour',               unit:'', section:'Macroscopy', type:'select', options:['Brown','Yellow','Green','Black','Pale','Red']},
+  {key:'blood_stool',  name:'Blood (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['None','Present']},
+  {key:'mucus_stool',  name:'Mucus (Macroscopic)',  unit:'', section:'Macroscopy', type:'select', options:['None','Present']},
+  {key:'wbc_stool',    name:'WBC (Pus Cells)',      unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-5','6-10','11-20','>20']},
+  {key:'rbc_stool',    name:'RBC',                  unit:'/HPF', section:'Microscopy', type:'select', options:['None','1-2','3-5','6-10','>10']},
+  {key:'fat_globules', name:'Fat Globules',         unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'ova_parasite', name:'Ova / Parasites',      unit:'',     section:'Microscopy', type:'select', options:['None','Entamoeba histolytica','Giardia lamblia','Ascaris lumbricoides','Hookworm','Taenia spp.','Schistosoma mansoni','Other']},
+  {key:'yeast_stool',  name:'Yeast Cells',          unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'epithelial_stool',name:'Epithelial Cells',  unit:'',     section:'Microscopy', type:'select', options:['None','Few','Moderate','Many']},
+  {key:'occult_blood', name:'Occult Blood (Chemical)',unit:'',   section:'Microscopy', type:'select', options:['Negative','Positive']},
+  {key:'micro_comment_stool',name:'Microscopy Comment',unit:'', section:'Microscopy', type:'text'}
+];
+
+function getFlag(val, param) {
+  let n = parseFloat(val);
+  if (isNaN(n)) return '';
+  if (param.high !== null && n > param.high) return '↑';
+  if (param.low  !== null && n < param.low)  return '↓';
+  return '';
+}
+
+function resolveTestType(testName, resultJson) {
+  const fromDef = testDefinitions.testTypes[testName] || '';
+  // Return simple types immediately — they don't need name/key sniffing
+  if (fromDef === 'simple_numeric' || fromDef === 'simple_select') return fromDef;
+  // Only trust fromDef if it's a known complex type; otherwise fall through to name/key sniffing
+  const KNOWN_COMPLEX = ['complex_cbc','complex_eucr','complex_calcium','complex_phosphate','complex_uric_acid',
+    'complex_lft','complex_total_protein','complex_psa','complex_diabetes','complex_rf','complex_hormone',
+    'complex_marry','complex_antenatal','complex_blood','complex_rft','complex_thyroid','complex_lipid',
+    'complex_coag','complex_urinalysis','complex_iron','complex_bone','complex_cardiac','complex_ogtt',
+    'complex_csf','complex_abg','complex_semen','complex_culture','complex_stool_cs','complex_urine_mcs',
+    'complex_stool_mcs','complex_malaria','complex_widal','complex_serology','complex_tb_genexpert',
+    'complex_pcv','complex_hb','complex_esr','complex_rbs','complex_fbs',
+    'complex_histopath','complex_fnac','complex_pap_smear'];
+  if (fromDef && KNOWN_COMPLEX.includes(fromDef)) return fromDef;
+  const n = (testName || '').toLowerCase();
+  // Hard-coded name patterns (always reliable)
+  if (/\bblood\s*transfusion\b|grouping.*cross|crossmatch|cross\s*match/.test(n)) return 'complex_blood';
+  if (/semen\s*analysis|seminal/.test(n)) return 'complex_semen';
+  if (/\bfull\s*blood\s*count\b|complete\s*blood\s*count|\bfbc\b|\bcbc\b/.test(n)) return 'complex_cbc';
+  if (/\burinalysis\b|\burine\s*analysis\b/.test(n)) return 'complex_urinalysis';
+  if (/\bantenatal\b|\bantinatal\b/.test(n)) return 'complex_antenatal';
+  if (/\bpremarital\b|\bpre-marital\b|\bmarry\b/.test(n)) return 'complex_marry';
+  if (/\bhormone\b|\bhormonal\b/.test(n)) return 'complex_hormone';
+  if (/\bthyroid\b/.test(n)) return 'complex_thyroid';
+  if (/\blipid\b/.test(n)) return 'complex_lipid';
+  if (/\bliver\s*function\b|\blft\b/.test(n)) return 'complex_lft';
+  if (/\brenal\s*function\b|\brft\b/.test(n)) return 'complex_rft';
+  if (/\be\/u\/cr\b|\beucr\b|\belectrolyte\b/.test(n)) return 'complex_eucr';
+  if (/\btotal\s*protein\b/.test(n)) return 'complex_total_protein';
+  if (/\buric\s*acid\b/.test(n)) return 'complex_uric_acid';
+  if (/\binorganic\s*phosphate\b|\bphosphate\b/.test(n)) return 'complex_phosphate';
+  if (/\bcalcium\b/.test(n)) return 'complex_calcium';
+  if (/\bcoagulation\b|\bcoag\b/.test(n)) return 'complex_coag';
+  if (/\bdiabetes\b/.test(n)) return 'complex_diabetes';
+  if (/\bcardiac\b/.test(n)) return 'complex_cardiac';
+  if (/\bone\s*profile\b|\bbone\b/.test(n)) return 'complex_bone';
+  if (/\biron\s*studies\b|\biron\s*profile\b/.test(n)) return 'complex_iron';
+  if (/\bogtt\b/.test(n)) return 'complex_ogtt';
+  if (/\bcsf\b/.test(n)) return 'complex_csf';
+  if (/\barterial\s*blood\s*gas\b|\babg\b/.test(n)) return 'complex_abg';
+  if (/\burine\s*mcs\b|\bgeneral\s*mcs\b/.test(n)) return 'complex_urine_mcs';
+  if (/\bstool\s*mcs\b/.test(n)) return 'complex_stool_mcs';
+  if (/\bmalaria\s*microscopy\b/.test(n)) return 'complex_malaria';
+  if (/\bwidal\b/.test(n)) return 'complex_widal';
+  if (/\bserology\b|\bhbv\s*profile\b|\bhepatitis\b/.test(n)) return 'complex_serology';
+  if (/\bculture\b/.test(n)) return 'complex_culture';
+  if (/\btb\s*genexpert\b|\bgenexpert\b/.test(n)) return 'complex_tb_genexpert';
+  if (/histopath|biopsy|histology|surgical\s*path|tissue/.test(n)) return 'complex_histopath';
+  if (/fnac|fine\s*needle|aspiration\s*cytol/.test(n)) return 'complex_fnac';
+  if (/pap\s*smear|cervical\s*cytol|papanicolaou/.test(n)) return 'complex_pap_smear';
+
+  // Last resort: sniff JSON keys to identify the param set
+  if (resultJson && typeof resultJson === 'object') {
+    const keys = Object.keys(resultJson);
+    if (keys.some(k => ['transfusion_reason','bp_whole_blood','donor_blood_group','xm_ns_result'].includes(k))) return 'complex_blood';
+    if (keys.some(k => ['time_produced','sperm_count','motility_a','morph_normal'].includes(k))) return 'complex_semen';
+    if (keys.some(k => ['hb','pcv','twbc','rbc','neut','lymph'].includes(k))) return 'complex_cbc';
+    if (keys.some(k => ['colour','leuko','urobilinogen'].includes(k))) return 'complex_urinalysis';
+    if (keys.some(k => ['lh','fsh','testosterone','prolactin'].includes(k))) return 'complex_hormone';
+    if (keys.some(k => ['tsh','t3','t4'].includes(k))) return 'complex_thyroid';
+    if (keys.some(k => ['chol','hdl','ldl','tg','vldl'].includes(k))) return 'complex_lipid';
+    if (keys.some(k => ['tbil','dbil','alp','ast','alt'].includes(k))) return 'complex_lft';
+    if (keys.some(k => ['sodium','potassium','bicarb','urea','creat'].includes(k))) return 'complex_eucr';
+    if (keys.some(k => ['prot','alb','glob'].includes(k))) return 'complex_total_protein';
+    if (keys.some(k => ['uric_female','uric_male'].includes(k))) return 'complex_uric_acid';
+    if (keys.some(k => ['phosphate_adult','phosphate_children'].includes(k))) return 'complex_phosphate';
+    if (keys.some(k => ['calcium'].includes(k)) && keys.length === 1) return 'complex_calcium';
+    if (keys.some(k => ['fbs','rbs','hpp2','ogtt','hba1c'].includes(k))) return 'complex_diabetes';
+    if (keys.some(k => ['pt','inr','aptt','fibrinogen'].includes(k))) return 'complex_coag';
+    if (keys.some(k => ['ckmb','troponinI','troponinT'].includes(k))) return 'complex_cardiac';
+    if (keys.some(k => ['alkaline_phosphatase','vitaminD'].includes(k))) return 'complex_bone';
+    if (keys.some(k => ['iron','tibc','ferritin'].includes(k))) return 'complex_iron';
+    if (keys.some(k => ['fasting','one_hour','two_hour'].includes(k))) return 'complex_ogtt';
+    if (keys.some(k => ['ph','pco2','po2','base_excess'].includes(k))) return 'complex_abg';
+    if (keys.some(k => ['hbsag','hcv','hb_genotype','blood_group','pcv'].includes(k)) &&
+        keys.some(k => ['hb_genotype'].includes(k))) return 'complex_antenatal';
+    if (keys.some(k => ['hbsag','hcv','hb_genotype','rvs'].includes(k)) &&
+        !keys.some(k => k === 'pcv')) return 'complex_marry';
+    if (keys.some(k => ['hbsag','anti_hbs','hbeag'].includes(k))) return 'complex_serology';
+    if (keys.some(k => ['organism','sensitivities'].includes(k))) return 'complex_culture';
+    if (keys.some(k => ['mtb_detected','rif_resistance'].includes(k))) return 'complex_tb_genexpert';
+    if (keys.some(k => ['species','stage','density'].includes(k))) return 'complex_malaria';
+    if (keys.some(k => ['o','h','ao','ah'].includes(k))) return 'complex_widal';
+    if (keys.some(k => ['macro_desc','micro_desc','diagnosis','nature_specimen'].includes(k))) return 'complex_histopath';
+    if (keys.some(k => ['site','laterality','cytology','adequacy'].includes(k)) && keys.some(k => ['stain','lesion_size'].includes(k))) return 'complex_fnac';
+    if (keys.some(k => ['specimen_type','lmp','organisms','recommendation'].includes(k))) return 'complex_pap_smear';
+  }
+  return '';
+}
+
+function buildParamTable(testName, data, testType, age, gender) {
+  // Dynamic single‑parameter tests
+  const dynamicTests = ['complex_pcv', 'complex_hb', 'complex_esr', 'complex_rbs', 'complex_fbs'];
+  if (dynamicTests.includes(testType)) {
+    let key = testType.split('_')[1];
+    let val = data[key];
+    if (val === undefined) val = '';
+    let range = getReferenceRange(testName, age, gender);
+    if (!range) range = { low: 0, high: 100, unit: '' };
+    let flag = '';
+    let num = parseFloat(val);
+    if (!isNaN(num)) {
+      if (num > range.high) flag = '↑';
+      else if (num < range.low) flag = '↓';
+    }
+    let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
+    return `
+      <table class="param-table">
+        <thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead>
+        <tbody>
+           <tr><td style="font-weight:500;">${esc(testName)}</td>
+              <td class="${cls}">${val} ${flag}</td>
+              <td>${esc(range.unit)}</td>
+              <td>${range.low}–${range.high}</td>
+           </tr>
+        </tbody>
+      </table>`;
+  }
+
+  // Culture & Sensitivity (general)
+  if (testType === 'complex_culture' || testType === 'complex_stool_cs') {
+    let organism = data.organism || 'Not specified';
+    let sensRows = (data.sensitivities || []).map(s => {
+      const label  = s.result === 'S' ? 'Sensitive' : s.result === 'R' ? 'Resistant' : s.result === 'I' ? 'Intermediate' : s.result || '—';
+      const colour = s.result === 'S' ? '#15803d'   : s.result === 'R' ? '#b91c1c'   : s.result === 'I' ? '#92400e'      : '#374151';
+      const bg     = s.result === 'S' ? '#dcfce7'   : s.result === 'R' ? '#fee2e2'   : s.result === 'I' ? '#fef3c7'      : '#f3f4f6';
+      return `<tr>
+         <td>${esc(s.antibiotic)}</td>
+        <td style="font-weight:700; color:${colour};">${esc(s.result)}</td>
+        <td><span style="display:inline-block; padding:2px 10px; border-radius:20px; background:${bg}; color:${colour}; font-size:0.78rem; font-weight:600;">${label}</span></td>
+        <td></td>
+       </tr>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:12px;">
+        <strong>${esc(testName)}</strong>
+        <table class="param-table">
+          <thead><tr><th>Organism</th><th colspan="3"><em>${esc(organism)}</em></th></tr></thead>
+          <tbody>
+            ${sensRows
+              ? `<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>${sensRows}`
+              : `<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  // Urine MCS or Stool MCS
+  if (testType === 'complex_urine_mcs' || testType === 'complex_stool_mcs') {
+    const isMCS = testType === 'complex_urine_mcs';
+    const MICRO_PARAMS = isMCS ? URINE_MICRO_PARAMS : STOOL_MICRO_PARAMS;
+    const sections = isMCS ? ['Physical','Chemical','Microscopy'] : ['Macroscopy','Microscopy'];
+    let html = `<div style="margin-bottom:4px;"><strong>${esc(testName)}</strong></div>`;
+    sections.forEach(sec => {
+      const secParams = MICRO_PARAMS.filter(p => p.section === sec);
+      const secRows = secParams.map(p => {
+        let v = data[p.key];
+        if (v === undefined || v === '' || v === 'None' || v === 'None seen' || v === 'Absent' || v === 'Negative') return '';
+        let flag = ''; let cls = '';
+        if (p.type === 'number' && p.low !== undefined) {
+          let n = parseFloat(v);
+          if (!isNaN(n)) { if (n > p.high) { flag = '↑'; cls = 'flag-high'; } else if (n < p.low) { flag = '↓'; cls = 'flag-low'; } }
+        }
+        return `<tr><td>${esc(p.name)}</td><td class="${cls}">${esc(v)} ${flag}</td><td>${esc(p.unit||'')}</td><td>—</td></tr>`;
+      }).filter(Boolean).join('');
+      if (!secRows) return;
+      html += `<table class="param-table">
+        <thead><tr><th colspan="4" style="background:#dbeafe; text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:1px;">${sec}</th></tr>
+        <tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Ref</th></tr></thead>
+        <tbody>${secRows}</tbody>
+      </table>`;
+    });
+    // C&S section
+    const sensRows = (data.sensitivities || []).map(s => {
+      const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
+      const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
+      const bg     = s.result==='S'?'#dcfce7':s.result==='R'?'#fee2e2':s.result==='I'?'#fef3c7':'#f3f4f6';
+      return `<tr><td>${esc(s.antibiotic)}</td><td style="font-weight:700;color:${colour};">${esc(s.result)}</td>
+        <td><span style="display:inline-block;padding:2px 10px;border-radius:20px;background:${bg};color:${colour};font-size:0.78rem;font-weight:600;">${label}</span></td><td></td></tr>`;
+    }).join('');
+    html += `<table class="param-table">
+      <thead>
+        <tr><th colspan="4" style="background:#dbeafe; text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:1px;">Culture &amp; Sensitivity</th></tr>
+        <tr><th>Organism</th><th colspan="3" style="font-style:italic; font-weight:400;">${esc(data.organism || 'No growth / Not specified')}</th></tr>
+        ${sensRows ? '<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>' : ''}
+      </thead>
+      <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>'}</tbody>
+    </table>`;
+    return html;
+  }
+
+  // Widal
+  if (testType === 'complex_widal') {
+    const rows = [
+      { organism: 'Salmonella Typhi',       o: data.o  ?? '—', h: data.h  ?? '—' },
+      { organism: 'Salmonella Paratyphi A', o: data.ao ?? '—', h: data.ah ?? '—' },
+      { organism: 'Salmonella Paratyphi B', o: data.bo ?? '—', h: data.bh ?? '—' },
+      { organism: 'Salmonella Paratyphi C', o: data.co ?? '—', h: data.ch ?? '—' }
+    ];
+    let tableRows = '';
+    for (let r of rows) {
+      const oFlag    = (parseInt(r.o) >= 160) ? ' ↑' : '';
+      const hFlag    = (parseInt(r.h) >= 160) ? ' ↑' : '';
+      const oDisplay = r.o !== '—' ? `1:${r.o}${oFlag}` : '—';
+      const hDisplay = r.h !== '—' ? `1:${r.h}${hFlag}` : '—';
+      const oColour  = oFlag ? '#b91c1c' : 'inherit';
+      const hColour  = hFlag ? '#b91c1c' : 'inherit';
+      tableRows += `<tr>
+        <td style="font-style:italic; font-weight:500; width:45%;">${r.organism}</td>
+        <td style="text-align:center; width:27.5%; font-weight:${oFlag ? '700' : '400'}; color:${oColour};">${oDisplay}</td>
+        <td style="text-align:center; width:27.5%; font-weight:${hFlag ? '700' : '400'}; color:${hColour};">${hDisplay}</td>
+       </tr>`;
+    }
+    return `
+      <table class="param-table" style="width:100%; table-layout:fixed; border-collapse:collapse;">
+        <colgroup><col style="width:45%;"><col style="width:27.5%;"><col style="width:27.5%;"></colgroup>
+        <thead><tr><th style="text-align:left; padding:8px 10px;">Organism</th><th style="text-align:center; padding:8px 10px;">O Antigen (TO)</th><th style="text-align:center; padding:8px 10px;">H Antigen (TH)</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>`;
+  }
+
+  // Malaria
+  if (testType === 'complex_malaria') {
+    let rows = '';
+    if (data.species) rows += `<tr><td>Species</td><td colspan="3">${esc(data.species)}</td></tr>`;
+    if (data.stage) rows += `<tr><td>Stage</td><td colspan="3">${esc(data.stage)}</td></tr>`;
+    if (data.density !== undefined) rows += `<tr><td>Parasite Density</td><td colspan="3">${esc(data.density)} parasites/µL</td></tr>`;
+    return `<table class="param-table"><tbody>${rows}</tbody></table>`;
+  }
+
+  // TB GeneXpert
+  if (testType === 'complex_tb_genexpert') {
+    let rows = '';
+    if (data.mtb_detected) rows += `<tr><td>MTB Detected</td><td colspan="3">${esc(data.mtb_detected)}</td></tr>`;
+    if (data.rif_resistance) rows += `<tr><td>Rifampicin Resistance</td><td colspan="3">${esc(data.rif_resistance)}</td></tr>`;
+    for (let probe of ['probeA_ct','probeB_ct','probeC_ct','probeD_ct','probeE_ct']) {
+      if (data[probe] !== undefined) rows += `<tr><td>${probe.replace('_ct',' Probe Ct')}</td><td colspan="3">${esc(data[probe])}</td></tr>`;
+    }
+    return `<table class="param-table"><tbody>${rows}</tbody></table>`;
+  }
+
+  // Serology
+  if (testType === 'complex_serology') {
+    let rows = '';
+    for (let p of SEROLOGY_PARAMS) {
+      if (data[p.key] !== undefined) rows += `<tr><td>${esc(p.name)}</td><td colspan="3">${esc(data[p.key])}</td></tr>`;
+    }
+    return `<table class="param-table"><tbody>${rows}</tbody></table>`;
+  }
+
+  // Histopathology
+  if (testType === 'complex_histopath') {
+    const sections = ['Request', 'Report'];
+    let html = '';
+    sections.forEach(sec => {
+      const secParams = HISTOPATH_PARAMS.filter(p => p.section === sec);
+      let secRows = '';
+      secParams.forEach(p => {
+        let v = data[p.key];
+        if (v === undefined || v === null || v === '') return;
+        secRows += `<tr><td style="font-weight:500;width:38%;">${esc(p.name)}</td><td colspan="3" style="white-space:pre-wrap;">${esc(v)}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<table class="param-table">
+        <thead><tr><th colspan="4" style="background:#f3e8ff;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#6b21a8;">${sec === 'Request' ? 'Request Details' : 'Pathology Report'}</th></tr></thead>
+        <tbody>${secRows}</tbody>
+      </table>`;
+    });
+    return html || `<table class="param-table"><tbody><tr><td colspan="4" style="color:#6b7280;">No histopathology data recorded.</td></tr></tbody></table>`;
+  }
+
+  // FNAC
+  if (testType === 'complex_fnac') {
+    const sections = ['Request', 'Report'];
+    let html = '';
+    sections.forEach(sec => {
+      const secParams = FNAC_PARAMS.filter(p => p.section === sec);
+      let secRows = '';
+      secParams.forEach(p => {
+        let v = data[p.key];
+        if (v === undefined || v === null || v === '') return;
+        let flag = ''; let cls = '';
+        if (p.type === 'number' && p.low !== undefined) {
+          let n = parseFloat(v);
+          if (!isNaN(n)) { if (n > p.high) { flag = '↑'; cls = 'flag-high'; } else if (n < p.low) { flag = '↓'; cls = 'flag-low'; } }
+        }
+        secRows += `<tr><td style="font-weight:500;width:38%;">${esc(p.name)}</td><td class="${cls}" colspan="3" style="white-space:pre-wrap;">${esc(String(v))} ${flag}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<table class="param-table">
+        <thead><tr><th colspan="4" style="background:#fef9c3;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#854d0e;">${sec === 'Request' ? 'FNAC Request Details' : 'Cytology Report'}</th></tr></thead>
+        <tbody>${secRows}</tbody>
+      </table>`;
+    });
+    return html || `<table class="param-table"><tbody><tr><td colspan="4" style="color:#6b7280;">No FNAC data recorded.</td></tr></tbody></table>`;
+  }
+
+  // PAP Smear
+  if (testType === 'complex_pap_smear') {
+    const sections = ['Request', 'Report'];
+    let html = '';
+    sections.forEach(sec => {
+      const secParams = PAP_SMEAR_PARAMS.filter(p => p.section === sec);
+      let secRows = '';
+      secParams.forEach(p => {
+        let v = data[p.key];
+        if (v === undefined || v === null || v === '') return;
+        secRows += `<tr><td style="font-weight:500;width:38%;">${esc(p.name)}</td><td colspan="3" style="white-space:pre-wrap;">${esc(String(v))}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<table class="param-table">
+        <thead><tr><th colspan="4" style="background:#fce7f3;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#9d174d;">${sec === 'Request' ? 'Request Details' : 'PAP Smear Report (Bethesda)'}</th></tr></thead>
+        <tbody>${secRows}</tbody>
+      </table>`;
+    });
+    return html || `<table class="param-table"><tbody><tr><td colspan="4" style="color:#6b7280;">No PAP smear data recorded.</td></tr></tbody></table>`;
+  }
+
+  // Semen Analysis (with Culture & Sensitivity on separate visual section)
+  if (testType === 'complex_semen') {
+    // Section definitions matching the physical form
+    const SEMEN_HTML_SECTIONS = [
+      { label: 'Semen Collection', keys: ['time_produced','time_received','time_analysed','abstinence'] },
+      { label: 'Macroscopy',       keys: ['appearance','volume','viscosity','consistency','liquefaction'] },
+      { label: 'Microscopy',       keys: ['sperm_count','viability'] },
+      { label: 'Motility',         keys: ['motility_a','motility_b','motility_c','motility_d'] },
+      { label: 'Morphology — Head', keys: ['morph_microcephalic','morph_macrocephalic','morph_pinhead','morph_pyriform','morph_double_head','morph_acrosomal'] },
+      { label: 'Morphology — Tail', keys: ['morph_tailless','morph_short_tail','morph_long_tail','morph_double_tail','morph_coiled_tail'] },
+      { label: 'Morphology — Others', keys: ['morph_cytoplasmic_droplets','morph_midpiece_abnormality','morph_neck_defect','morph_normal'] },
+      { label: 'Wet Preparation',  keys: ['wp_epithelial_cells','wp_pus_cells','wp_rbc','wp_parasite','wp_other'] },
+      { label: "Gram's Stain",     keys: ['gram_stain'] },
+      { label: 'Comments',         keys: ['comments'] }
+    ];
+    const paramMap = {};
+    SEMEN_PARAMS.forEach(p => { paramMap[p.key] = p; });
+
+    let html = `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>`;
+
+    SEMEN_HTML_SECTIONS.forEach(sec => {
+      let secRows = '';
+      sec.keys.forEach(k => {
+        const p = paramMap[k];
+        if (!p) return;
+        let val = data[p.key];
+        if (val === undefined || val === '') return;
+        let displayVal = val;
+        let flag = '';
+        let unit = p.unit || '';
+        let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : (p.low != null ? `\u2265${p.low}` : p.high != null ? `\u2264${p.high}` : '—');
+        if (p.type === 'number' || !p.type) {
+          let n = parseFloat(val);
+          if (!isNaN(n)) {
+            if (p.high != null && n > p.high) flag = '↑';
+            if (p.low  != null && n < p.low)  flag = '↓';
+            displayVal = flag ? `${n} ${flag}` : String(n);
+          }
+        }
+        let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
+        secRows += `<tr><td>${esc(p.name)}</td><td class="${cls}">${esc(displayVal)}</td><td>${esc(unit)}</td><td>${esc(ref)}</td></tr>`;
+      });
+      if (!secRows) return;
+      html += `<tr><td colspan="4" style="background:#e8f4ed;font-weight:700;font-size:0.72rem;text-transform:uppercase;letter-spacing:.5px;padding:5px 10px;color:#1a5c38;">${esc(sec.label)}</td></tr>`;
+      html += secRows;
+    });
+
+    html += `</tbody></table>`;
+
+    // C&S section — visually separated, styled as a distinct block
+    const sensRows = (data.sensitivities || []).map(s => {
+      const label  = s.result==='S'?'Sensitive':s.result==='R'?'Resistant':s.result==='I'?'Intermediate':s.result||'—';
+      const colour = s.result==='S'?'#15803d':s.result==='R'?'#b91c1c':s.result==='I'?'#92400e':'#374151';
+      const bg     = s.result==='S'?'#dcfce7':s.result==='R'?'#fee2e2':s.result==='I'?'#fef3c7':'#f3f4f6';
+      return `<tr>
+        <td>${esc(s.antibiotic)}</td>
+        <td style="font-weight:700;color:${colour};">${esc(s.result)}</td>
+        <td><span style="display:inline-block;padding:2px 10px;border-radius:20px;background:${bg};color:${colour};font-size:0.78rem;font-weight:600;">${label}</span></td>
+        <td></td>
+      </tr>`;
+    }).join('');
+
+    html += `
+      <div style="margin-top:18px;border-top:2px solid #1d4ed8;padding-top:10px;">
+        <div style="font-weight:700;font-size:0.85rem;text-transform:uppercase;letter-spacing:.5px;color:#1d4ed8;margin-bottom:8px;">
+          <i class="fas fa-flask"></i> Culture &amp; Sensitivity
+        </div>
+        <table class="param-table">
+          <thead>
+            <tr><th colspan="4" style="background:#dbeafe;text-align:left;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:#1e40af;">Culture &amp; Sensitivity Results</th></tr>
+            <tr><th>Organism</th><th colspan="3" style="font-style:italic;font-weight:400;">${esc(data.organism || 'No growth / Not specified')}</th></tr>
+            ${sensRows ? '<tr style="background:#f0f0f0;"><th>Antibiotic</th><th>Result</th><th>Interpretation</th><th></th></tr>' : ''}
+          </thead>
+          <tbody>${sensRows || '<tr><td colspan="4" style="color:#6b7280;">No antibiotic sensitivities recorded.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+
+    return html;
+  }
+
+  // ===== NEW: Simple Numeric (with stored reference range) =====
+  if (testType === 'simple_numeric') {
+    let val = typeof data === 'string' ? data : (data.result !== undefined ? data.result : '');
+    let range = testDefinitions.refRanges?.[testName];
+    if (range) {
+      let num = parseFloat(val);
+      let flag = !isNaN(num) ? (num > range.high ? '↑' : num < range.low ? '↓' : '') : '';
+      let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
+      return `
+        <table class="param-table">
+          <thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead>
+          <tbody>
+            <tr>
+              <td style="font-weight:500;">${esc(testName)}</td>
+              <td class="${cls}">${val} ${flag}</td>
+              <td>${esc(range.unit)}</td>
+              <td>${range.low}–${range.high}</td>
+            </tr>
+          </tbody>
+        </table>`;
+    } else {
+      return `<table class="param-table"><tbody><tr><td style="font-weight:500;">${esc(testName)}</td><td colspan="3">${val}</td></tr></tbody></table>`;
+    }
+  }
+
+  // ===== NEW: Simple Select – just show the selected value =====
+  if (testType === 'simple_select') {
+    let val = typeof data === 'string' ? data : (data.result !== undefined ? data.result : '');
+    return `<table class="param-table"><tbody><tr><td style="font-weight:500;">${esc(testName)}</td><td colspan="3">${val}</td></tr></tbody></table>`;
+  }
+
+  // Standard numeric panels
+  let params = [];
+  if (testType === 'complex_cbc') params = CBC_PARAMS;
+  else if (testType === 'complex_eucr') params = EUCR_PARAMS;
+  else if (testType === 'complex_calcium') params = CALCIUM_PARAMS;
+  else if (testType === 'complex_phosphate') params = PHOSPHATE_PARAMS;
+  else if (testType === 'complex_uric_acid') params = URIC_ACID_PARAMS;
+  else if (testType === 'complex_lft') params = LFT_PARAMS_FULL;
+  else if (testType === 'complex_total_protein') params = TOTAL_PROTEIN_PARAMS;
+  else if (testType === 'complex_psa') params = PSA_PARAMS;
+  else if (testType === 'complex_diabetes') params = DIABETES_PARAMS;
+  else if (testType === 'complex_rf') params = RF_PARAMS;
+  else if (testType === 'complex_hormone') params = HORMONE_PARAMS;
+  else if (testType === 'complex_marry') params = MARRY_PARAMS;
+  else if (testType === 'complex_antenatal') params = ANTENATAL_PARAMS;
+  else if (testType === 'complex_blood') params = BLOOD_TRANSFUSION_PARAMS;
+  else if (testType === 'complex_rft') params = RFT_PARAMS_FULL;
+  else if (testType === 'complex_thyroid') params = THYROID_PARAMS;
+  else if (testType === 'complex_lipid') params = LIPID_PARAMS;
+  else if (testType === 'complex_coag') params = COAG_PARAMS;
+  else if (testType === 'complex_urinalysis') params = URINALYSIS_MICRO_PARAMS;
+  else if (testType === 'complex_iron') params = IRON_PARAMS;
+  else if (testType === 'complex_bone') params = BONE_PARAMS;
+  else if (testType === 'complex_cardiac') params = CARDIAC_PARAMS;
+  else if (testType === 'complex_ogtt') params = OGTT_PARAMS;
+  else if (testType === 'complex_csf') params = CSF_PARAMS;
+  else if (testType === 'complex_abg') params = ABG_PARAMS;
+  else if (testType === 'complex_semen') params = SEMEN_PARAMS;
+
+  if (!params.length) {
+    let rows = Object.entries(data).map(([k, v]) => `<tr><td colspan="2">${esc(k)}: ${esc(String(v))}</td><td colspan="2"></td></tr>`).join('');
+    return `<table class="param-table"><tbody>${rows}</tbody></table>`;
+  }
+
+  let rows = '';
+  for (let p of params) {
+    let val = data[p.key];
+    if (val === undefined || val === '') continue;
+    let displayVal = val;
+    let flag = '';
+    let unit = p.unit || '';
+    let ref = (p.low != null && p.high != null) ? `${p.low}–${p.high}` : (p.low != null ? `≥${p.low}` : p.high != null ? `≤${p.high}` : (p.note || '—'));
+    if (p.type === 'number' || !p.type) {
+      let n = parseFloat(val);
+      if (!isNaN(n)) {
+        if (p.high != null && n > p.high) flag = '↑';
+        if (p.low != null && n < p.low) flag = '↓';
+        displayVal = flag ? `${n} ${flag}` : String(n);
+      }
+    }
+    let cls = flag === '↑' ? 'flag-high' : flag === '↓' ? 'flag-low' : '';
+    rows += `<tr>
+       <td>${esc(p.name)}</td>
+      <td class="${cls}">${esc(displayVal)}</td>
+      <td>${esc(unit)}</td>
+      <td>${esc(ref)}</td>
+     </tr>`;
+  }
+  return `<table class="param-table"><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+
+function groupTestsByUnitDC(tests){
+  const groups = {};
+  (tests||[]).forEach(t=>{
+    const unit = t.unit_name || testDefinitions.testUnits[t.test_name] || 'General';
+    if(!groups[unit]) groups[unit]=[];
+    groups[unit].push(t);
+  });
+  return groups;
+}
+
+// Renders one test's result exactly the way pending_portal.js's
+// buildResultCard() does — simple_select/simple_numeric shortcuts,
+// dynamic single-parameter panels (PCV/Hb/ESR/RBS/FBS), full JSON
+// panels via buildParamTable(), or a plain result row as a last resort.
+function renderTestResultBlock(t, age, gender){
+  let parsedResult = null;
+  const raw = (t.result!=null && String(t.result).trim().startsWith('{')) ? t.result
+            : (t.result_json ? (typeof t.result_json==='string'?t.result_json:JSON.stringify(t.result_json)) : null);
+  if(raw){
+    try { parsedResult = JSON.parse(raw); } catch(e){}
+  }
+  const testType = resolveTestType(t.test_name, parsedResult);
+
+  if(testType === 'simple_select'){
+    const val = t.result || '—';
+    return `<table class="param-table">
+      <thead><tr><th>Parameter</th><th colspan="3">Result</th></tr></thead>
+      <tbody><tr><td style="font-weight:500;">${esc(t.test_name)}</td><td colspan="3">${esc(val)}</td></tr></tbody>
+    </table>`;
+  }
+
+  if(testType === 'simple_numeric'){
+    const ref = testDefinitions.refRanges?.[t.test_name];
+    const val = t.result || '—';
+    let flag='', cls='';
+    if(ref){
+      const num = parseFloat(val);
+      if(!isNaN(num)){
+        if(num > ref.high){ flag='↑'; cls='flag-high'; }
+        else if(num < ref.low){ flag='↓'; cls='flag-low'; }
+      }
+    }
+    const unitStr  = ref ? esc(ref.unit) : '—';
+    const refRange = ref ? `${ref.low}–${ref.high}` : '—';
+    return `<table class="param-table">
+      <thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead>
+      <tbody><tr>
+        <td style="font-weight:500;">${esc(t.test_name)}</td>
+        <td class="${cls}">${esc(val)} ${flag}</td>
+        <td>${unitStr}</td>
+        <td>${refRange}</td>
+      </tr></tbody>
+    </table>`;
+  }
+
+  if(['complex_pcv','complex_hb','complex_esr','complex_rbs','complex_fbs'].includes(testType)){
+    return buildParamTable(t.test_name, { [testType.split('_')[1]]: t.result || '' }, testType, age, gender);
+  }
+
+  if(!parsedResult){
+    return `<table class="param-table">
+      <thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th></tr></thead>
+      <tbody><tr><td style="font-weight:500;">${esc(t.test_name)}</td><td>${esc(t.result || '—')}</td><td>—</td><td>—</td></tr></tbody>
+    </table>`;
+  }
+
+  try {
+    return buildParamTable(t.test_name, parsedResult, testType, age, gender);
+  } catch(e){
+    console.error('[DC] buildParamTable failed for', t.test_name, e);
+    return `<div><strong>${esc(t.test_name)}</strong><br>${esc(t.result)}</div>`;
+  }
+}
+
 function renderResultModal(sample){
   let modal = document.getElementById('drResultModal');
   if(!modal){
@@ -445,41 +1526,24 @@ function renderResultModal(sample){
     document.body.appendChild(modal);
   }
 
-  const rows = (sample.sample_tests||[]).map(t=>{
-    let display = t.result || '—';
-    // result_json holds structured panels (e.g. multi-parameter hormonal assays);
-    // fall back to flat key: value listing if present
-    if(t.result_json){
-      try {
-        const parsed = typeof t.result_json === 'string' ? JSON.parse(t.result_json) : t.result_json;
-        if(parsed && typeof parsed === 'object'){
-          display = Object.entries(parsed).map(([k,v])=>`${esc(k)}: ${esc(String(v))}`).join('<br>');
-        }
-      } catch(e){ /* leave as plain result text */ }
-    }
-    return `<tr>
-      <td style="padding:8px;border-bottom:1px solid var(--border);">${esc(t.test_name)}</td>
-      <td style="padding:8px;border-bottom:1px solid var(--border);color:var(--muted);">${esc(t.unit_name||'')}</td>
-      <td style="padding:8px;border-bottom:1px solid var(--border);">${display}</td>
-    </tr>`;
+  const age    = getAgeYears(selectedPatient);
+  const gender = selectedPatient?.gender;
+
+  const groups = groupTestsByUnitDC(sample.sample_tests);
+  const sections = Object.entries(groups).map(([unitName, unitTests])=>{
+    const blocks = unitTests.map(t=>renderTestResultBlock(t, age, gender)).join('');
+    return `<div class="unit-group"><div class="unit-title">${esc(unitName)}</div>${blocks}</div>`;
   }).join('');
 
   modal.innerHTML = `
-    <div style="background:var(--card,#1a1a2e);border-radius:12px;max-width:600px;width:100%;max-height:80vh;overflow-y:auto;padding:20px;">
+    <div style="background:var(--card,#1a1a2e);border-radius:12px;max-width:680px;width:100%;max-height:85vh;overflow-y:auto;padding:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
         <h3 style="margin:0;">MU-${sample.id} — Results</h3>
         <button id="drResultModalClose" style="background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;">&times;</button>
       </div>
-      <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-        <thead>
-          <tr style="text-align:left;color:var(--muted);font-size:0.75rem;text-transform:uppercase;">
-            <th style="padding:8px;">Test</th><th style="padding:8px;">Unit</th><th style="padding:8px;">Result</th>
-          </tr>
-        </thead>
-        <tbody>${rows || '<tr><td colspan="3" style="padding:8px;color:var(--muted);">No test detail available.</td></tr>'}</tbody>
-      </table>
+      ${sections || '<div style="color:var(--muted);font-size:0.84rem;">No test detail available.</div>'}
       <div style="margin-top:14px;color:var(--muted);font-size:0.78rem;">
-        For the fully formatted, printable lab report (with reference ranges), ask lab reception for a printed copy of MU-${sample.id}.
+        For the fully formatted, printable lab report (with barcode and signatures), ask lab reception for a printed copy of MU-${sample.id}.
       </div>
     </div>`;
 
@@ -487,6 +1551,7 @@ function renderResultModal(sample){
   document.getElementById('drResultModalClose').onclick = () => modal.style.display = 'none';
   modal.onclick = (e) => { if(e.target === modal) modal.style.display = 'none'; };
 }
+
 
 
 document.querySelectorAll('.ctab').forEach(btn=>{
@@ -535,10 +1600,21 @@ const TEST_GROUPS = [
 
 async function loadTestDefs(){
   if(allTestDefs.length>0) return; // already loaded
-  const { data, error } = await client.from('test_definitions')
-    .select('unit_name,test_name,price_ngn,sample_type,tube,test_type')
+  let { data, error } = await client.from('test_definitions')
+    .select('unit_name,test_name,price_ngn,sample_type,tube,test_type,ref_low,ref_high,ref_unit')
     .order('unit_name',{ascending:true})
     .order('test_name',{ascending:true});
+  // Defensive fallback: if this LIS instance's test_definitions table
+  // doesn't have the ref_low/ref_high/ref_unit columns (used only for the
+  // simple_numeric reference-range display), retry without them instead
+  // of failing test-list loading entirely.
+  if(error && /column .*(ref_low|ref_high|ref_unit)/i.test(error.message||'')){
+    console.warn('[DC] test_definitions missing ref range columns, retrying without them:', error.message);
+    ({ data, error } = await client.from('test_definitions')
+      .select('unit_name,test_name,price_ngn,sample_type,tube,test_type')
+      .order('unit_name',{ascending:true})
+      .order('test_name',{ascending:true}));
+  }
   if(error){
     console.error('loadTestDefs failed:', error);
     showError('Failed to load test list — ' + error.message);
@@ -551,6 +1627,10 @@ async function loadTestDefs(){
   }
   allTestDefs = data||[];
   testDefinitionsByUnit = {};
+  // Results-rendering engine's lookup maps (test_type, unit, stored ref
+  // range) — same shape pending_portal.js's loadTestDefinitions() builds,
+  // used by resolveTestType()/buildParamTable() in renderResultModal().
+  testDefinitions = { testTypes: {}, testUnits: {}, refRanges: {} };
   allTestDefs.forEach(t=>{
     if(!testDefinitionsByUnit[t.unit_name]) testDefinitionsByUnit[t.unit_name]=[];
     // Skip unit placeholder rows (inserted by management1.addUnit() so an
@@ -559,6 +1639,11 @@ async function loadTestDefs(){
     // filter too, but doctor-consultation should not inherit that gap.
     if(t.test_name === '__unit_placeholder__' || t.test_name.startsWith('__unit__')) return;
     testDefinitionsByUnit[t.unit_name].push(t.test_name);
+    testDefinitions.testUnits[t.test_name] = t.unit_name || 'Other';
+    if(t.test_type && t.test_type !== 'simple') testDefinitions.testTypes[t.test_name] = t.test_type;
+    if(t.test_type === 'simple_numeric' && t.ref_low != null && t.ref_high != null){
+      testDefinitions.refRanges[t.test_name] = { low: t.ref_low, high: t.ref_high, unit: t.ref_unit || '' };
+    }
   });
   TEST_GROUPS.forEach(g=>populateUnits(g.suf));
 }
@@ -942,6 +2027,7 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
   }
 
   const prescription =
+    selectedAction==='lab_request'       ? sv('c_prescription1') :
     selectedAction==='lab_and_discharge' ? sv('c_prescription2') :
     selectedAction==='admit_and_lab'     ? sv('c_prescription3') :
     selectedAction==='admit'             ? sv('c_prescription4') :
@@ -956,6 +2042,7 @@ document.getElementById('submitConsultBtn').addEventListener('click', async()=>{
   // so the free-text admission orders go into "instructions" instead of being
   // smuggled into p_prescription as before.
   const instructions =
+    selectedAction==='lab_request'       ? sv('c_instructions1') :
     selectedAction==='lab_and_discharge' ? sv('c_instructions2') :
     (selectedAction==='admit'||selectedAction==='admit_and_lab') ? admitOrders :
     sv('c_instructions');
@@ -1087,7 +2174,7 @@ function resetForm(){
    'c_admit_orders','c_refer_to','c_refer_reason','c_doctor_note','c_prescription2',
    'c_instructions2','c_lab_notes','c_lab_notes2','c_doctor_note',
    'c_ward3','c_admit_diag3','c_admit_orders3','c_lab_urgency3','c_lab_notes3',
-   'c_prescription3','c_prescription4']
+   'c_prescription3','c_prescription4','c_prescription1','c_instructions1']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   rxPickerResets.forEach(fn=>fn());
   document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('selected'));

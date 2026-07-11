@@ -142,6 +142,23 @@
   .msg.success{background:rgba(61,220,151,0.1);border:1px solid var(--green);color:var(--green);}
 
   input[type=text]{width:100%;}
+
+  /* ============================================================
+     LAB RESULTS RENDERING — same visual language pending_portal.js's
+     result cards use (param-table, unit grouping, high/low flags),
+     adapted to this app's dark theme instead of a light background.
+     ============================================================ */
+  .unit-group{margin-bottom:16px;}
+  .unit-title{font-weight:700;color:var(--purple);font-size:0.78rem;text-transform:uppercase;
+    letter-spacing:0.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+  .unit-group:first-child .unit-title{margin-top:0;}
+  table.param-table{width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:10px;color:var(--text);}
+  table.param-table th,table.param-table td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;}
+  table.param-table thead tr th{color:var(--muted);font-size:0.7rem;text-transform:uppercase;
+    letter-spacing:0.5px;font-weight:700;border-bottom:1px solid var(--border);}
+  table.param-table tbody tr:last-child td{border-bottom:none;}
+  table.param-table .flag-high{color:#ff6b6b;font-weight:700;}
+  table.param-table .flag-low{color:#38bdf8;font-weight:700;}
 </style>
 </head>
 <body>
@@ -346,9 +363,39 @@
               <div class="no-tests-notice" id="noTestsNotice">No test definitions found — contact admin.</div>
               <div class="selected-tests" id="selectedTests"></div>
             </div>
+            <div class="fgroup">
+              <label>Prescription</label>
+              <div class="rx-picker" data-suffix="1">
+                <div class="unit-test-row">
+                  <div class="fgroup"><label>Category</label><select class="rx-category"><option value="">All Categories</option></select></div>
+                  <div class="fgroup"><label>Medication Type</label><select class="rx-medtype"><option value="">All Types</option></select></div>
+                </div>
+                <div class="unit-test-row" style="position:relative;margin-top:8px;">
+                  <div class="fgroup" style="flex:2;position:relative;">
+                    <label>Drug</label>
+                    <div style="display:flex;gap:6px;">
+                      <select class="rx-drug-select" style="flex:1;"><option value="">Select drug...</option></select>
+                      <input type="text" class="rx-drug-quicksearch" placeholder="🔍" title="Quick search" style="width:70px;flex-shrink:0;">
+                    </div>
+                  </div>
+                  <div class="fgroup"><label>Dose</label><input type="text" class="rx-dose" placeholder="e.g. 500mg"></div>
+                  <div class="fgroup"><label>Frequency</label><input type="text" class="rx-frequency" placeholder="e.g. TDS"></div>
+                  <div class="fgroup"><label>Duration</label><input type="text" class="rx-duration" placeholder="e.g. 5 days"></div>
+                  <button type="button" class="btn-add-test rx-add-btn" disabled>+ Add</button>
+                </div>
+                <div class="no-tests-notice rx-empty-notice" style="display:none;">No drugs found in pharmacy inventory — contact pharmacy admin.</div>
+                <div class="selected-tests rx-selected-list"></div>
+              </div>
+              <textarea id="c_prescription1" rows="2" style="display:none;"></textarea>
+            </div>
+            <div class="fgroup">
+              <label>Instructions</label>
+              <textarea id="c_instructions1" rows="2" placeholder="How to take medication, follow-up..."></textarea>
+            </div>
           </div>
 
           <!-- Lab + discharge (reuse lab fields, add prescription) -->
+
           <div class="action-fields" id="fields_lab_and_discharge">
             <div class="fgroup">
               <label>Test Urgency</label>
