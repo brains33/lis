@@ -165,6 +165,7 @@
           <button class="tab-btn" data-tab="notes">Nursing Notes</button>
           <button class="tab-btn" data-tab="mar">MAR</button>
           <button class="tab-btn" data-tab="actions" id="actionsTabBtn" style="display:none;">⚡ Nurse Actions</button>
+          <button class="tab-btn" data-tab="discharge" id="dischargeTabBtn">🏠 Discharge</button>
         </div>
 
         <!-- Doctor Orders (read-only) -->
@@ -179,7 +180,6 @@
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
             <button class="na-action-btn" data-action="prescribe">💊<br>Prescribe</button>
             <button class="na-action-btn" data-action="lab_request">🧪<br>Order Lab Tests</button>
-            <button class="na-action-btn" data-action="discharge">🏠<br>Discharge</button>
             <button class="na-action-btn" data-action="refer">↗️<br>Refer</button>
             <button class="na-action-btn" data-action="transfer_ward">🔀<br>Transfer Ward</button>
           </div>
@@ -230,13 +230,6 @@
             <button class="btn-primary" id="na_lab_submit">Order Tests &amp; Print Slip</button>
           </div>
 
-          <!-- DISCHARGE -->
-          <div class="na-panel" id="na-discharge" style="display:none;">
-            <label class="form-label">Discharge Summary</label>
-            <textarea id="na_discharge_summary" rows="3" placeholder="Condition on discharge, follow-up instructions..." style="width:100%;margin-bottom:10px;"></textarea>
-            <button class="btn-warn" id="na_discharge_submit">Confirm Discharge</button>
-          </div>
-
           <!-- REFER -->
           <div class="na-panel" id="na-refer" style="display:none;">
             <label class="form-label">Refer To *</label>
@@ -251,6 +244,23 @@
             <label class="form-label">Destination Ward *</label>
             <select id="na_transfer_ward" style="width:100%;margin-bottom:10px;"><option value="">Select ward...</option></select>
             <button class="btn-primary" id="na_transfer_submit">Confirm Transfer</button>
+          </div>
+        </div>
+
+        <!-- DISCHARGE — always visible regardless of facility mode. In
+             Federal/OPD mode, execution is locked to the attending
+             doctor (via doctor-consultation's Ward Rounds); the nurse
+             sees a status notice instead of a live form. In General
+             Hospital mode, the nurse can discharge directly. -->
+        <div class="tab-pane" id="pane-discharge">
+          <div id="dischargeMsg" style="display:none;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:0.82rem;"></div>
+          <div id="dischargeLockedNotice" style="display:none;background:rgba(255,179,71,0.1);border:1px solid var(--warn);color:var(--warn);border-radius:9px;padding:12px;font-size:0.85rem;margin-bottom:12px;">
+            🔒 This hospital is in <b>Federal / OPD</b> mode. Discharge must be ordered and confirmed by the attending doctor from Ward Rounds in Doctor Consultation. Once discharged there, this patient will automatically drop off the ward list and their bed will be freed.
+          </div>
+          <div id="dischargeForm">
+            <label class="form-label">Discharge Summary</label>
+            <textarea id="na_discharge_summary" rows="3" placeholder="Condition on discharge, follow-up instructions..." style="width:100%;margin-bottom:10px;"></textarea>
+            <button class="btn-warn" id="na_discharge_submit">Confirm Discharge</button>
           </div>
         </div>
 

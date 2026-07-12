@@ -38,8 +38,29 @@ async function loadFacilityMode(){
   if(!error && data) facilityMode = data.facility_mode;
   const isGeneral = facilityMode === 'general';
   document.getElementById('actionsTabBtn').style.display = isGeneral ? 'inline-block' : 'none';
+  applyDischargeLockState();
 }
 loadFacilityMode();
+
+// ============================================================
+// DISCHARGE LOCK — the Discharge tab is always visible, but in
+// Federal/OPD mode only a doctor can actually discharge a ward
+// patient (via doctor-consultation's Ward Rounds). The nurse's
+// form is disabled and replaced with a status notice so the bed
+// can never be freed by a nurse decision the doctor didn't make.
+// ============================================================
+function applyDischargeLockState(){
+  const notice = document.getElementById('dischargeLockedNotice');
+  const form   = document.getElementById('dischargeForm');
+  const btn    = document.getElementById('na_discharge_submit');
+  if(!notice || !form || !btn) return;
+  const locked = facilityMode !== 'general';
+  notice.style.display = locked ? 'block' : 'none';
+  form.style.opacity = locked ? '0.45' : '1';
+  document.getElementById('na_discharge_summary').disabled = locked;
+  btn.disabled = locked;
+  btn.style.cursor = locked ? 'not-allowed' : 'pointer';
+}
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
   sessionStorage.removeItem(SESSION_KEY);
@@ -271,6 +292,9 @@ async function selectAdmission(a){
   document.getElementById('na_refer_to').value='';
   document.getElementById('na_refer_reason').value='';
   renderNaLabTags();
+  const dm = document.getElementById('dischargeMsg');
+  if(dm){ dm.style.display='none'; dm.textContent=''; }
+  applyDischargeLockState();
 
   await Promise.all([loadOrders(a.id), loadVitalsHistory(a), loadNotes(a.id), loadMar(a.id)]);
 }
@@ -497,6 +521,15 @@ function naShowMsg(msg, isError){
   el.style.color = isError ? 'var(--error)' : 'var(--green)';
   el.style.border = `1px solid ${isError ? 'var(--error)' : 'var(--green)'}`;
 }
+function dischargeShowMsg(msg, isError){
+  const el = document.getElementById('dischargeMsg');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background = isError ? 'rgba(255,107,107,0.1)' : 'rgba(61,220,151,0.1)';
+  el.style.color = isError ? 'var(--error)' : 'var(--green)';
+  el.style.border = `1px solid ${isError ? 'var(--error)' : 'var(--green)'}`;
+}
 
 // ---- Lab test picker (mirrors doctor-consultation's unit/test cascade) ----
 async function loadNaTestDefs(){
@@ -609,14 +642,33 @@ document.getElementById('na_lab_submit').addEventListener('click', async ()=>{
 });
 
 document.getElementById('na_discharge_submit').addEventListener('click', async ()=>{
+  if(facilityMode !== 'general'){
+    dischargeShowMsg('Discharge is locked in Federal/OPD mode. Ask the attending doctor to discharge this patient from Ward Rounds in Doctor Consultation.', true);
+    return;
+  }
   if(!confirm(`Discharge ${selectedAdmission.hospital_number}? This frees their bed and ends the admission.`)) return;
   const summary = document.getElementById('na_discharge_summary').value.trim();
-  await naSubmit('discharge', { p_discharge_summary: summary || null }, ()=>{
+  const btn = document.getElementById('na_discharge_submit');
+  btn.disabled = true; btn.textContent = 'Discharging...';
+  try{
+    const { data, error } = await client.rpc('ward_nurse_action', {
+      p_token: session.token, p_admission_id: selectedAdmission.id,
+      p_action_type: 'discharge', p_discharge_summary: summary || null
+    });
+    if(error) throw error;
+    const r = Array.isArray(data)?data[0]:data;
+    if(!r?.success) throw new Error(r?.message||'Discharge failed.');
+    dischargeShowMsg(r.message, false);
     document.getElementById('detailPanel').classList.remove('show');
     document.getElementById('placeholder').style.display = 'flex';
     selectedAdmission = null;
     loadAdmissions();
-  });
+    loadWardsAndBeds();
+  }catch(err){
+    dischargeShowMsg(err.message||'Discharge failed.', true);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Confirm Discharge';
+  }
 });
 
 document.getElementById('na_refer_submit').addEventListener('click', async ()=>{

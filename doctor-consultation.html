@@ -196,13 +196,49 @@
       <button id="recallBtn" type="button" style="font-size:0.78rem;padding:7px 10px;white-space:nowrap;">+ Add to Queue</button>
     </div>
     <div id="recallMsg" style="font-size:0.75rem;margin:0 0 6px;display:none;"></div>
+
+    <div style="display:flex;gap:4px;margin:10px 0;border-bottom:1px solid var(--border);">
+      <button class="qmode-btn active" data-qmode="opd" style="flex:1;background:transparent;border:none;color:var(--muted);padding:8px 6px;font-size:0.8rem;border-bottom:2px solid transparent;cursor:pointer;">OPD Queue</button>
+      <button class="qmode-btn" data-qmode="ward" style="flex:1;background:transparent;border:none;color:var(--muted);padding:8px 6px;font-size:0.8rem;border-bottom:2px solid transparent;cursor:pointer;">🛏️ Ward Rounds <span id="wardRoundsCount" style="background:var(--field);border:1px solid var(--border);border-radius:10px;padding:0 6px;font-size:0.7rem;">0</span></button>
+    </div>
+    <style>.qmode-btn.active{color:var(--purple);border-bottom-color:var(--purple)!important;font-weight:600;}</style>
+
     <div class="queue-list" id="queueList"><div class="empty-queue">Loading...</div></div>
+    <div class="queue-list" id="wardRoundsList" style="display:none;"><div class="empty-queue">Loading...</div></div>
   </div>
 
   <!-- RIGHT: Consultation -->
   <div class="consult-panel">
     <div class="placeholder" id="placeholder">
       ← Select a patient from the queue to begin consultation
+    </div>
+
+    <!-- WARD ROUND DETAIL — lightweight panel for admitted patients.
+         Deliberately separate from the OPD consult-content flow: a
+         ward round is a chart review + discharge decision, not a
+         fresh consultation form. -->
+    <div class="placeholder" id="wardRoundPlaceholder" style="display:none;">
+      ← Select an admitted patient to view their ward chart
+    </div>
+    <div id="wardRoundDetail" style="display:none;padding:18px;">
+      <div class="msg error" id="wrErrorMsg" style="margin-bottom:12px;"></div>
+      <div class="msg success" id="wrSuccessMsg" style="margin-bottom:12px;"></div>
+
+      <div class="patient-header" id="wrPatientHeader" style="margin-bottom:16px;"></div>
+
+      <div class="section-title">Admission Orders</div>
+      <div id="wrOrdersList" style="font-size:0.84rem;margin-bottom:18px;"></div>
+
+      <div class="section-title">Discharge This Patient</div>
+      <div class="fgrid">
+        <div class="fgroup full">
+          <label>Discharge Summary</label>
+          <textarea id="wr_discharge_summary" rows="4" placeholder="Condition on discharge, medications to continue, follow-up instructions..."></textarea>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+        <button class="btn-primary" id="wrDischargeBtn" style="background:var(--warn,#ffb347);color:#1a0e00;font-weight:700;">🏠 Discharge &amp; Free Bed</button>
+      </div>
     </div>
 
     <div class="consult-content" id="consultContent">
