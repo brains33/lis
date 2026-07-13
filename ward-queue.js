@@ -313,6 +313,8 @@ function switchTab(tab){
 // ============================================================
 // DOCTOR ORDERS (read-only, latest first)
 // ============================================================
+let marOrderMap = {}; // dropdown value -> {order_text, doctor, created_at} — feeds the MAR "see the order" box
+
 async function loadOrders(admissionId){
   const { data, error } = await client.from('doctor_orders')
     .select('id,doctor,order_text,order_type,status,created_at')
@@ -323,6 +325,9 @@ async function loadOrders(admissionId){
   if(error){ list.innerHTML = `<div class="empty">${esc(error.message)}</div>`; return; }
 
   selectedOrders = (data||[]).filter(o=>o.status==='active' && o.order_type==='medication');
+  marOrderMap = {};
+  selectedOrders.forEach(o=>{ marOrderMap[o.id] = { order_text: o.order_text, doctor: o.doctor, created_at: o.created_at }; });
+
   const mOrderSel = document.getElementById('m_order');
   mOrderSel.innerHTML = '<option value="">— Not linked to an order —</option>' +
     selectedOrders.map(o=>`<option value="${o.id}">${esc(o.order_text.slice(0,60))}</option>`).join('');
@@ -344,6 +349,13 @@ async function loadOrders(admissionId){
           </div>
           <div style="white-space:pre-line;">${esc(consult.prescription)}</div>
         </div>`;
+
+      // Make it pickable from the MAR "From Doctor Order" dropdown too,
+      // same as any post-admission order — this is the ward-side parity
+      // with OPD's Doctor's Orders tab: the nurse can see and chart
+      // straight from the original prescription, not just later orders.
+      marOrderMap['opd_original'] = { order_text: consult.prescription, doctor: consult.doctor_name, created_at: consult.created_at };
+      mOrderSel.innerHTML = `<option value="opd_original">📋 Original OPD Prescription — Dr. ${esc(consult.doctor_name||'—')}</option>` + mOrderSel.innerHTML;
     }
   }
 
@@ -361,6 +373,49 @@ async function loadOrders(admissionId){
       <div>${esc(o.order_text)}${o.status==='discontinued'?' <i style="color:var(--error)">(discontinued)</i>':''}</div>
     </div>`).join('');
 }
+
+// ============================================================
+// MAR — "see the doctor's order while charting" panel. Selecting an
+// order shows its full verbatim text (never silently parsed/trusted)
+// plus one tap-to-fill chip per drug line. Tapping a chip only fills
+// the Drug field with that exact line — Dose and Route are always
+// left for the nurse to read off the order and confirm themselves,
+// since silently auto-filling a dose is a real medication-safety risk.
+// ============================================================
+function marShowOrderDetail(value){
+  const box = document.getElementById('m_orderDetail');
+  const order = marOrderMap[value];
+  if(!value || !order){ box.style.display = 'none'; return; }
+
+  box.style.display = 'block';
+  document.getElementById('m_orderMeta').textContent = `Dr. ${order.doctor||'—'} · ${fmtTime(order.created_at)}`;
+  document.getElementById('m_orderText').textContent = order.order_text;
+
+  const lines = order.order_text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const linesBox = document.getElementById('m_orderLines');
+  if(lines.length <= 1){
+    linesBox.innerHTML = '';
+    return;
+  }
+  linesBox.innerHTML = lines.map((line,i)=>
+    `<button type="button" class="mar-line-chip" data-line="${i}" style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px 9px;font-size:0.76rem;cursor:pointer;color:var(--text);">${esc(line.length>40?line.slice(0,40)+'…':line)}</button>`
+  ).join('');
+  linesBox.querySelectorAll('.mar-line-chip').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ document.getElementById('m_drug').value = lines[parseInt(btn.dataset.line)]; });
+  });
+}
+
+document.getElementById('m_order').addEventListener('change', (e)=>{
+  const value = e.target.value;
+  marShowOrderDetail(value);
+  // Single-line order: drop it straight into Drug since there's no
+  // ambiguity about which line applies.
+  const order = marOrderMap[value];
+  if(order){
+    const lines = order.order_text.split('\n').map(l=>l.trim()).filter(Boolean);
+    if(lines.length === 1) document.getElementById('m_drug').value = lines[0];
+  }
+});
 
 // ============================================================
 // NURSE ACTIONS (General Hospital mode only) — mirrors the doctor's
@@ -971,10 +1026,18 @@ document.getElementById('addMarBtn').addEventListener('click', async () => {
   const btn = document.getElementById('addMarBtn');
   btn.disabled = true; btn.textContent = 'Charting...';
   try{
+    // 'opd_original' is a synthetic value for the MAR order-picker (the
+    // original OPD prescription isn't a real doctor_orders row), so it
+    // must never be sent as the p_doctor_order_id FK — only a real
+    // doctor_orders.id gets linked; otherwise this dose is charted
+    // unlinked, same as picking "Not linked to an order".
+    const orderVal = sv('m_order');
+    const orderIdForRpc = (orderVal && orderVal !== 'opd_original') ? orderVal : null;
+
     const { data, error } = await client.rpc('record_mar_dose', {
       p_token: session.token,
       p_admission_id: selectedAdmission.id,
-      p_doctor_order_id: sv('m_order'),
+      p_doctor_order_id: orderIdForRpc,
       p_mar_id: null,
       p_drug: drug,
       p_dose: dose,
@@ -994,6 +1057,7 @@ document.getElementById('addMarBtn').addEventListener('click', async () => {
 function resetMarForm(){
   ['m_drug','m_dose','m_route','m_time'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   const sel = document.getElementById('m_order'); if(sel) sel.value='';
+  const box = document.getElementById('m_orderDetail'); if(box) box.style.display='none';
 }
 
 // ============================================================

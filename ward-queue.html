@@ -309,6 +309,19 @@
             <div class="vfield"><label>From Doctor Order (optional)</label>
               <select id="m_order"><option value="">— Not linked to an order —</option></select>
             </div>
+          </div>
+
+          <!-- Shows the doctor's order verbatim once picked, same idea as
+               OPD's Doctor's Orders tab — the nurse reads exactly what was
+               ordered instead of relying on memory while charting. -->
+          <div id="m_orderDetail" style="display:none;background:var(--field);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin:10px 0;font-size:0.82rem;">
+            <div class="item-top"><span class="type-badge">doctor's order</span><span id="m_orderMeta"></span></div>
+            <div id="m_orderText" style="white-space:pre-line;margin-bottom:8px;"></div>
+            <div id="m_orderLines" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+            <div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">Tap a line above to drop it into Drug below — always double-check dose &amp; route before charting.</div>
+          </div>
+
+          <div class="vgrid">
             <div class="vfield"><label>Drug</label><input type="text" id="m_drug" placeholder="e.g. Paracetamol"></div>
             <div class="vfield"><label>Dose</label><input type="text" id="m_dose" placeholder="e.g. 500mg"></div>
             <div class="vfield"><label>Route</label><input type="text" id="m_route" placeholder="e.g. Oral, IV"></div>
