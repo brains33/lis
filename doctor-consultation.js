@@ -2237,16 +2237,42 @@ function switchQueueMode(mode){
   }
 }
 
+let wardRoundsPatientById = {};
+function wrWardName(id){ return allWards.find(w=>w.id===id)?.ward_name || '—'; }
+
 async function loadWardRounds(){
+  // NOTE: only `beds(bed_number)` is embedded here — that's the one
+  // relationship that actually works as a PostgREST embed in this schema.
+  // `wards` and `patient_registry` are NOT fetched as embeds (there's no
+  // usable FK path for PostgREST to auto-join them, same reason
+  // ward-queue.js fetches patient_registry as its own separate query and
+  // resolves ward names from a locally-loaded wards list instead of
+  // embedding). Embedding them here silently failed the whole query.
   const { data, error } = await client.from('admissions')
-    .select(`id,patient_id,hospital_number,ward_id,bed_id,admitting_doctor,admission_diagnosis,
-             allergy_note,status,admitted_at,beds(bed_number),wards(ward_name),
-             patient_registry(surname,first_name,gender,date_of_birth,age)`)
+    .select('id,patient_id,hospital_number,ward_id,bed_id,admitting_doctor,admission_diagnosis,allergy_note,status,admitted_at,beds(bed_number)')
     .eq('status','admitted')
     .order('admitted_at',{ascending:true});
 
-  if(error){ console.error('[DC] loadWardRounds failed', error); return; }
+  if(error){
+    console.error('[DC] loadWardRounds failed', error);
+    document.getElementById('wardRoundsList').innerHTML =
+      `<div class="empty-queue" style="color:var(--error);">Failed to load ward rounds — ${esc(error.message)}</div>`;
+    return;
+  }
   wardRoundsAdmissions = data || [];
+
+  // Batch-fetch patient demographics separately, same as ward-queue.js's
+  // per-admission patient_registry fetch, just batched for the list view.
+  const patientIds = [...new Set(wardRoundsAdmissions.map(a=>a.patient_id).filter(Boolean))];
+  wardRoundsPatientById = {};
+  if(patientIds.length){
+    const { data: patients, error: pErr } = await client.from('patient_registry')
+      .select('id,surname,first_name,middle_name,gender,date_of_birth,age')
+      .in('id', patientIds);
+    if(pErr) console.error('[DC] ward rounds patient lookup failed', pErr);
+    else (patients||[]).forEach(p=>{ wardRoundsPatientById[p.id] = p; });
+  }
+
   document.getElementById('wardRoundsCount').textContent = wardRoundsAdmissions.length;
   renderWardRoundsList();
 }
@@ -2255,7 +2281,7 @@ function renderWardRoundsList(){
   const filter = document.getElementById('queueFilter').value.toLowerCase();
   const list = document.getElementById('wardRoundsList');
   const items = wardRoundsAdmissions.filter(a=>{
-    const p = a.patient_registry;
+    const p = wardRoundsPatientById[a.patient_id];
     const name = `${p?.surname||''} ${p?.first_name||''}`.toLowerCase();
     return !filter || name.includes(filter) || a.hospital_number.toLowerCase().includes(filter);
   });
@@ -2263,15 +2289,15 @@ function renderWardRoundsList(){
   if(items.length===0){ list.innerHTML = `<div class="empty-queue">No admitted patients</div>`; return; }
 
   list.innerHTML = items.map(a=>{
-    const p = a.patient_registry;
-    const name = p ? `${p.surname} ${p.first_name}` : a.hospital_number;
+    const p = wardRoundsPatientById[a.patient_id];
+    const name = p ? [p.surname,p.first_name].filter(Boolean).join(' ') : a.hospital_number;
     const age = p?.date_of_birth ? `${Math.floor((Date.now()-new Date(p.date_of_birth))/(365.25*86400000))}y` : (p?.age?`${p.age}y`:'');
     return `<div class="queue-item ${selectedAdmission?.id===a.id?'selected':''}" data-id="${a.id}">
       <div class="qi-name">${esc(name)}</div>
       <div class="qi-meta">
         <span>${esc(a.hospital_number)}</span>
         ${age?`<span>${age}</span>`:''}
-        <span>🛏️ ${esc(a.wards?.ward_name)} · ${esc(a.beds?.bed_number)}</span>
+        <span>🛏️ ${esc(wrWardName(a.ward_id))} · ${esc(a.beds?.bed_number)}</span>
       </div>
     </div>`;
   }).join('');
@@ -2292,14 +2318,14 @@ async function selectWardRound(a){
   document.getElementById('wardRoundPlaceholder').style.display = 'none';
   document.getElementById('wardRoundDetail').style.display = 'block';
 
-  const p = a.patient_registry;
+  const p = wardRoundsPatientById[a.patient_id];
   const name = p ? [p.surname,p.first_name].filter(Boolean).join(' ') : a.hospital_number;
   const age = p?.date_of_birth ? `${Math.floor((Date.now()-new Date(p.date_of_birth))/(365.25*86400000))}y` : (p?.age?`${p.age}y`:'—');
   document.getElementById('wrPatientHeader').innerHTML = `
     <div style="font-size:1.1rem;font-weight:700;">${esc(name)} — ${esc(a.hospital_number)}</div>
     <div style="font-size:0.82rem;color:var(--muted);margin-top:3px;">
       ${p?.gender||'—'} &nbsp;|&nbsp; ${age} &nbsp;|&nbsp;
-      🛏️ ${esc(a.wards?.ward_name)} · Bed ${esc(a.beds?.bed_number)} &nbsp;|&nbsp;
+      🛏️ ${esc(wrWardName(a.ward_id))} · Bed ${esc(a.beds?.bed_number)} &nbsp;|&nbsp;
       Admitting Dr: ${esc(a.admitting_doctor)}
     </div>
     <div style="font-size:0.82rem;margin-top:6px;">🔍 ${esc(a.admission_diagnosis)}</div>

@@ -353,6 +353,66 @@ if (painEl) painEl.addEventListener('input', refreshAbnormalBanner);
 const weightEl = document.getElementById('v_weight');
 if (weightEl) weightEl.addEventListener('input', () => updateTrendArrow('v_weight'));
 
+// ============================================================
+// AUTO-FILLED NURSE NOTE — builds "Patient complains of ..." from the
+// chief complaint + core vitals as they're entered, so the nurse
+// doesn't have to retype what's already on the form. If the nurse
+// edits the note beyond what was auto-generated, their edits win and
+// we stop overwriting — this only fills in for them, never fights them.
+// ============================================================
+let lastAutoNurseNote = '';
+let nurseNoteManuallyEdited = false;
+
+function buildAutoNurseNote() {
+  const complaint = document.getElementById('v_complaint')?.value.trim();
+  if (!complaint) return '';
+
+  const bpSys = document.getElementById('v_bp_sys')?.value.trim();
+  const bpDia = document.getElementById('v_bp_dia')?.value.trim();
+  const temp  = document.getElementById('v_temp')?.value.trim();
+  const pulse = document.getElementById('v_pulse')?.value.trim();
+  const rbs   = document.getElementById('v_rbs')?.value.trim();
+
+  const parts = [];
+  if (bpSys && bpDia) parts.push(`BP ${bpSys}/${bpDia} mmHg`);
+  if (temp)  parts.push(`Temp ${temp}°C`);
+  if (pulse) parts.push(`Pulse ${pulse} bpm`);
+  if (rbs)   parts.push(`RBS ${rbs} mg/dL`);
+
+  const dateStr = new Date().toLocaleString('en-NG', {dateStyle:'medium', timeStyle:'short'});
+  let note = `Patient complains of ${complaint}. Seen ${dateStr}.`;
+  if (parts.length) note += ` Vitals — ${parts.join(', ')}.`;
+  return note;
+}
+
+function autoFillNurseNote() {
+  const noteEl = document.getElementById('v_nurse_note');
+  if (!noteEl || nurseNoteManuallyEdited) return;
+  const generated = buildAutoNurseNote();
+  if (!generated) return;
+  noteEl.value = generated;
+  lastAutoNurseNote = generated;
+}
+
+['v_complaint','v_bp_sys','v_bp_dia','v_temp','v_pulse','v_rbs'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', autoFillNurseNote);
+});
+
+const nurseNoteEl = document.getElementById('v_nurse_note');
+if (nurseNoteEl) {
+  nurseNoteEl.addEventListener('input', () => {
+    // Anything that doesn't match what we last auto-generated is a
+    // manual edit (or a manual clear) — stop overwriting from then on.
+    if (nurseNoteEl.value !== lastAutoNurseNote) nurseNoteManuallyEdited = true;
+  });
+}
+
+function resetAutoNurseNote() {
+  lastAutoNurseNote = '';
+  nurseNoteManuallyEdited = false;
+}
+
 function resetVitalFlags() {
   Object.keys(VITAL_FIELD_MAP).forEach(id => {
     document.getElementById(`fld_${id}`)?.classList.remove('flag-high', 'flag-low');
@@ -371,6 +431,7 @@ function resetVitalFlags() {
   document.getElementById('prevVitalsPanel').classList.remove('show');
   document.getElementById('prevVitalsPanel').innerHTML = '';
   previousVitals = null;
+  resetAutoNurseNote();
 }
 
 // ---- Previous vitals lookup ----
@@ -555,6 +616,59 @@ function showVitalsForm(v) {
   if (v.triage_category) document.getElementById('v_triage').value = v.triage_category;
   if (v.chief_complaint)  document.getElementById('v_complaint').value = v.chief_complaint;
   if (v.assigned_doctor)  document.getElementById('v_doctor').value = v.assigned_doctor;
+
+  if (v.status === 'vitals_taken') {
+    loadOwnVitals(v);
+  } else {
+    autoFillNurseNote();
+  }
+}
+
+// ============================================================
+// RELOAD THIS VISIT'S OWN SAVED VITALS — closes the gap where
+// reopening a vitals_taken visit left BP/temp/pulse/etc. blank even
+// though they're already saved. save_vitals() inserts one row per
+// visit into `vitals` keyed by visit_id (confirmed against the real
+// function source), and that same row also carries pain_score,
+// allergy_note and nurse_note — so one query restores the whole form.
+// ============================================================
+async function loadOwnVitals(v) {
+  const { data, error } = await client
+    .from('vitals')
+    .select('bp_systolic, bp_diastolic, temperature, pulse, respiratory_rate, spo2, weight, height, rbs, muac, pain_score, allergy_note, nurse_note')
+    .eq('visit_id', v.id)
+    .order('recorded_at', { ascending: false })
+    .limit(1);
+
+  if (error) { console.error('[OPD] loadOwnVitals failed', error); autoFillNurseNote(); return; }
+  const d = data && data[0];
+  if (!d) { autoFillNurseNote(); return; }
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  set('v_bp_sys', d.bp_systolic);
+  set('v_bp_dia', d.bp_diastolic);
+  set('v_temp',   d.temperature);
+  set('v_pulse',  d.pulse);
+  set('v_rr',     d.respiratory_rate);
+  set('v_spo2',   d.spo2);
+  set('v_weight', d.weight);
+  set('v_height', d.height);
+  set('v_rbs',    d.rbs);
+  set('v_muac',   d.muac);
+  set('v_pain',   d.pain_score);
+  set('v_allergy', d.allergy_note);
+
+  // This is real, already-saved documentation — never silently
+  // overwrite it with the auto-template, even if vitals get edited.
+  if (d.nurse_note) {
+    document.getElementById('v_nurse_note').value = d.nurse_note;
+    nurseNoteManuallyEdited = true;
+  } else {
+    autoFillNurseNote();
+  }
+
+  evaluateAllVitals();
+  refreshAbnormalBanner();
 }
 
 // ---- Add to queue ----

@@ -55,6 +55,29 @@ async function loadQueue(){
   checkLowStock();
 }
 
+// ============================================================
+// WAIT-TIME BADGE — colors by how long a prescription has been
+// sitting, NOT clinical urgency. Order in the list stays oldest-first
+// (fairness — first in, first served); this is purely a visual cue so
+// an aging prescription still catches the eye without jumping the queue.
+//   🟢 0–5 min   — just in, no rush
+//   🟡 5–15 min  — getting up there
+//   🔴 15+ min   — overdue, serve next
+// ============================================================
+const WAIT_AMBER_MINS = 5;
+const WAIT_RED_MINS   = 15;
+
+function waitBadge(createdAt){
+  if(!createdAt) return '';
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+  let bg, fg;
+  if(mins < WAIT_AMBER_MINS)      { bg = '#dcfce7'; fg = '#166534'; }
+  else if(mins < WAIT_RED_MINS)   { bg = '#fef3c7'; fg = '#92400e'; }
+  else                            { bg = '#fee2e2'; fg = '#991b1b'; }
+  const label = mins < 1 ? 'just in' : `${mins}m wait`;
+  return `<span class="wait-badge" style="background:${bg};color:${fg};border-radius:10px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap;">${label}</span>`;
+}
+
 function renderQueue(){
   const filter = document.getElementById('queueFilter').value.toLowerCase();
   const list = document.getElementById('rxQueueList');
@@ -71,7 +94,7 @@ function renderQueue(){
       <div class="queue-item ${selectedConsult?.id===c.id?'selected':''}" data-id="${c.id}">
         <div class="qi-top">
           <span class="qi-hospno">${esc(c.hospital_number)}</span>
-          <span>⏰ ${time}</span>
+          <span style="display:flex;align-items:center;gap:6px;">⏰ ${time} ${waitBadge(c.created_at)}</span>
         </div>
         <div class="qi-dx">${esc(c.diagnosis)}</div>
         <div class="qi-doc">Dr. ${esc(c.doctor_name)}</div>
@@ -216,10 +239,11 @@ function autoMatchPrescription(prescriptionText){
     matched.forEach(({drug})=>{
       if(selectedDrugs.some(s=>s.id===drug.id)) return; // already added
       if(drug.quantity_in_stock<=0) return; // skip out-of-stock, pharmacist sees it's unavailable in the list below
-      selectedDrugs.push({ id: drug.id, name: drug.drug_name, unit: drug.unit, available: drug.quantity_in_stock, qty: 1 });
+      selectedDrugs.push({ id: drug.id, name: drug.drug_name, unit: drug.unit, available: drug.quantity_in_stock, qty: 1, price: drug.unit_price || 0 });
     });
     renderSelectedDrugs();
     renderDrugList();
+    updateDispenseTotal();
     btn.disabled = true;
     btn.textContent = '✓ Added';
   };
@@ -262,9 +286,10 @@ function renderDrugList(){
       const drug = allDrugs.find(d=>d.id===btn.dataset.id);
       if(!drug || selectedDrugs.some(s=>s.id===drug.id)) return;
       selectedDrugs.push({ id: drug.id, name: drug.drug_name, unit: drug.unit,
-        available: drug.quantity_in_stock, qty: 1 });
+        available: drug.quantity_in_stock, qty: 1, price: drug.unit_price || 0 });
       renderSelectedDrugs();
       renderDrugList();
+      updateDispenseTotal();
     });
   });
 }
@@ -291,6 +316,7 @@ function renderSelectedDrugs(){
       v = Math.max(1, Math.min(v, s.available));
       inp.value = v;
       s.qty = v;
+      updateDispenseTotal();
     });
   });
   el.querySelectorAll('.sd-remove').forEach(btn=>{
@@ -298,9 +324,38 @@ function renderSelectedDrugs(){
       selectedDrugs = selectedDrugs.filter(s=>s.id!==btn.dataset.id);
       renderSelectedDrugs();
       renderDrugList();
+      updateDispenseTotal();
     });
   });
 }
+
+// ============================================================
+// PAYMENT — mirrors accession.js's updateTotal(): total is the sum
+// of (qty × unit price) for everything selected, staff enters what
+// was actually paid, balance + Paid/Partial/Unpaid badge update live.
+// ============================================================
+function updateDispenseTotal(){
+  const total = selectedDrugs.reduce((sum,s) => sum + (s.price||0) * s.qty, 0);
+  const paidInput = document.getElementById('dxAmountPaid');
+  let paid = parseFloat(paidInput?.value) || 0;
+  if(paid > total){
+    paid = total;
+    if(paidInput) paidInput.value = total.toFixed(2);
+  }
+  const balance = total - paid;
+  document.getElementById('dxTotalAmount').textContent = total.toFixed(2);
+  document.getElementById('dxBalanceDue').textContent = balance.toFixed(2);
+
+  const badge = document.getElementById('dxPayBadge');
+  if(total === 0 || (balance > 0 && paid === 0)){
+    badge.textContent = 'Unpaid'; badge.style.background = '#fee2e2'; badge.style.color = '#991b1b';
+  } else if(balance > 0){
+    badge.textContent = 'Partial'; badge.style.background = '#fef3c7'; badge.style.color = '#92400e';
+  } else {
+    badge.textContent = 'Paid'; badge.style.background = '#dcfce7'; badge.style.color = '#166534';
+  }
+}
+document.getElementById('dxAmountPaid').addEventListener('input', updateDispenseTotal);
 
 // ============================================================
 // SUBMIT DISPENSE
@@ -322,14 +377,17 @@ document.getElementById('submitDispenseBtn').addEventListener('click', async () 
       p_patient_name:      null,
       p_prescription_text: selectedConsult.prescription,
       p_items:             selectedDrugs.map(s => ({ drug_id: s.id, quantity: s.qty })),
-      p_pharmacist_note:   document.getElementById('pharmacistNote').value.trim() || null
+      p_pharmacist_note:   document.getElementById('pharmacistNote').value.trim() || null,
+      p_pay_mode:          document.getElementById('dxPayMode').value,
+      p_amount_paid:       parseFloat(document.getElementById('dxAmountPaid').value) || 0
     });
 
     if(error) throw error;
     const r = Array.isArray(data) ? data[0] : data;
     if(!r?.success) throw new Error(r?.message || 'Failed to dispense.');
 
-    showSuccess(`✅ ${r.message}`);
+    const badge = document.getElementById('dxPayBadge').textContent;
+    showSuccess(`✅ ${r.message} — Payment: ${badge} (Balance: ${document.getElementById('dxBalanceDue').textContent} NGN)`);
     resetDispenseForm();
     selectedConsult = null;
     document.getElementById('placeholder').style.display = 'flex';
@@ -351,6 +409,9 @@ function resetDispenseForm(){
   document.getElementById('pharmacistNote').value = '';
   document.getElementById('allergyWarning').classList.remove('show');
   document.getElementById('autoMatchArea').style.display = 'none';
+  document.getElementById('dxAmountPaid').value = '';
+  document.getElementById('dxPayMode').value = 'Cash';
+  updateDispenseTotal();
   const btn = document.getElementById('autoMatchBtn');
   btn.disabled = false;
   btn.textContent = '✓ Add All Matched Drugs';
@@ -362,6 +423,109 @@ document.getElementById('clearDispenseBtn').addEventListener('click', () => {
   if(selectedConsult) renderDrugList();
 });
 
+// ============================================================
+// SETTLE OUTSTANDING BALANCE — mirrors accession.js's settlement
+// panel: look up by hospital number (pharmacy has no single "sample
+// ID" concept — a patient can have several dispenses, so this lists
+// every unpaid/partial one and lets staff settle whichever applies),
+// pick a payment mode, confirm. Goes through settle_dispensing_balance
+// (role-checked RPC) rather than a direct table update.
+// ============================================================
+document.getElementById('settlePanelToggle').addEventListener('click', () => {
+  const body = document.getElementById('settlePanelBody');
+  const chevron = document.getElementById('settlePanelChevron');
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? 'block' : 'none';
+  chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+});
+
+let _settlePayMode = 'Cash';
+
+async function lookupPharmacyBalance(){
+  const hospNum = document.getElementById('settleHospNum').value.trim();
+  const box = document.getElementById('settleResultBox');
+  if(!hospNum){ showError('Enter a hospital number.'); return; }
+
+  box.style.display = 'block';
+  box.innerHTML = `<div style="padding:14px;text-align:center;color:var(--muted);">Looking up ${esc(hospNum)}…</div>`;
+
+  const { data, error } = await client.from('dispensing_records')
+    .select('id,patient_name,total_amount,amount_paid,balance_due,pay_status,dispensed_at')
+    .eq('hospital_number', hospNum)
+    .neq('pay_status', 'Paid')
+    .order('dispensed_at', {ascending:false});
+
+  if(error){ box.innerHTML = `<div style="padding:14px;color:#991b1b;">${esc(error.message)}</div>`; return; }
+  if(!data || data.length===0){
+    box.innerHTML = `<div style="padding:14px;background:#dcfce7;border-radius:10px;">✓ No outstanding balance for ${esc(hospNum)}.</div>`;
+    return;
+  }
+
+  box.innerHTML = data.map(d => `
+    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:8px;">
+      <div style="font-size:0.82rem;margin-bottom:6px;">
+        <strong>${esc(d.patient_name||hospNum)}</strong> — ${new Date(d.dispensed_at).toLocaleString('en-NG',{dateStyle:'medium',timeStyle:'short'})}
+      </div>
+      <div style="font-size:0.82rem;background:#f0f7f3;border-radius:8px;padding:8px;margin-bottom:8px;">
+        <div>Total: <strong>${(d.total_amount||0).toFixed(2)} NGN</strong></div>
+        <div>Already Paid: <strong>${(d.amount_paid||0).toFixed(2)} NGN</strong></div>
+        <div style="border-top:1px solid #c6e2d4;margin-top:4px;padding-top:4px;">Balance Due: <strong>${(d.balance_due||0).toFixed(2)} NGN</strong></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;" class="settle-mode-row" data-id="${d.id}">
+        <button type="button" class="settle-mode-btn active" data-mode="Cash">💵 Cash</button>
+        <button type="button" class="settle-mode-btn" data-mode="POS">🏧 POS</button>
+        <button type="button" class="settle-mode-btn" data-mode="Transfer">🏦 Transfer</button>
+        <button type="button" class="settle-mode-btn" data-mode="NHIS">🏥 NHIS</button>
+      </div>
+      <button class="btn btn-primary settle-confirm-btn" data-id="${d.id}" data-balance="${d.balance_due}" style="width:100%;">
+        Confirm Payment of ${(d.balance_due||0).toFixed(2)} NGN
+      </button>
+    </div>`).join('');
+
+  box.querySelectorAll('.settle-mode-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const row = btn.closest('.settle-mode-row');
+      row.querySelectorAll('.settle-mode-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      row.dataset.selectedMode = btn.dataset.mode;
+    });
+  });
+
+  box.querySelectorAll('.settle-confirm-btn').forEach(btn=>{
+    btn.addEventListener('click', () => confirmPharmacySettlement(btn));
+  });
+}
+
+async function confirmPharmacySettlement(btn){
+  const recordId = btn.dataset.id;
+  const row = btn.closest('div').querySelector('.settle-mode-row');
+  const mode = row?.dataset.selectedMode || 'Cash';
+
+  btn.disabled = true; btn.textContent = 'Processing...';
+  try{
+    const { data, error } = await client.rpc('settle_dispensing_balance', {
+      p_token: session.token,
+      p_dispensing_record_id: recordId,
+      p_pay_mode: mode
+    });
+    if(error) throw error;
+    const r = Array.isArray(data) ? data[0] : data;
+    if(!r?.success) throw new Error(r?.message || 'Settlement failed.');
+
+    showSuccess(`✅ ${r.message}`);
+    document.getElementById('settleHospNum').value = '';
+    document.getElementById('settleResultBox').style.display = 'none';
+  }catch(err){
+    showError(err.message || 'Settlement failed.');
+    btn.disabled = false;
+    btn.textContent = `Confirm Payment of ${parseFloat(btn.dataset.balance).toFixed(2)} NGN`;
+  }
+}
+
+document.getElementById('settleLookupBtn').addEventListener('click', lookupPharmacyBalance);
+document.getElementById('settleHospNum').addEventListener('keydown', e => { if(e.key==='Enter') lookupPharmacyBalance(); });
+
 // Init
 loadQueue();
+updateDispenseTotal();
 setInterval(loadQueue, 30000);

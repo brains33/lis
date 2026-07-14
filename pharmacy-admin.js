@@ -292,28 +292,54 @@ async function searchHistory(){
   clearMsgs();
   const date = document.getElementById('historyDate').value;
   const q    = document.getElementById('historySearch').value.trim();
+  const outstandingOnly = document.getElementById('historyOutstandingOnly').checked;
   const tbody = document.getElementById('historyTbody');
-  tbody.innerHTML = `<tr><td colspan="6" class="empty">Loading...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="9" class="empty">Loading...</td></tr>`;
 
   let query = client.from('dispensing_records')
-    .select('id,hospital_number,prescription_text,status,dispensed_by,dispensed_at,created_at')
+    .select('id,hospital_number,prescription_text,status,dispensed_by,dispensed_at,created_at,total_amount,amount_paid,balance_due,pay_status,pay_mode')
     .order('created_at',{ascending:false}).limit(100);
 
-  if(date) query = query.gte('created_at', date+'T00:00:00').lt('created_at', date+'T23:59:59');
-  if(q)    query = query.ilike('hospital_number', `%${q}%`);
+  // "Outstanding only" ignores the date filter on purpose — an unpaid
+  // balance from three days ago is still outstanding today, and this
+  // view exists specifically to surface those, not just today's activity.
+  if(outstandingOnly){
+    query = query.neq('pay_status','Paid');
+  } else if(date){
+    query = query.gte('created_at', date+'T00:00:00').lt('created_at', date+'T23:59:59');
+  }
+  if(q) query = query.ilike('hospital_number', `%${q}%`);
 
   const { data, error } = await query;
-  if(error){ showError(error.message); tbody.innerHTML=`<tr><td colspan="6" class="empty">Error</td></tr>`; return; }
-  if(!data||data.length===0){ tbody.innerHTML=`<tr><td colspan="6" class="empty">No dispensing records found</td></tr>`; return; }
+  if(error){ showError(error.message); tbody.innerHTML=`<tr><td colspan="9" class="empty">Error</td></tr>`; return; }
 
-  tbody.innerHTML = data.map(r=>`<tr>
+  const summary = document.getElementById('outstandingSummary');
+  if(outstandingOnly){
+    const totalOutstanding = (data||[]).reduce((s,r)=>s+(parseFloat(r.balance_due)||0),0);
+    summary.style.display = 'block';
+    summary.textContent = (data && data.length>0)
+      ? `⚠️ ${data.length} outstanding dispense(s) — ₦${totalOutstanding.toLocaleString(undefined,{minimumFractionDigits:2})} total owed across all patients.`
+      : '✓ No outstanding balances.';
+  } else {
+    summary.style.display = 'none';
+  }
+
+  if(!data||data.length===0){ tbody.innerHTML=`<tr><td colspan="9" class="empty">No dispensing records found</td></tr>`; return; }
+
+  tbody.innerHTML = data.map(r=>{
+    const payClass = r.pay_status==='Paid' ? 'status-badge completed' : (r.pay_status==='Partial' ? 'status-badge pending' : 'status-badge cancelled');
+    return `<tr>
     <td style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;">${esc(r.hospital_number)}</td>
     <td>${esc(r.prescription_text)}</td>
     <td><span class="status-badge ${r.status}">${r.status}</span></td>
     <td>${esc(r.dispensed_by)}</td>
     <td style="font-size:0.76rem;">${r.dispensed_at?new Date(r.dispensed_at).toLocaleString('en-NG',{dateStyle:'medium',timeStyle:'short'}):''}</td>
+    <td>₦${(parseFloat(r.total_amount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+    <td>${parseFloat(r.balance_due)>0 ? `<strong style="color:#991b1b;">₦${parseFloat(r.balance_due).toLocaleString(undefined,{minimumFractionDigits:2})}</strong>` : '—'}</td>
+    <td><span class="${payClass}">${esc(r.pay_status||'—')}</span></td>
     <td><button class="btn-ghost btn-small view-items-btn" data-id="${r.id}">Items</button></td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 
   tbody.querySelectorAll('.view-items-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>viewDispensingItems(btn.dataset.id));
@@ -332,9 +358,11 @@ async function viewDispensingItems(recordId){
 }
 
 document.getElementById('searchHistoryBtn').addEventListener('click', searchHistory);
+document.getElementById('historyOutstandingOnly').addEventListener('change', searchHistory);
 document.getElementById('clearHistoryBtn').addEventListener('click', ()=>{
   document.getElementById('historySearch').value='';
   document.getElementById('historyDate').value=new Date().toISOString().split('T')[0];
+  document.getElementById('historyOutstandingOnly').checked=false;
   searchHistory();
 });
 
