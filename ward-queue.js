@@ -1055,7 +1055,16 @@ document.getElementById('addMarBtn').addEventListener('click', async () => {
   finally{ btn.disabled=false; btn.textContent='Chart Dose'; }
 });
 function resetMarForm(){
-  ['m_drug','m_dose','m_route','m_time'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['m_drug','m_dose','m_route'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  // Default Scheduled Time to "now" (local) so the nurse never has to
+  // hand-type both date and time from a blank datetime-local field —
+  // they can adjust it if the dose was/will be given at a different time.
+  const timeEl = document.getElementById('m_time');
+  if(timeEl){
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    timeEl.value = now.toISOString().slice(0,16);
+  }
   const sel = document.getElementById('m_order'); if(sel) sel.value='';
   const box = document.getElementById('m_orderDetail'); if(box) box.style.display='none';
 }
